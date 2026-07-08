@@ -4,28 +4,90 @@ import { Card, CardHeader, Field, StatusPill } from "./ui";
 export function KnowledgeView({
   sources,
   onCreate,
+  onCreateUrl,
+  onUploadFile,
   onIngest,
 }: {
   sources: KnowledgeSource[];
   onCreate: FormHandler;
+  onCreateUrl: FormHandler;
+  onUploadFile: FormHandler;
   onIngest: (id: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <form onSubmit={onCreate} className="rounded-lg border border-[#d8dde6] bg-white p-4">
-        <h2 className="font-semibold">Add Knowledge</h2>
-        <div className="mt-4 space-y-4">
-          <Field label="Name">
-            <input name="name" className="input" required />
-          </Field>
-          <Field label="Text">
-            <textarea name="rawText" rows={9} className="input resize-y" required />
-          </Field>
-          <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
-            Create source
-          </button>
-        </div>
-      </form>
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[460px_minmax(0,1fr)]">
+      <div className="space-y-4">
+        <form
+          onSubmit={onCreate}
+          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+        >
+          <h2 className="font-semibold">Paste Text</h2>
+          <div className="mt-4 space-y-4">
+            <Field label="Name">
+              <input name="name" className="input" required />
+            </Field>
+            <Field label="Text">
+              <textarea
+                name="rawText"
+                rows={7}
+                className="input resize-y"
+                required
+              />
+            </Field>
+            <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+              Create source
+            </button>
+          </div>
+        </form>
+
+        <form
+          onSubmit={onUploadFile}
+          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+        >
+          <h2 className="font-semibold">Upload File</h2>
+          <div className="mt-4 space-y-4">
+            <Field label="Name">
+              <input name="name" className="input" required />
+            </Field>
+            <Field label="File">
+              <input
+                name="file"
+                type="file"
+                className="input"
+                accept=".txt,.md,.pdf,.doc,.docx,.csv,.json"
+                required
+              />
+            </Field>
+            <button className="h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-white">
+              Upload source
+            </button>
+          </div>
+        </form>
+
+        <form
+          onSubmit={onCreateUrl}
+          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+        >
+          <h2 className="font-semibold">Website URL</h2>
+          <div className="mt-4 space-y-4">
+            <Field label="Name">
+              <input name="name" className="input" required />
+            </Field>
+            <Field label="URL">
+              <input
+                name="url"
+                type="url"
+                className="input"
+                placeholder="https://example.com/help"
+                required
+              />
+            </Field>
+            <button className="h-10 rounded-md border border-[#cfd6e2] px-4 text-sm font-medium hover:bg-[#f2f4f7]">
+              Add URL source
+            </button>
+          </div>
+        </form>
+      </div>
       <Card>
         <CardHeader>
           <h2 className="font-semibold">Sources</h2>

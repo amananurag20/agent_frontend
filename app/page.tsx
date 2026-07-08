@@ -113,6 +113,23 @@ export default function Home() {
     return response.json() as Promise<T>;
   }
 
+  async function uploadApi<T>(path: string, body: FormData): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Request failed with ${response.status}`);
+    }
+
+    return response.json() as Promise<T>;
+  }
+
   async function run<T>(task: () => Promise<T>, success?: string) {
     setState({ loading: true, error: null, message: null });
 
@@ -307,6 +324,42 @@ export default function Home() {
           }),
         }),
       "Knowledge source created",
+    );
+
+    if (result) {
+      event.currentTarget.reset();
+      await loadKnowledgeSources();
+    }
+  }
+
+  async function createWebsiteKnowledgeSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        api<KnowledgeSource>("/knowledge/sources", {
+          method: "POST",
+          body: JSON.stringify({
+            type: "website_url",
+            name: String(form.get("name")),
+            url: String(form.get("url")),
+          }),
+        }),
+      "Website source created",
+    );
+
+    if (result) {
+      event.currentTarget.reset();
+      await loadKnowledgeSources();
+    }
+  }
+
+  async function uploadKnowledgeFile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () => uploadApi<KnowledgeSource>("/knowledge/sources/upload", form),
+      "File uploaded",
     );
 
     if (result) {
@@ -521,6 +574,8 @@ export default function Home() {
                   <KnowledgeView
                     sources={knowledgeSources}
                     onCreate={createKnowledgeSource}
+                    onCreateUrl={createWebsiteKnowledgeSource}
+                    onUploadFile={uploadKnowledgeFile}
                     onIngest={ingestKnowledgeSource}
                   />
                 ) : null}
