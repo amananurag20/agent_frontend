@@ -113,6 +113,65 @@ export type AuditLog = {
   createdAt: string;
 };
 
+export type AppointmentService = {
+  id: string;
+  organizationId: string;
+  name: string;
+  description?: string | null;
+  durationMinutes: number;
+  bufferBeforeMinutes: number;
+  bufferAfterMinutes: number;
+  priceCents?: number | null;
+  currency: string;
+  status: "active" | "inactive";
+  metadata: Record<string, unknown>;
+};
+
+export type AppointmentStaff = {
+  id: string;
+  organizationId: string;
+  userId?: string | null;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  timezone: string;
+  status: "active" | "inactive";
+  services: AppointmentService[];
+  metadata: Record<string, unknown>;
+};
+
+export type AppointmentSlot = {
+  staffId: string;
+  staffName: string;
+  startAt: string;
+  endAt: string;
+  timezone: string;
+};
+
+export type AppointmentBooking = {
+  id: string;
+  organizationId: string;
+  serviceId: string;
+  staffId: string;
+  status: "pending" | "confirmed" | "cancelled" | "completed" | "no_show";
+  customerName: string;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  startAt: string;
+  endAt: string;
+  timezone: string;
+  notes?: string | null;
+  cancellationReason?: string | null;
+  metadata: Record<string, unknown>;
+};
+
+export type AppointmentBookingList = {
+  data: AppointmentBooking[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
 export type ApiState = {
   loading: boolean;
   error: string | null;
@@ -129,6 +188,7 @@ export type TabId =
   | "dashboard"
   | "inbox"
   | "knowledge"
+  | "appointments"
   | "widget"
   | "users"
   | "products"
