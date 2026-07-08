@@ -11,7 +11,9 @@ import { LoginPanel } from "@/components/login-panel";
 import { ProductsView } from "@/components/products-view";
 import { HealthPanel, StatusPill, Toolbar, UserPanel } from "@/components/ui";
 import { UsersView } from "@/components/users-view";
+import { VoiceReceptionistView } from "@/components/voice-receptionist-view";
 import { WidgetView } from "@/components/widget-view";
+import { WhatsAppView } from "@/components/whatsapp-view";
 import type {
   AIProvider,
   ApiState,
@@ -30,7 +32,13 @@ import type {
   ProductEntitlement,
   TabId,
   User,
+  VoiceCall,
+  VoiceCallList,
+  VoiceConfig,
   WidgetConfig,
+  WhatsAppConfig,
+  WhatsAppConversation,
+  WhatsAppConversationList,
 } from "@/lib/types";
 
 const API_BASE_URL =
@@ -41,6 +49,8 @@ const navItems: Array<{ id: TabId; label: string }> = [
   { id: "inbox", label: "Inbox" },
   { id: "knowledge", label: "Knowledge" },
   { id: "appointments", label: "Appointments" },
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "voice", label: "Voice" },
   { id: "widget", label: "Widget" },
   { id: "users", label: "Users" },
   { id: "products", label: "Products" },
@@ -85,6 +95,16 @@ export default function Home() {
   const [appointmentBookings, setAppointmentBookings] = useState<
     AppointmentBooking[]
   >([]);
+  const [whatsAppConfigs, setWhatsAppConfigs] = useState<WhatsAppConfig[]>([]);
+  const [whatsAppConversations, setWhatsAppConversations] =
+    useState<WhatsAppConversationList | null>(null);
+  const [selectedWhatsAppConversation, setSelectedWhatsAppConversation] =
+    useState<WhatsAppConversation | null>(null);
+  const [voiceConfigs, setVoiceConfigs] = useState<VoiceConfig[]>([]);
+  const [voiceCalls, setVoiceCalls] = useState<VoiceCallList | null>(null);
+  const [selectedVoiceCall, setSelectedVoiceCall] = useState<VoiceCall | null>(
+    null,
+  );
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [state, setState] = useState<ApiState>({
     loading: false,
@@ -92,6 +112,14 @@ export default function Home() {
     message: null,
   });
   const [filters, setFilters] = useState({
+    status: "waiting_for_agent",
+    search: "",
+  });
+  const [whatsAppFilters, setWhatsAppFilters] = useState({
+    status: "waiting_for_agent",
+    search: "",
+  });
+  const [voiceFilters, setVoiceFilters] = useState({
     status: "waiting_for_agent",
     search: "",
   });
@@ -179,6 +207,10 @@ export default function Home() {
       loadAppointmentServices(),
       loadAppointmentStaff(),
       loadAppointmentBookings(),
+      loadWhatsAppConfigs(),
+      loadWhatsAppConversations(),
+      loadVoiceConfigs(),
+      loadVoiceCalls(),
       loadAuditLogs(),
     ]);
   }
@@ -277,6 +309,76 @@ export default function Home() {
     if (result) setAppointmentBookings(result.data);
   }
 
+  async function loadWhatsAppConfigs() {
+    const result = await run(() =>
+      api<WhatsAppConfig[]>("/whatsapp-assistant/configs"),
+    );
+    if (result) setWhatsAppConfigs(result);
+  }
+
+  async function loadWhatsAppConversations() {
+    const params = new URLSearchParams({
+      limit: "30",
+      ...(whatsAppFilters.status ? { status: whatsAppFilters.status } : {}),
+      ...(whatsAppFilters.search ? { search: whatsAppFilters.search } : {}),
+    });
+    const result = await run(() =>
+      api<WhatsAppConversationList>(
+        `/whatsapp-assistant/conversations?${params}`,
+      ),
+    );
+
+    if (result) {
+      setWhatsAppConversations(result);
+      setSelectedWhatsAppConversation((current) =>
+        current
+          ? (result.data.find((item) => item.id === current.id) ?? current)
+          : (result.data[0] ?? null),
+      );
+    }
+  }
+
+  async function loadWhatsAppConversation(id: string) {
+    const result = await run(() =>
+      api<WhatsAppConversation>(`/whatsapp-assistant/conversations/${id}`),
+    );
+    if (result) setSelectedWhatsAppConversation(result);
+  }
+
+  async function loadVoiceConfigs() {
+    const result = await run(() =>
+      api<VoiceConfig[]>("/voice-receptionist/configs"),
+    );
+    if (result) setVoiceConfigs(result);
+  }
+
+  async function loadVoiceCalls() {
+    const params = new URLSearchParams({
+      limit: "30",
+      ...(voiceFilters.status ? { status: voiceFilters.status } : {}),
+      ...(voiceFilters.search ? { search: voiceFilters.search } : {}),
+    });
+    const result = await run(() =>
+      api<VoiceCallList>(`/voice-receptionist/calls?${params}`),
+    );
+
+    if (result) {
+      setVoiceCalls(result);
+      setSelectedVoiceCall((current) =>
+        current
+          ? (result.data.find((item) => item.id === current.id) ?? current)
+          : (result.data[0] ?? null),
+      );
+    }
+  }
+
+  async function loadVoiceCall(id: string) {
+    const result = await run(() =>
+      api<VoiceCall>(`/voice-receptionist/calls/${id}`),
+    );
+    if (result) setSelectedVoiceCall(result);
+  }
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -305,6 +407,8 @@ export default function Home() {
     setToken(null);
     setUser(null);
     setSelectedConversation(null);
+    setSelectedWhatsAppConversation(null);
+    setSelectedVoiceCall(null);
   }
 
   async function sendAgentReply(event: FormEvent<HTMLFormElement>) {
@@ -686,6 +790,212 @@ export default function Home() {
     await loadAppointmentBookings();
   }
 
+  async function createWhatsAppConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        api<WhatsAppConfig>("/whatsapp-assistant/configs", {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            provider: String(form.get("provider")),
+            phoneNumberId: String(form.get("phoneNumberId")) || undefined,
+            businessAccountId:
+              String(form.get("businessAccountId")) || undefined,
+            accessToken: String(form.get("accessToken")) || undefined,
+            webhookVerifyToken:
+              String(form.get("webhookVerifyToken")) || undefined,
+            defaultLocale: String(form.get("defaultLocale")) || "en",
+          }),
+        }),
+      "WhatsApp config saved",
+    );
+
+    if (result) {
+      event.currentTarget.reset();
+      await loadWhatsAppConfigs();
+    }
+  }
+
+  async function sendWhatsAppReply(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWhatsAppConversation) return;
+
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        api<{ conversation: WhatsAppConversation }>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/agent-messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({ content: String(form.get("reply")) }),
+          },
+        ),
+      "WhatsApp reply sent",
+    );
+
+    if (result) {
+      event.currentTarget.reset();
+      setSelectedWhatsAppConversation(result.conversation);
+      await loadWhatsAppConversations();
+    }
+  }
+
+  async function requestWhatsAppHandoff() {
+    if (!selectedWhatsAppConversation) return;
+
+    const result = await run(
+      () =>
+        api<WhatsAppConversation>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/handoff`,
+          { method: "PATCH" },
+        ),
+      "WhatsApp handoff requested",
+    );
+
+    if (result) {
+      setSelectedWhatsAppConversation(result);
+      await loadWhatsAppConversations();
+    }
+  }
+
+  async function updateWhatsAppStatus(status: WhatsAppConversation["status"]) {
+    if (!selectedWhatsAppConversation) return;
+
+    const result = await run(
+      () =>
+        api<WhatsAppConversation>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/status`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ status }),
+          },
+        ),
+      "WhatsApp status updated",
+    );
+
+    if (result) {
+      setSelectedWhatsAppConversation(result);
+      await loadWhatsAppConversations();
+    }
+  }
+
+  async function createVoiceConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        api<VoiceConfig>("/voice-receptionist/configs", {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            provider: String(form.get("provider")),
+            phoneNumber: String(form.get("phoneNumber")) || undefined,
+            sipDomain: String(form.get("sipDomain")) || undefined,
+            apiKey: String(form.get("apiKey")) || undefined,
+            webhookVerifyToken:
+              String(form.get("webhookVerifyToken")) || undefined,
+            sttProvider: String(form.get("sttProvider")) || undefined,
+            ttsVoice: String(form.get("ttsVoice")) || undefined,
+            transferPhoneNumber:
+              String(form.get("transferPhoneNumber")) || undefined,
+            voicemailEnabled: form.get("voicemailEnabled") === "on",
+          }),
+        }),
+      "Voice config saved",
+    );
+
+    if (result) {
+      event.currentTarget.reset();
+      await loadVoiceConfigs();
+    }
+  }
+
+  async function sendVoiceMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedVoiceCall) return;
+
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        api<{ call: VoiceCall }>(
+          `/voice-receptionist/calls/${selectedVoiceCall.id}/agent-messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({ content: String(form.get("reply")) }),
+          },
+        ),
+      "Voice message queued",
+    );
+
+    if (result) {
+      event.currentTarget.reset();
+      setSelectedVoiceCall(result.call);
+      await loadVoiceCalls();
+    }
+  }
+
+  async function requestVoiceHandoff() {
+    if (!selectedVoiceCall) return;
+
+    const result = await run(
+      () =>
+        api<VoiceCall>(
+          `/voice-receptionist/calls/${selectedVoiceCall.id}/handoff`,
+          { method: "PATCH" },
+        ),
+      "Voice handoff requested",
+    );
+
+    if (result) {
+      setSelectedVoiceCall(result);
+      await loadVoiceCalls();
+    }
+  }
+
+  async function routeVoiceCall(action: "transfer" | "voicemail" | "close") {
+    if (!selectedVoiceCall) return;
+
+    const result = await run(
+      () =>
+        api<{ call: VoiceCall }>(
+          `/voice-receptionist/calls/${selectedVoiceCall.id}/route`,
+          {
+            method: "POST",
+            body: JSON.stringify({ action }),
+          },
+        ),
+      "Voice route queued",
+    );
+
+    if (result) {
+      setSelectedVoiceCall(result.call);
+      await loadVoiceCalls();
+    }
+  }
+
+  async function updateVoiceStatus(status: VoiceCall["status"]) {
+    if (!selectedVoiceCall) return;
+
+    const result = await run(
+      () =>
+        api<VoiceCall>(
+          `/voice-receptionist/calls/${selectedVoiceCall.id}/status`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ status }),
+          },
+        ),
+      "Voice status updated",
+    );
+
+    if (result) {
+      setSelectedVoiceCall(result);
+      await loadVoiceCalls();
+    }
+  }
+
   function toIsoDateTime(value: FormDataEntryValue | null) {
     return new Date(String(value)).toISOString();
   }
@@ -809,6 +1119,37 @@ export default function Home() {
                     onCreateBooking={createAppointmentBooking}
                     onRescheduleBooking={rescheduleAppointmentBooking}
                     onCancelBooking={cancelAppointmentBooking}
+                  />
+                ) : null}
+                {activeTab === "whatsapp" ? (
+                  <WhatsAppView
+                    configs={whatsAppConfigs}
+                    conversations={whatsAppConversations}
+                    selectedConversation={selectedWhatsAppConversation}
+                    filters={whatsAppFilters}
+                    setFilters={setWhatsAppFilters}
+                    onCreateConfig={createWhatsAppConfig}
+                    onLoadConversations={loadWhatsAppConversations}
+                    onSelectConversation={loadWhatsAppConversation}
+                    onSendReply={sendWhatsAppReply}
+                    onRequestHandoff={requestWhatsAppHandoff}
+                    onUpdateStatus={updateWhatsAppStatus}
+                  />
+                ) : null}
+                {activeTab === "voice" ? (
+                  <VoiceReceptionistView
+                    configs={voiceConfigs}
+                    calls={voiceCalls}
+                    selectedCall={selectedVoiceCall}
+                    filters={voiceFilters}
+                    setFilters={setVoiceFilters}
+                    onCreateConfig={createVoiceConfig}
+                    onLoadCalls={loadVoiceCalls}
+                    onSelectCall={loadVoiceCall}
+                    onSendMessage={sendVoiceMessage}
+                    onRequestHandoff={requestVoiceHandoff}
+                    onRouteCall={routeVoiceCall}
+                    onUpdateStatus={updateVoiceStatus}
                   />
                 ) : null}
                 {activeTab === "widget" ? (

@@ -172,6 +172,142 @@ export type AppointmentBookingList = {
   limit: number;
 };
 
+export type WhatsAppConfig = {
+  id: string;
+  organizationId: string;
+  provider: "meta" | "twilio" | "custom";
+  status: "active" | "inactive";
+  name: string;
+  phoneNumberId?: string | null;
+  businessAccountId?: string | null;
+  hasAccessToken: boolean;
+  hasWebhookVerifyToken: boolean;
+  hasAppSecret: boolean;
+  defaultLocale: string;
+  settings: Record<string, unknown>;
+};
+
+export type WhatsAppMessage = {
+  id: string;
+  conversationId: string;
+  direction: "inbound" | "outbound";
+  role: "contact" | "assistant" | "agent" | "system";
+  type:
+    | "text"
+    | "image"
+    | "audio"
+    | "video"
+    | "document"
+    | "sticker"
+    | "location"
+    | "unknown";
+  providerMessageId?: string | null;
+  content?: string | null;
+  mediaUrl?: string | null;
+  mediaMimeType?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type WhatsAppConversation = {
+  id: string;
+  organizationId: string;
+  configId: string;
+  status: "open" | "waiting_for_agent" | "closed";
+  contactWaId: string;
+  contactName?: string | null;
+  contactPhone?: string | null;
+  locale: string;
+  assignedAgentId?: string | null;
+  sessionExpiresAt?: string | null;
+  lastMessageAt: string;
+  metadata: Record<string, unknown>;
+  messages: WhatsAppMessage[];
+};
+
+export type WhatsAppConversationList = {
+  data: WhatsAppConversation[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type VoiceConfig = {
+  id: string;
+  organizationId: string;
+  provider: "twilio" | "sip" | "custom";
+  status: "active" | "inactive";
+  name: string;
+  phoneNumber?: string | null;
+  sipDomain?: string | null;
+  hasWebhookVerifyToken: boolean;
+  hasApiKey: boolean;
+  sttProvider?: string | null;
+  sttModel?: string | null;
+  ttsProvider?: string | null;
+  ttsVoice?: string | null;
+  defaultLocale: string;
+  transferPhoneNumber?: string | null;
+  voicemailEnabled: boolean;
+  settings: Record<string, unknown>;
+};
+
+export type VoiceCallEvent = {
+  id: string;
+  callId: string;
+  type:
+    | "call_started"
+    | "stt_partial"
+    | "transcript"
+    | "assistant_response"
+    | "tts_started"
+    | "barge_in"
+    | "route_decision"
+    | "transfer_requested"
+    | "voicemail"
+    | "call_ended"
+    | "system";
+  role: string;
+  content?: string | null;
+  confidence?: number | null;
+  audioUrl?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type VoiceCall = {
+  id: string;
+  organizationId: string;
+  configId: string;
+  status:
+    | "ringing"
+    | "in_progress"
+    | "waiting_for_agent"
+    | "transferred"
+    | "voicemail"
+    | "completed"
+    | "failed";
+  providerCallId?: string | null;
+  fromNumber?: string | null;
+  toNumber?: string | null;
+  callerName?: string | null;
+  locale: string;
+  assignedAgentId?: string | null;
+  startedAt: string;
+  endedAt?: string | null;
+  lastEventAt: string;
+  summary?: string | null;
+  metadata: Record<string, unknown>;
+  events: VoiceCallEvent[];
+};
+
+export type VoiceCallList = {
+  data: VoiceCall[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
 export type ApiState = {
   loading: boolean;
   error: string | null;
@@ -189,6 +325,8 @@ export type TabId =
   | "inbox"
   | "knowledge"
   | "appointments"
+  | "whatsapp"
+  | "voice"
   | "widget"
   | "users"
   | "products"
