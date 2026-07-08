@@ -28,6 +28,7 @@ import type {
   ConversationList,
   Health,
   KnowledgeSource,
+  ObservabilitySummary,
   Organization,
   ProductEntitlement,
   TabId,
@@ -70,6 +71,8 @@ export default function Home() {
   });
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [health, setHealth] = useState<Health | null>(null);
+  const [observability, setObservability] =
+    useState<ObservabilitySummary | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<ProductEntitlement[]>([]);
@@ -197,6 +200,7 @@ export default function Home() {
   async function loadAll() {
     await Promise.all([
       loadHealth(),
+      loadObservability(),
       loadOrganization(),
       loadUsers(),
       loadProducts(),
@@ -218,6 +222,13 @@ export default function Home() {
   async function loadHealth() {
     const result = await run(() => api<Health>("/health"));
     if (result) setHealth(result);
+  }
+
+  async function loadObservability() {
+    const result = await run(() =>
+      api<ObservabilitySummary>("/observability/summary"),
+    );
+    if (result) setObservability(result);
   }
 
   async function loadOrganization() {
@@ -1078,6 +1089,7 @@ export default function Home() {
                 {activeTab === "dashboard" ? (
                   <DashboardView
                     health={health}
+                    observability={observability}
                     organization={organization}
                     users={users}
                     products={products}

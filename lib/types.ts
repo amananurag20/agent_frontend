@@ -22,6 +22,21 @@ export type Health = {
   storage?: { status: string; provider: string; bucketConfigured: boolean };
 };
 
+export type ObservabilitySummary = {
+  generatedAt: string;
+  process: {
+    uptimeSeconds: number;
+    memoryRssMb: number;
+    memoryHeapUsedMb: number;
+  };
+  audit: { events24h: number };
+  customerChat: { open: number; waitingForAgent: number };
+  whatsappAssistant: { open: number; waitingForAgent: number };
+  voiceReceptionist: { inProgress: number; waitingForAgent: number };
+  appointmentBooking: { upcoming: number; cancelled24h: number };
+  knowledge: { readySources: number; failedSources: number };
+};
+
 export type Organization = {
   id: string;
   name: string;

@@ -1,6 +1,7 @@
 import type {
   AIProvider,
   Health,
+  ObservabilitySummary,
   Organization,
   ProductEntitlement,
   User,
@@ -13,8 +14,10 @@ export function DashboardView({
   users,
   products,
   aiProviders,
+  observability,
 }: {
   health: Health | null;
+  observability: ObservabilitySummary | null;
   organization: Organization | null;
   users: User[];
   products: ProductEntitlement[];
@@ -31,6 +34,24 @@ export function DashboardView({
         <SummaryCard label="AI providers" value={aiProviders.length} />
         <SummaryCard label="Org plan" value={organization?.plan ?? "none"} />
       </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <SummaryCard
+          label="Chat waiting"
+          value={observability?.customerChat.waitingForAgent ?? 0}
+        />
+        <SummaryCard
+          label="WhatsApp waiting"
+          value={observability?.whatsappAssistant.waitingForAgent ?? 0}
+        />
+        <SummaryCard
+          label="Voice live"
+          value={observability?.voiceReceptionist.inProgress ?? 0}
+        />
+        <SummaryCard
+          label="Upcoming bookings"
+          value={observability?.appointmentBooking.upcoming ?? 0}
+        />
+      </div>
       <Card>
         <CardHeader>
           <h2 className="font-semibold">Organization</h2>
@@ -40,6 +61,37 @@ export function DashboardView({
           <Metric label="Status" value={organization?.status ?? "loading"} />
           <Metric label="Deployment" value={organization?.deploymentMode ?? "loading"} />
           <Metric label="API" value={health?.status ?? "checking"} />
+        </div>
+      </Card>
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold">Operations</h2>
+        </CardHeader>
+        <div className="grid gap-4 p-4 md:grid-cols-3">
+          <NumberMetric
+            label="Audit events 24h"
+            value={observability?.audit.events24h ?? 0}
+          />
+          <NumberMetric
+            label="Knowledge ready"
+            value={observability?.knowledge.readySources ?? 0}
+          />
+          <NumberMetric
+            label="Knowledge failed"
+            value={observability?.knowledge.failedSources ?? 0}
+          />
+          <NumberMetric
+            label="Memory RSS"
+            value={`${observability?.process.memoryRssMb ?? 0} MB`}
+          />
+          <NumberMetric
+            label="Heap used"
+            value={`${observability?.process.memoryHeapUsedMb ?? 0} MB`}
+          />
+          <NumberMetric
+            label="Uptime"
+            value={`${observability?.process.uptimeSeconds ?? 0}s`}
+          />
         </div>
       </Card>
       <Card>
@@ -70,6 +122,21 @@ function SummaryCard({ label, value }: { label: string; value: number | string }
     <div className="rounded-lg border border-[#d8dde6] bg-white p-4">
       <p className="text-xs font-medium uppercase text-[#667085]">{label}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function NumberMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) {
+  return (
+    <div className="rounded-md border border-[#eef2f6] p-3">
+      <p className="text-xs font-medium uppercase text-[#667085]">{label}</p>
+      <p className="mt-2 text-lg font-semibold">{value}</p>
     </div>
   );
 }
