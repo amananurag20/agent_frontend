@@ -1,0 +1,62 @@
+import type { AIProvider, FormHandler } from "@/lib/types";
+import { Card, CardHeader, Field, StatusPill } from "./ui";
+
+export function AIProvidersView({
+  providers,
+  onCreate,
+}: {
+  providers: AIProvider[];
+  onCreate: FormHandler;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <form onSubmit={onCreate} className="rounded-lg border border-[#d8dde6] bg-white p-4">
+        <h2 className="font-semibold">Add AI Provider</h2>
+        <div className="mt-4 space-y-4">
+          <Field label="Provider">
+            <select name="provider" className="input" defaultValue="openai">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="local">Local</option>
+              <option value="custom">Custom</option>
+            </select>
+          </Field>
+          <Field label="Name">
+            <input name="name" className="input" defaultValue="Default OpenAI" required />
+          </Field>
+          <Field label="API key">
+            <input name="apiKey" type="password" className="input" />
+          </Field>
+          <Field label="Chat model">
+            <input name="chatModel" className="input" defaultValue="gpt-4.1-mini" />
+          </Field>
+          <Field label="Embedding model">
+            <input name="embeddingModel" className="input" defaultValue="text-embedding-3-small" />
+          </Field>
+          <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+            Save provider
+          </button>
+        </div>
+      </form>
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold">Providers</h2>
+        </CardHeader>
+        <div className="divide-y divide-[#eef2f6]">
+          {providers.map((provider) => (
+            <div key={provider.id} className="flex items-center justify-between gap-3 p-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{provider.name}</p>
+                <p className="text-xs text-[#667085]">
+                  {provider.provider} · {provider.chatModel ?? "no chat model"} · key{" "}
+                  {provider.hasApiKey ? "set" : "missing"}
+                </p>
+              </div>
+              <StatusPill status={provider.status} />
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
