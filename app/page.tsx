@@ -620,6 +620,7 @@ export default function Home() {
   async function createAIProvider(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const adapter = String(form.get("adapter") || "");
     await run(
       () =>
         api<AIProvider>("/ai/providers", {
@@ -627,9 +628,11 @@ export default function Home() {
           body: JSON.stringify({
             provider: String(form.get("provider")),
             name: String(form.get("name")),
+            baseUrl: String(form.get("baseUrl")) || undefined,
             apiKey: String(form.get("apiKey")) || undefined,
             chatModel: String(form.get("chatModel")) || undefined,
             embeddingModel: String(form.get("embeddingModel")) || undefined,
+            settings: adapter ? { adapter } : undefined,
           }),
         }),
       "AI provider saved",

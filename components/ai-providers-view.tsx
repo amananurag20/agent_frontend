@@ -21,8 +21,24 @@ export function AIProvidersView({
               <option value="custom">Custom</option>
             </select>
           </Field>
+          <Field label="Adapter">
+            <select name="adapter" className="input" defaultValue="openai">
+              <option value="openai">OpenAI</option>
+              <option value="openai_compatible">OpenAI-compatible</option>
+              <option value="mistral">Mistral</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="ollama">Ollama / local</option>
+            </select>
+          </Field>
           <Field label="Name">
             <input name="name" className="input" defaultValue="Default OpenAI" required />
+          </Field>
+          <Field label="Base URL">
+            <input
+              name="baseUrl"
+              className="input"
+              placeholder="https://api.openai.com/v1"
+            />
           </Field>
           <Field label="API key">
             <input name="apiKey" type="password" className="input" />
@@ -50,6 +66,10 @@ export function AIProvidersView({
                 <p className="text-xs text-[#667085]">
                   {provider.provider} · {provider.chatModel ?? "no chat model"} · key{" "}
                   {provider.hasApiKey ? "set" : "missing"}
+                </p>
+                <p className="mt-1 text-xs text-[#98a2b3]">
+                  {(provider.settings?.adapter as string | undefined) ?? "auto"} ·{" "}
+                  {provider.baseUrl ?? "default endpoint"}
                 </p>
               </div>
               <StatusPill status={provider.status} />
