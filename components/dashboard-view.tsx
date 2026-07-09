@@ -81,6 +81,22 @@ export function DashboardView({
             value={observability?.knowledge.failedSources ?? 0}
           />
           <NumberMetric
+            label="Active sessions"
+            value={observability?.auth?.activeSessions ?? 0}
+          />
+          <NumberMetric
+            label="Pending invites"
+            value={observability?.auth?.pendingInvites ?? 0}
+          />
+          <NumberMetric
+            label="AI provider errors"
+            value={observability?.ai?.providerErrors24h ?? 0}
+          />
+          <NumberMetric
+            label="AI fallbacks"
+            value={observability?.ai?.fallbacks24h ?? 0}
+          />
+          <NumberMetric
             label="Memory RSS"
             value={`${observability?.process.memoryRssMb ?? 0} MB`}
           />

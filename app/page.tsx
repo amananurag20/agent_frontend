@@ -32,9 +32,11 @@ import type {
   ConversationList,
   CustomerChatSendMessageResponse,
   Health,
+  InviteResponse,
   KnowledgeSource,
   ObservabilitySummary,
   Organization,
+  PasswordResetRequestResponse,
   ProductEntitlement,
   PublicWidgetConversationCreated,
   TabId,
@@ -69,6 +71,10 @@ export default function Home() {
   const [token, setToken] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return window.localStorage.getItem("agentcore_token");
+  });
+  const [refreshToken, setRefreshToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("agentcore_refresh_token");
   });
   const [user, setUser] = useState<User | null>(() => {
     if (typeof window === "undefined") return null;
@@ -169,6 +175,26 @@ export default function Home() {
       validateStatus: () => true,
     });
 
+    if (response.status === 401 && !path.startsWith("/auth/")) {
+      const refreshed = await refreshSession();
+
+      if (refreshed) {
+        const retry = await axios.request<T>({
+          url: `${API_BASE_URL}${path}`,
+          method: (init?.method ?? "GET") as AxiosRequestConfig["method"],
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${refreshed.accessToken}`,
+            ...normalizeHeaders(init?.headers),
+          },
+          data: parseRequestBody(init?.body),
+          validateStatus: () => true,
+        });
+
+        return handleAxiosResponse(retry);
+      }
+    }
+
     return handleAxiosResponse(response);
   }
 
@@ -198,7 +224,54 @@ export default function Home() {
       validateStatus: () => true,
     });
 
+    if (response.status === 401) {
+      const refreshed = await refreshSession();
+
+      if (refreshed) {
+        const retry = await axios.request<T>({
+          url: `${API_BASE_URL}${path}`,
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${refreshed.accessToken}`,
+          },
+          data: body,
+          validateStatus: () => true,
+        });
+
+        return handleAxiosResponse(retry);
+      }
+    }
+
     return handleAxiosResponse(response);
+  }
+
+  async function refreshSession(): Promise<AuthResponse | null> {
+    const storedRefreshToken =
+      refreshToken ??
+      (typeof window !== "undefined"
+        ? window.localStorage.getItem("agentcore_refresh_token")
+        : null);
+
+    if (!storedRefreshToken) {
+      clearSession();
+      return null;
+    }
+
+    const response = await axios.request<AuthResponse>({
+      url: `${API_BASE_URL}/auth/refresh`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: { refreshToken: storedRefreshToken },
+      validateStatus: () => true,
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      clearSession();
+      return null;
+    }
+
+    persistSession(response.data);
+    return response.data;
   }
 
   function handleAxiosResponse<T>(response: AxiosResponse<T>): T {
@@ -492,21 +565,114 @@ export default function Home() {
     );
 
     if (result) {
-      setToken(result.accessToken);
-      setUser(result.user);
-      window.localStorage.setItem("agentcore_token", result.accessToken);
-      window.localStorage.setItem("agentcore_user", JSON.stringify(result.user));
+      persistSession(result);
     }
   }
 
-  function handleLogout() {
+  async function requestPasswordReset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(() =>
+      publicApi<PasswordResetRequestResponse>("/auth/password-reset/request", {
+        method: "POST",
+        body: JSON.stringify({ email: String(form.get("email")) }),
+      }),
+    );
+
+    if (result) {
+      setState({
+        loading: false,
+        error: null,
+        message: result.devResetToken
+          ? `Reset token: ${result.devResetToken}`
+          : "Password reset requested",
+      });
+    }
+  }
+
+  async function resetPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () =>
+        publicApi<{ reset: boolean }>("/auth/password-reset/confirm", {
+          method: "POST",
+          body: JSON.stringify({
+            token: String(form.get("token")).trim(),
+            password: String(form.get("password")),
+          }),
+        }),
+      "Password reset. You can sign in now.",
+    );
+
+    if (result) formElement.reset();
+  }
+
+  async function acceptInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        publicApi<AuthResponse>("/auth/invites/accept", {
+          method: "POST",
+          body: JSON.stringify({
+            token: String(form.get("token")).trim(),
+            name: String(form.get("name")),
+            password: String(form.get("password")),
+          }),
+        }),
+      "Invite accepted",
+    );
+
+    if (result) {
+      persistSession(result);
+    }
+  }
+
+  async function handleLogout() {
+    const storedRefreshToken =
+      refreshToken ?? window.localStorage.getItem("agentcore_refresh_token");
+    if (storedRefreshToken && token) {
+      await run(() =>
+        api<{ loggedOut: boolean }>("/auth/logout", {
+          method: "POST",
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+        }),
+      );
+    }
     clearSession();
+  }
+
+  async function logoutAllDevices() {
+    await run(
+      () =>
+        api<{ loggedOut: boolean }>("/auth/logout-all", {
+          method: "POST",
+        }),
+      "Signed out all devices",
+    );
+    clearSession();
+  }
+
+  function persistSession(auth: AuthResponse) {
+    setToken(auth.accessToken);
+    setRefreshToken(auth.refreshToken);
+    setUser(auth.user);
+    window.localStorage.setItem("agentcore_token", auth.accessToken);
+    window.localStorage.setItem(
+      "agentcore_refresh_token",
+      auth.refreshToken,
+    );
+    window.localStorage.setItem("agentcore_user", JSON.stringify(auth.user));
   }
 
   function clearSession() {
     window.localStorage.removeItem("agentcore_token");
+    window.localStorage.removeItem("agentcore_refresh_token");
     window.localStorage.removeItem("agentcore_user");
     setToken(null);
+    setRefreshToken(null);
     setUser(null);
     setSelectedConversation(null);
     setSelectedWhatsAppConversation(null);
@@ -742,6 +908,35 @@ export default function Home() {
     if (result) {
       formElement.reset();
       await loadUsers();
+    }
+  }
+
+  async function createInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const name = String(form.get("name")).trim();
+    const result = await run(() =>
+      api<InviteResponse>("/auth/invites", {
+        method: "POST",
+        body: JSON.stringify({
+          name: name || undefined,
+          email: String(form.get("email")),
+          roles: [String(form.get("role"))],
+        }),
+      }),
+    );
+
+    if (result) {
+      formElement.reset();
+      await loadUsers();
+      setState({
+        loading: false,
+        error: null,
+        message: result.devInviteToken
+          ? `Invite token: ${result.devInviteToken}`
+          : `Invite created for ${result.email}`,
+      });
     }
   }
 
@@ -1256,7 +1451,13 @@ export default function Home() {
           </div>
 
           {!user ? (
-            <LoginPanel onSubmit={handleLogin} state={state} />
+            <LoginPanel
+              onSubmit={handleLogin}
+              onRequestPasswordReset={requestPasswordReset}
+              onResetPassword={resetPassword}
+              onAcceptInvite={acceptInvite}
+              state={state}
+            />
           ) : (
             <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 md:p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
               <section className="min-w-0">
@@ -1351,6 +1552,7 @@ export default function Home() {
                   <UsersView
                     users={users}
                     onCreate={createUser}
+                    onInvite={createInvite}
                     onToggleStatus={toggleUserStatus}
                   />
                 ) : null}
@@ -1371,7 +1573,7 @@ export default function Home() {
 
               <aside className="space-y-4">
                 <HealthPanel health={health} />
-                <UserPanel user={user} />
+                <UserPanel user={user} onLogoutAll={logoutAllDevices} />
               </aside>
             </div>
           )}

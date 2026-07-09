@@ -11,7 +11,24 @@ export type User = {
 
 export type AuthResponse = {
   accessToken: string;
+  refreshToken: string;
+  tokenType: "Bearer";
+  expiresIn: string;
   user: User;
+};
+
+export type InviteResponse = {
+  invited: boolean;
+  email: string;
+  userId: string;
+  expiresAt: string;
+  devInviteToken?: string;
+};
+
+export type PasswordResetRequestResponse = {
+  requested: boolean;
+  expiresAt?: string;
+  devResetToken?: string;
 };
 
 export type Health = {
@@ -30,6 +47,16 @@ export type ObservabilitySummary = {
     memoryHeapUsedMb: number;
   };
   audit: { events24h: number };
+  auth?: {
+    activeSessions: number;
+    pendingInvites: number;
+    passwordResetTokens24h: number;
+  };
+  ai?: {
+    assistantMessagesSampled24h: number;
+    fallbacks24h: number;
+    providerErrors24h: number;
+  };
   customerChat: { open: number; waitingForAgent: number };
   whatsappAssistant: { open: number; waitingForAgent: number };
   voiceReceptionist: { inProgress: number; waitingForAgent: number };

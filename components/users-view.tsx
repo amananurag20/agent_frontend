@@ -4,38 +4,75 @@ import { Card, CardHeader, Field, StatusPill } from "./ui";
 export function UsersView({
   users,
   onCreate,
+  onInvite,
   onToggleStatus,
 }: {
   users: User[];
   onCreate: FormHandler;
+  onInvite: FormHandler;
   onToggleStatus: (user: User) => void;
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <form onSubmit={onCreate} className="rounded-lg border border-[#d8dde6] bg-white p-4">
-        <h2 className="font-semibold">Create User</h2>
-        <div className="mt-4 space-y-4">
-          <Field label="Name">
-            <input name="name" className="input" required />
-          </Field>
-          <Field label="Email">
-            <input name="email" type="email" className="input" required />
-          </Field>
-          <Field label="Password">
-            <input name="password" type="password" className="input" required />
-          </Field>
-          <Field label="Role">
-            <select name="role" className="input" defaultValue="agent">
-              <option value="agent">Agent</option>
-              <option value="org_admin">Org Admin</option>
-              <option value="user">User</option>
-            </select>
-          </Field>
-          <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
-            Create user
-          </button>
-        </div>
-      </form>
+      <div className="space-y-4">
+        <form
+          onSubmit={onInvite}
+          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+        >
+          <h2 className="font-semibold">Invite User</h2>
+          <div className="mt-4 space-y-4">
+            <Field label="Name">
+              <input name="name" className="input" />
+            </Field>
+            <Field label="Email">
+              <input name="email" type="email" className="input" required />
+            </Field>
+            <Field label="Role">
+              <select name="role" className="input" defaultValue="agent">
+                <option value="agent">Agent</option>
+                <option value="org_admin">Org Admin</option>
+                <option value="user">User</option>
+              </select>
+            </Field>
+            <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+              Create invite
+            </button>
+          </div>
+        </form>
+
+        <form
+          onSubmit={onCreate}
+          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+        >
+          <h2 className="font-semibold">Create User Directly</h2>
+          <div className="mt-4 space-y-4">
+            <Field label="Name">
+              <input name="name" className="input" required />
+            </Field>
+            <Field label="Email">
+              <input name="email" type="email" className="input" required />
+            </Field>
+            <Field label="Password">
+              <input
+                name="password"
+                type="password"
+                className="input"
+                required
+              />
+            </Field>
+            <Field label="Role">
+              <select name="role" className="input" defaultValue="agent">
+                <option value="agent">Agent</option>
+                <option value="org_admin">Org Admin</option>
+                <option value="user">User</option>
+              </select>
+            </Field>
+            <button className="h-10 rounded-md border border-[#cfd6e2] px-4 text-sm font-medium hover:bg-[#f2f4f7]">
+              Create user
+            </button>
+          </div>
+        </form>
+      </div>
       <Card>
         <CardHeader>
           <h2 className="font-semibold">Users</h2>

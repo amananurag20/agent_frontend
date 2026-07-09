@@ -93,12 +93,26 @@ export function HealthPanel({ health }: { health: Health | null }) {
   );
 }
 
-export function UserPanel({ user }: { user: User }) {
+export function UserPanel({
+  user,
+  onLogoutAll,
+}: {
+  user: User;
+  onLogoutAll?: () => void;
+}) {
   return (
     <div className="rounded-lg border border-[#d8dde6] bg-white p-4">
       <h2 className="font-semibold">Session</h2>
       <p className="mt-3 truncate text-sm">{user.email}</p>
       <p className="mt-1 text-xs text-[#667085]">{user.roles.join(", ")}</p>
+      {onLogoutAll ? (
+        <button
+          onClick={onLogoutAll}
+          className="mt-4 h-9 w-full rounded-md border border-[#cfd6e2] text-sm hover:bg-[#f2f4f7]"
+        >
+          Sign out all devices
+        </button>
+      ) : null}
     </div>
   );
 }
