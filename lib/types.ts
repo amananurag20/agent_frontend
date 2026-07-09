@@ -110,6 +110,17 @@ export type WidgetConfig = {
   settings: Record<string, unknown>;
 };
 
+export type PublicWidgetConversationCreated = {
+  conversation: Conversation;
+  visitorToken: string;
+};
+
+export type CustomerChatSendMessageResponse = {
+  conversation: Conversation;
+  visitorMessage: Message;
+  assistantMessage: Message;
+};
+
 export type KnowledgeSource = {
   id: string;
   name: string;

@@ -30,11 +30,13 @@ import type {
   AuthResponse,
   Conversation,
   ConversationList,
+  CustomerChatSendMessageResponse,
   Health,
   KnowledgeSource,
   ObservabilitySummary,
   Organization,
   ProductEntitlement,
+  PublicWidgetConversationCreated,
   TabId,
   User,
   VoiceCall,
@@ -87,6 +89,11 @@ export default function Home() {
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | null>(null);
+  const [widgetTestConversation, setWidgetTestConversation] =
+    useState<Conversation | null>(null);
+  const [widgetVisitorToken, setWidgetVisitorToken] = useState<string | null>(
+    null,
+  );
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>(
     [],
   );
@@ -156,6 +163,21 @@ export default function Home() {
       method: (init?.method ?? "GET") as AxiosRequestConfig["method"],
       headers: {
         ...authHeaders,
+        ...normalizeHeaders(init?.headers),
+      },
+      data: parseRequestBody(init?.body),
+      validateStatus: () => true,
+    });
+
+    return handleAxiosResponse(response);
+  }
+
+  async function publicApi<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await axios.request<T>({
+      url: `${API_BASE_URL}${path}`,
+      method: (init?.method ?? "GET") as AxiosRequestConfig["method"],
+      headers: {
+        "Content-Type": "application/json",
         ...normalizeHeaders(init?.headers),
       },
       data: parseRequestBody(init?.body),
@@ -631,6 +653,72 @@ export default function Home() {
     );
 
     if (result) setWidgetConfig(result);
+  }
+
+  async function sendWidgetTestMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!widgetConfig?.widgetKey) return;
+
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const content = String(form.get("message")).trim();
+
+    if (!content) return;
+
+    const result = await run(async () => {
+      let conversation = widgetTestConversation;
+      let visitorToken = widgetVisitorToken;
+
+      if (!conversation || !visitorToken) {
+        const created = await publicApi<PublicWidgetConversationCreated>(
+          `/customer-chat/widget/${widgetConfig.widgetKey}/conversations`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              visitorName: "Test Visitor",
+              visitorId: "console-test-visitor",
+              metadata: { source: "console_widget_test" },
+            }),
+          },
+        );
+
+        conversation = created.conversation;
+        visitorToken = created.visitorToken;
+        setWidgetVisitorToken(visitorToken);
+      }
+
+      const sent = await publicApi<CustomerChatSendMessageResponse>(
+        `/customer-chat/widget/conversations/${conversation.id}/messages`,
+        {
+          method: "POST",
+          headers: { "x-visitor-token": visitorToken },
+          body: JSON.stringify({ content }),
+        },
+      );
+
+      return sent.conversation;
+    }, "Widget test message sent");
+
+    if (result) {
+      formElement.reset();
+      setWidgetTestConversation(result);
+      setSelectedConversation(result);
+      setConversations((current) => {
+        const existing = current?.data ?? [];
+        const data = [
+          result,
+          ...existing.filter((conversation) => conversation.id !== result.id),
+        ];
+
+        return {
+          data,
+          total: Math.max(current?.total ?? 0, data.length),
+          page: current?.page ?? 1,
+          limit: current?.limit ?? 30,
+        };
+      });
+      setFilters({ status: "", search: "" });
+    }
   }
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
@@ -1255,6 +1343,8 @@ export default function Home() {
                   <WidgetView
                     config={widgetConfig}
                     onSubmit={updateWidgetConfig}
+                    testConversation={widgetTestConversation}
+                    onSendTestMessage={sendWidgetTestMessage}
                   />
                 ) : null}
                 {activeTab === "users" ? (
