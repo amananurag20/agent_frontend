@@ -1,5 +1,9 @@
 "use client";
 
+import axios, {
+  type AxiosRequestConfig,
+  type AxiosResponse,
+} from "axios";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AIProvidersView } from "@/components/ai-providers-view";
 import { AppointmentsView } from "@/components/appointments-view";
@@ -147,37 +151,98 @@ export default function Home() {
   }, [token]);
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-      ...init,
+    const response = await axios.request<T>({
+      url: `${API_BASE_URL}${path}`,
+      method: (init?.method ?? "GET") as AxiosRequestConfig["method"],
       headers: {
         ...authHeaders,
-        ...(init?.headers ?? {}),
+        ...normalizeHeaders(init?.headers),
       },
+      data: parseRequestBody(init?.body),
+      validateStatus: () => true,
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Request failed with ${response.status}`);
-    }
-
-    return response.json() as Promise<T>;
+    return handleAxiosResponse(response);
   }
 
   async function uploadApi<T>(path: string, body: FormData): Promise<T> {
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await axios.request<T>({
+      url: `${API_BASE_URL}${path}`,
       method: "POST",
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body,
+      data: body,
+      validateStatus: () => true,
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Request failed with ${response.status}`);
+    return handleAxiosResponse(response);
+  }
+
+  function handleAxiosResponse<T>(response: AxiosResponse<T>): T {
+    if (response.status === 401) {
+      clearSession();
+      throw new Error("Session expired. Please sign in again.");
     }
 
-    return response.json() as Promise<T>;
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(
+        getApiErrorMessage(response.data) ||
+          `Request failed with ${response.status}`,
+      );
+    }
+
+    return response.data;
+  }
+
+  function parseRequestBody(body?: BodyInit | null): unknown {
+    if (!body) return undefined;
+
+    if (typeof body !== "string") {
+      return body;
+    }
+
+    try {
+      return JSON.parse(body) as unknown;
+    } catch {
+      return body;
+    }
+  }
+
+  function normalizeHeaders(headers?: HeadersInit): Record<string, string> {
+    if (!headers) return {};
+
+    if (headers instanceof Headers) {
+      return Object.fromEntries(headers.entries());
+    }
+
+    if (Array.isArray(headers)) {
+      return Object.fromEntries(headers);
+    }
+
+    return headers;
+  }
+
+  function getApiErrorMessage(data: unknown): string | null {
+    if (!data) return null;
+
+    if (typeof data === "string") {
+      return data;
+    }
+
+    if (typeof data === "object" && "message" in data) {
+      const message = (data as { message?: unknown }).message;
+
+      if (typeof message === "string") {
+        return message;
+      }
+
+      if (Array.isArray(message)) {
+        return message.join(", ");
+      }
+    }
+
+    return JSON.stringify(data);
   }
 
   async function run<T>(task: () => Promise<T>, success?: string) {
@@ -413,6 +478,10 @@ export default function Home() {
   }
 
   function handleLogout() {
+    clearSession();
+  }
+
+  function clearSession() {
     window.localStorage.removeItem("agentcore_token");
     window.localStorage.removeItem("agentcore_user");
     setToken(null);
