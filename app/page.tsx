@@ -426,7 +426,8 @@ export default function Home() {
     event.preventDefault();
     if (!selectedConversation) return;
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const content = String(form.get("reply"));
     const result = await run(
       () =>
@@ -441,7 +442,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       setSelectedConversation(result.conversation);
       await loadConversations();
     }
@@ -470,7 +471,8 @@ export default function Home() {
 
   async function createKnowledgeSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<KnowledgeSource>("/knowledge/sources", {
@@ -485,14 +487,15 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadKnowledgeSources();
     }
   }
 
   async function createWebsiteKnowledgeSource(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<KnowledgeSource>("/knowledge/sources", {
@@ -507,21 +510,22 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadKnowledgeSources();
     }
   }
 
   async function uploadKnowledgeFile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () => uploadApi<KnowledgeSource>("/knowledge/sources/upload", form),
       "File uploaded",
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadKnowledgeSources();
     }
   }
@@ -562,7 +566,8 @@ export default function Home() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<User>("/users", {
@@ -578,7 +583,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadUsers();
     }
   }
@@ -634,7 +639,8 @@ export default function Home() {
 
   async function createAppointmentService(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<AppointmentService>("/appointment-booking/services", {
@@ -651,14 +657,15 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadAppointmentServices();
     }
   }
 
   async function createAppointmentStaff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const serviceId = String(form.get("serviceId"));
     const result = await run(
       () =>
@@ -675,14 +682,15 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadAppointmentStaff();
     }
   }
 
   async function createStaffAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const staffId = String(form.get("staffId"));
     const result = await run(
       () =>
@@ -698,12 +706,13 @@ export default function Home() {
       "Availability added",
     );
 
-    if (result) event.currentTarget.reset();
+    if (result) formElement.reset();
   }
 
   async function createStaffTimeOff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const staffId = String(form.get("staffId"));
     const result = await run(
       () =>
@@ -718,7 +727,7 @@ export default function Home() {
       "Time off added",
     );
 
-    if (result) event.currentTarget.reset();
+    if (result) formElement.reset();
   }
 
   async function searchAppointmentSlots(event: FormEvent<HTMLFormElement>) {
@@ -739,7 +748,8 @@ export default function Home() {
 
   async function createAppointmentBooking(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const staffId = String(form.get("staffId"));
     const result = await run(
       () =>
@@ -758,14 +768,15 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadAppointmentBookings();
     }
   }
 
   async function rescheduleAppointmentBooking(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const bookingId = String(form.get("bookingId"));
     const staffId = String(form.get("staffId"));
     const result = await run(
@@ -784,7 +795,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadAppointmentBookings();
     }
   }
@@ -803,7 +814,8 @@ export default function Home() {
 
   async function createWhatsAppConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<WhatsAppConfig>("/whatsapp-assistant/configs", {
@@ -824,7 +836,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadWhatsAppConfigs();
     }
   }
@@ -833,7 +845,8 @@ export default function Home() {
     event.preventDefault();
     if (!selectedWhatsAppConversation) return;
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<{ conversation: WhatsAppConversation }>(
@@ -847,7 +860,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       setSelectedWhatsAppConversation(result.conversation);
       await loadWhatsAppConversations();
     }
@@ -894,7 +907,8 @@ export default function Home() {
 
   async function createVoiceConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<VoiceConfig>("/voice-receptionist/configs", {
@@ -918,7 +932,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       await loadVoiceConfigs();
     }
   }
@@ -927,7 +941,8 @@ export default function Home() {
     event.preventDefault();
     if (!selectedVoiceCall) return;
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         api<{ call: VoiceCall }>(
@@ -941,7 +956,7 @@ export default function Home() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       setSelectedVoiceCall(result.call);
       await loadVoiceCalls();
     }
