@@ -112,6 +112,9 @@ export function WidgetView({
                     {message.role}
                   </p>
                   <p className="mt-1 whitespace-pre-wrap">{message.content}</p>
+                  {message.role === "assistant" ? (
+                    <AiStatus metadata={message.metadata} />
+                  ) : null}
                   {message.citations.length ? (
                     <p className="mt-2 text-xs opacity-70">
                       {message.citations.length} citation
@@ -155,5 +158,23 @@ export function WidgetView({
         </div>
       </div>
     </div>
+  );
+}
+
+function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
+  const usedFallback = metadata.usedFallback === true;
+  const provider =
+    typeof metadata.provider === "string" ? metadata.provider : "local";
+
+  return (
+    <p
+      className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs ${
+        usedFallback
+          ? "bg-[#fff6ed] text-[#b54708]"
+          : "bg-[#ecfdf3] text-[#027a48]"
+      }`}
+    >
+      {usedFallback ? "fallback" : `AI ${provider}`}
+    </p>
   );
 }

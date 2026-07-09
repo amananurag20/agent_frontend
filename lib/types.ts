@@ -77,6 +77,7 @@ export type Message = {
   id: string;
   role: "visitor" | "assistant" | "agent" | "system";
   content: string;
+  metadata: Record<string, unknown>;
   createdAt: string;
   citations: Array<{ chunkId: string; score: number; content: string }>;
 };

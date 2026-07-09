@@ -161,6 +161,9 @@ function MessageBubble({ message }: { message: Message }) {
         {message.role}
       </div>
       <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
+      {message.role === "assistant" ? (
+        <AiStatus metadata={message.metadata} />
+      ) : null}
       {message.citations.length ? (
         <div className="mt-3 border-t border-[#e4e7ec] pt-2">
           <p className="text-xs font-medium text-[#475467]">Citations</p>
@@ -175,5 +178,23 @@ function MessageBubble({ message }: { message: Message }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
+  const usedFallback = metadata.usedFallback === true;
+  const provider =
+    typeof metadata.provider === "string" ? metadata.provider : "local";
+
+  return (
+    <p
+      className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs ${
+        usedFallback
+          ? "bg-[#fff6ed] text-[#b54708]"
+          : "bg-[#ecfdf3] text-[#027a48]"
+      }`}
+    >
+      {usedFallback ? "fallback" : `AI ${provider}`}
+    </p>
   );
 }
