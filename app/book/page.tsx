@@ -80,7 +80,8 @@ export default function PublicBookingPage() {
 
   async function searchSlots(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const serviceId = String(form.get("serviceId"));
     setSelectedServiceId(serviceId);
     setSelectedSlot(null);
@@ -108,7 +109,8 @@ export default function PublicBookingPage() {
       return;
     }
 
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const result = await run(
       () =>
         publicApi<AppointmentBooking>("/appointment-booking/public/bookings", {
