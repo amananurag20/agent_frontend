@@ -59,7 +59,8 @@ export default function PublicBookingPage() {
 
   async function loadServices(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const orgId = String(form.get("organizationId"));
     setOrganizationId(orgId);
     setSelectedSlot(null);
@@ -127,7 +128,7 @@ export default function PublicBookingPage() {
     );
 
     if (result) {
-      event.currentTarget.reset();
+      formElement.reset();
       setSelectedSlot(null);
       setSlots((current) =>
         current.filter((slot) => slot.startAt !== result.startAt),
