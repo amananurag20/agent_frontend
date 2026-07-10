@@ -1,8 +1,43 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0b1220;
-  --foreground: #e7edf7;
+  --background: #f3f7fc;
+  --foreground: #142033;
+  --surface-sidebar: #f7fbff;
+  --surface-header: rgba(255, 255, 255, 0.9);
+  --surface-card: #ffffff;
+  --surface-card-muted: #f7faff;
+  --surface-tint: #eaf1ff;
+  --surface-hover: #eef4fb;
+  --surface-hover-strong: #e4ebf7;
+  --surface-accent: #edf4ff;
+  --border-subtle: #d8e2f0;
+  --border-strong: #c5d2e4;
+  --text-strong: #142033;
+  --text-base: #314158;
+  --text-muted: #64748b;
+  --text-soft: #8a9ab2;
+  --accent-primary: #2563eb;
+  --accent-primary-strong: #1d4ed8;
+  --accent-secondary: #0f9ba8;
+  --accent-secondary-strong: #0c8793;
+  --accent-cyan: #0ea5e9;
+  --accent-amber: #f59e0b;
+  --accent-violet: #7c3aed;
+  --text-on-accent: #ffffff;
+  --success-bg: #dcfae6;
+  --success-text: #067647;
+  --warning-bg: #fff1d6;
+  --warning-text: #b26a00;
+  --danger-bg: #fee4e2;
+  --danger-text: #b42318;
+  --neutral-bg: #e8eef6;
+  --neutral-text: #5f6f86;
+  --shadow-card: 0 18px 48px rgba(15, 23, 42, 0.08);
+  --shadow-soft: 0 10px 24px rgba(37, 99, 235, 0.12);
+  --input-background: #fdfefe;
+  --scrollbar-track: #edf2f8;
+  --scrollbar-thumb: #c3cfde;
 }
 
 @theme inline {
@@ -10,6 +45,46 @@
   --color-foreground: var(--foreground);
   --font-sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.theme-dark {
+  --background: #0b1220;
+  --foreground: #e7edf7;
+  --surface-sidebar: #0d1727;
+  --surface-header: rgba(17, 28, 46, 0.95);
+  --surface-card: #111c2e;
+  --surface-card-muted: #0d1727;
+  --surface-tint: #17253a;
+  --surface-hover: #18263b;
+  --surface-hover-strong: #26344f;
+  --surface-accent: #172b47;
+  --border-subtle: #263449;
+  --border-strong: #314158;
+  --text-strong: #ffffff;
+  --text-base: #dce6f5;
+  --text-muted: #8797b0;
+  --text-soft: #6f819d;
+  --accent-primary: #4f7cff;
+  --accent-primary-strong: #3d69ef;
+  --accent-secondary: #19b8c9;
+  --accent-secondary-strong: #0f8895;
+  --accent-cyan: #67e8f9;
+  --accent-amber: #f6b95f;
+  --accent-violet: #a78bfa;
+  --text-on-accent: #ffffff;
+  --success-bg: #15352f;
+  --success-text: #5ee2c3;
+  --warning-bg: #3a2b18;
+  --warning-text: #f6b95f;
+  --danger-bg: #3b2029;
+  --danger-text: #fb7185;
+  --neutral-bg: #1a283b;
+  --neutral-text: #9aabc2;
+  --shadow-card: 0 12px 34px rgba(0, 0, 0, 0.12);
+  --shadow-soft: 0 8px 20px rgba(79, 124, 255, 0.2);
+  --input-background: #0d1727;
+  --scrollbar-track: #0b1220;
+  --scrollbar-thumb: #314158;
 }
 
 * {
@@ -21,7 +96,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 button,
@@ -38,9 +113,9 @@ button {
 .input {
   width: 100%;
   border-radius: 6px;
-  border: 1px solid #314158;
-  background: #0d1727;
-  color: #e7edf7;
+  border: 1px solid var(--border-strong);
+  background: var(--input-background);
+  color: var(--text-strong);
   padding: 0.625rem 0.75rem;
   font-size: 0.875rem;
   line-height: 1.25rem;
@@ -48,29 +123,29 @@ button {
 }
 
 .input:focus {
-  border-color: #4f7cff;
-  box-shadow: 0 0 0 3px rgba(79, 124, 255, 0.16);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
 }
 
 .input::placeholder {
-  color: #586b88;
+  color: var(--text-soft);
 }
 
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: #4f7cff;
+  accent-color: var(--accent-primary);
 }
 
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid #67e8f9;
+  outline: 2px solid var(--accent-cyan);
   outline-offset: 2px;
 }
 
 ::selection {
-  background: rgba(79, 124, 255, 0.45);
+  background: color-mix(in srgb, var(--accent-primary) 36%, transparent);
 }
 
 ::-webkit-scrollbar {
@@ -79,13 +154,13 @@ textarea:focus-visible {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0b1220;
+  background: var(--scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 2px solid #0b1220;
+  border: 2px solid var(--scrollbar-track);
   border-radius: 8px;
-  background: #314158;
+  background: var(--scrollbar-thumb);
 }
 
 .agentcore-app button,
@@ -93,4 +168,9 @@ textarea:focus-visible {
 .agentcore-app select,
 .agentcore-app textarea {
   transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.theme-dark,
+.theme-dark body {
+  color-scheme: dark;
 }

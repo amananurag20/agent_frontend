@@ -3,7 +3,7 @@ import type { ApiState, ChildrenProps, Health, User } from "@/lib/types";
 export function Field({ label, children }: ChildrenProps & { label: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-sm font-medium text-[#c9d4e5]">
+      <span className="mb-1 block text-sm font-medium text-[var(--text-base)]">
         {label}
       </span>
       {children}
@@ -13,18 +13,18 @@ export function Field({ label, children }: ChildrenProps & { label: string }) {
 
 export function StateMessage({ state }: { state: ApiState }) {
   if (state.loading) {
-    return <p className="text-sm text-[#8797b0]">Working...</p>;
+    return <p className="text-sm text-[var(--text-muted)]">Working...</p>;
   }
 
   if (state.error) {
-    return <p className="text-sm text-[#b42318]">{state.error}</p>;
+    return <p className="text-sm text-[var(--danger-text)]">{state.error}</p>;
   }
 
   if (state.message) {
-    return <p className="text-sm text-[#067647]">{state.message}</p>;
+    return <p className="text-sm text-[var(--success-text)]">{state.message}</p>;
   }
 
-  return <span className="min-h-5" />;
+  return null;
 }
 
 export function StatusPill({ status }: { status: string }) {
@@ -33,14 +33,14 @@ export function StatusPill({ status }: { status: string }) {
     status === "open" ||
     status === "enabled" ||
     status === "active"
-      ? "bg-[#15352f] text-[#5ee2c3]"
+      ? "bg-[var(--success-bg)] text-[var(--success-text)]"
       : status === "closed" ||
           status === "disabled" ||
           status === "inactive"
-        ? "bg-[#1a283b] text-[#9aabc2]"
+        ? "bg-[var(--neutral-bg)] text-[var(--neutral-text)]"
         : status === "degraded" || status === "waiting_for_agent"
-          ? "bg-[#3a2b18] text-[#f6b95f]"
-          : "bg-[#3b2029] text-[#fb7185]";
+          ? "bg-[var(--warning-bg)] text-[var(--warning-text)]"
+          : "bg-[var(--danger-bg)] text-[var(--danger-text)]";
 
   return (
     <span className={`rounded-full px-2 py-1 text-xs font-medium ${tone}`}>
@@ -52,7 +52,7 @@ export function StatusPill({ status }: { status: string }) {
 export function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-[#8797b0]">{label}</span>
+      <span className="text-sm text-[var(--text-muted)]">{label}</span>
       <StatusPill status={value} />
     </div>
   );
@@ -65,12 +65,18 @@ export function Toolbar({
   state: ApiState;
   onRefresh: () => void;
 }) {
+  const hasMessage = state.loading || Boolean(state.error) || Boolean(state.message);
+
   return (
-    <div className="mb-4 flex min-h-9 items-center justify-between gap-3">
-      <StateMessage state={state} />
+    <div
+      className={`flex items-center gap-3 ${
+        hasMessage ? "mb-3 justify-between" : "mb-2 justify-end"
+      }`}
+    >
+      {hasMessage ? <StateMessage state={state} /> : null}
       <button
         onClick={onRefresh}
-        className="flex h-9 w-9 items-center justify-center rounded-md border border-[#314158] bg-[#4f7cff] text-sm text-[#9fb4d3] hover:border-[#4f7cff] hover:bg-[#18263b] hover:text-white"
+        className="flex h-9 w-9 items-center justify-center rounded-md border border-[var(--border-strong)] bg-[var(--surface-card)] text-sm text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
         title="Refresh"
       >
         ↻
@@ -81,8 +87,8 @@ export function Toolbar({
 
 export function HealthPanel({ health }: { health: Health | null }) {
   return (
-    <div className="rounded-lg border border-[#263449] bg-[#111c2e] p-4">
-      <h2 className="font-semibold">System</h2>
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-card)]">
+      <h2 className="font-semibold text-[var(--text-strong)]">System</h2>
       <div className="mt-4 space-y-3">
         <Metric label="Database" value={health?.database ?? "checking"} />
         <Metric label="Redis" value={health?.redis?.status ?? "checking"} />
@@ -101,14 +107,14 @@ export function UserPanel({
   onLogoutAll?: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-[#263449] bg-[#111c2e] p-4">
-      <h2 className="font-semibold">Session</h2>
-      <p className="mt-3 truncate text-sm">{user.email}</p>
-      <p className="mt-1 text-xs text-[#8797b0]">{user.roles.join(", ")}</p>
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-card)]">
+      <h2 className="font-semibold text-[var(--text-strong)]">Session</h2>
+      <p className="mt-3 truncate text-sm text-[var(--text-strong)]">{user.email}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">{user.roles.join(", ")}</p>
       {onLogoutAll ? (
         <button
           onClick={onLogoutAll}
-          className="mt-4 h-9 w-full rounded-md border border-[#314158] text-sm hover:bg-[#18263b]"
+          className="mt-4 h-9 w-full rounded-xl border border-[var(--border-strong)] text-sm text-[var(--text-base)] hover:bg-[var(--surface-hover)]"
         >
           Sign out all devices
         </button>
@@ -118,15 +124,15 @@ export function UserPanel({
 }
 
 export function EmptyState({ children }: ChildrenProps) {
-  return <div className="p-8 text-sm text-[#8797b0]">{children}</div>;
+  return <div className="p-8 text-sm text-[var(--text-muted)]">{children}</div>;
 }
 
 export function Card({ children }: ChildrenProps) {
   return (
-    <div className="rounded-lg border border-[#263449] bg-[#111c2e] shadow-[0_12px_34px_rgba(0,0,0,0.12)]">{children}</div>
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]">{children}</div>
   );
 }
 
 export function CardHeader({ children }: ChildrenProps) {
-  return <div className="border-b border-[#263449] px-5 py-4">{children}</div>;
+  return <div className="border-b border-[var(--border-subtle)] px-5 py-4">{children}</div>;
 }

@@ -46,7 +46,7 @@ export function AppointmentsView({
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <form
           onSubmit={onCreateService}
-          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
         >
           <h2 className="font-semibold">Service</h2>
           <div className="mt-4 space-y-4">
@@ -86,7 +86,7 @@ export function AppointmentsView({
             <Field label="Description">
               <textarea name="description" rows={3} className="input resize-y" />
             </Field>
-            <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)]">
               Create service
             </button>
           </div>
@@ -94,7 +94,7 @@ export function AppointmentsView({
 
         <form
           onSubmit={onCreateStaff}
-          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
         >
           <h2 className="font-semibold">Staff / Resource</h2>
           <div className="mt-4 space-y-4">
@@ -117,7 +117,7 @@ export function AppointmentsView({
                 ))}
               </select>
             </Field>
-            <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)]">
               Create staff
             </button>
           </div>
@@ -126,7 +126,7 @@ export function AppointmentsView({
         <div className="space-y-4">
           <form
             onSubmit={onCreateAvailability}
-            className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
           >
             <h2 className="font-semibold">Weekly Availability</h2>
             <div className="mt-4 space-y-4">
@@ -171,7 +171,7 @@ export function AppointmentsView({
                   />
                 </Field>
               </div>
-              <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+              <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)]">
                 Add availability
               </button>
             </div>
@@ -179,7 +179,7 @@ export function AppointmentsView({
 
           <form
             onSubmit={onCreateTimeOff}
-            className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
           >
             <h2 className="font-semibold">Time Off</h2>
             <div className="mt-4 space-y-4">
@@ -212,7 +212,7 @@ export function AppointmentsView({
               <Field label="Reason">
                 <input name="reason" className="input" />
               </Field>
-              <button className="h-10 rounded-md border border-[#314158] px-4 text-sm font-medium hover:bg-[#18263b]">
+              <button className="h-10 rounded-md border border-[var(--border-strong)] px-4 text-sm font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)]">
                 Add blockout
               </button>
             </div>
@@ -224,7 +224,7 @@ export function AppointmentsView({
         <div className="space-y-4">
           <form
             onSubmit={onSearchSlots}
-            className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
           >
             <h2 className="font-semibold">Find Slots</h2>
             <div className="mt-4 space-y-4">
@@ -241,7 +241,7 @@ export function AppointmentsView({
               <Field label="Date">
                 <input name="date" type="date" className="input" required />
               </Field>
-              <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white">
+              <button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-secondary-strong)]">
                 Search slots
               </button>
             </div>
@@ -249,7 +249,7 @@ export function AppointmentsView({
 
           <form
             onSubmit={onCreateBooking}
-            className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
           >
             <h2 className="font-semibold">Create Booking</h2>
             <div className="mt-4 space-y-4">
@@ -290,7 +290,7 @@ export function AppointmentsView({
               <Field label="Notes">
                 <textarea name="notes" rows={3} className="input resize-y" />
               </Field>
-              <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+              <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)]">
                 Create booking
               </button>
             </div>
@@ -298,7 +298,7 @@ export function AppointmentsView({
 
           <form
             onSubmit={onRescheduleBooking}
-            className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+            className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
           >
             <h2 className="font-semibold">Reschedule Booking</h2>
             <div className="mt-4 space-y-4">
@@ -332,7 +332,7 @@ export function AppointmentsView({
                   required
                 />
               </Field>
-              <button className="h-10 rounded-md border border-[#314158] px-4 text-sm font-medium hover:bg-[#18263b]">
+              <button className="h-10 rounded-md border border-[var(--border-strong)] px-4 text-sm font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)]">
                 Reschedule
               </button>
             </div>
@@ -345,7 +345,7 @@ export function AppointmentsView({
               <h2 className="font-semibold">Available Slots</h2>
             </CardHeader>
             {slots.length ? (
-              <div className="divide-y divide-[#223047]">
+              <div className="divide-y divide-[var(--border-subtle)]">
                 {slots.map((slot) => (
                   <div
                     key={`${slot.staffId}-${slot.startAt}`}
@@ -355,11 +355,11 @@ export function AppointmentsView({
                       <p className="text-sm font-medium">
                         {formatDateTime(slot.startAt)}
                       </p>
-                      <p className="text-xs text-[#8797b0]">
+                      <p className="text-xs text-[var(--text-muted)]">
                         {slot.staffName} · {slot.timezone}
                       </p>
                     </div>
-                    <span className="text-xs text-[#8797b0]">
+                    <span className="text-xs text-[var(--text-muted)]">
                       Ends {formatDateTime(slot.endAt)}
                     </span>
                   </div>
@@ -375,7 +375,7 @@ export function AppointmentsView({
               <h2 className="font-semibold">Bookings</h2>
             </CardHeader>
             {bookings.length ? (
-              <div className="divide-y divide-[#223047]">
+              <div className="divide-y divide-[var(--border-subtle)]">
                 {bookings.map((booking) => {
                   const service = services.find(
                     (item) => item.id === booking.serviceId,
@@ -393,7 +393,7 @@ export function AppointmentsView({
                         <p className="truncate text-sm font-medium">
                           {booking.customerName}
                         </p>
-                        <p className="text-xs text-[#8797b0]">
+                        <p className="text-xs text-[var(--text-muted)]">
                           {formatDateTime(booking.startAt)} ·{" "}
                           {service?.name ?? "Service"} ·{" "}
                           {staffMember?.name ?? "Staff"}
@@ -404,7 +404,7 @@ export function AppointmentsView({
                         {booking.status !== "cancelled" ? (
                           <button
                             onClick={() => onCancelBooking(booking.id)}
-                            className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
+                            className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm text-[var(--text-base)] hover:bg-[var(--surface-hover)]"
                           >
                             Cancel
                           </button>

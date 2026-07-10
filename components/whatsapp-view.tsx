@@ -46,7 +46,7 @@ export function WhatsAppView({
       <div className="space-y-4">
         <form
           onSubmit={onCreateConfig}
-          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
         >
           <h2 className="font-semibold">WhatsApp Provider</h2>
           <div className="mt-4 space-y-4">
@@ -81,14 +81,14 @@ export function WhatsAppView({
             <Field label="Default locale">
               <input name="defaultLocale" className="input" defaultValue="en" />
             </Field>
-            <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
               Save config
             </button>
           </div>
         </form>
 
         <Card>
-          <div className="border-b border-[#263449] p-4">
+          <div className="border-b border-[var(--border-subtle)] p-4">
             <h2 className="font-semibold">Current Config</h2>
           </div>
           {activeConfig ? (
@@ -97,7 +97,7 @@ export function WhatsAppView({
                 <span className="font-medium">{activeConfig.name}</span>
                 <StatusPill status={activeConfig.status} />
               </div>
-              <p className="text-xs text-[#8797b0]">
+              <p className="text-xs text-[var(--text-muted)]">
                 {activeConfig.provider} · {activeConfig.phoneNumberId ?? "No phone ID"}
               </p>
               <div className="grid grid-cols-3 gap-2 text-xs">
@@ -113,7 +113,7 @@ export function WhatsAppView({
                   status={activeConfig.hasAppSecret ? "secret" : "no secret"}
                 />
               </div>
-              <pre className="overflow-auto rounded-md bg-[#111c2e] p-3 text-xs text-white">
+              <pre className="overflow-auto rounded-md bg-[var(--surface-card)] p-3 text-xs text-[var(--text-strong)]">
                 {`GET /api/v1/whatsapp-assistant/webhook/${activeConfig.id}`}
                 {"\n"}
                 {`POST /api/v1/whatsapp-assistant/webhook/${activeConfig.id}/inbound`}
@@ -127,10 +127,10 @@ export function WhatsAppView({
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card>
-          <div className="border-b border-[#263449] p-4">
+          <div className="border-b border-[var(--border-subtle)] p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">WhatsApp Inbox</h2>
-              <span className="text-xs text-[#8797b0]">
+              <span className="text-xs text-[var(--text-muted)]">
                 {conversations?.total ?? 0}
               </span>
             </div>
@@ -158,7 +158,7 @@ export function WhatsAppView({
             </div>
             <button
               onClick={onLoadConversations}
-              className="mt-3 h-9 w-full rounded-md bg-[#223047] text-sm hover:bg-[#314158]"
+              className="mt-3 h-9 w-full rounded-md bg-[var(--surface-tint)] text-sm hover:bg-[var(--accent-primary-strong)]"
             >
               Apply
             </button>
@@ -168,9 +168,9 @@ export function WhatsAppView({
               <button
                 key={conversation.id}
                 onClick={() => onSelectConversation(conversation.id)}
-                className={`block w-full border-b border-[#223047] p-4 text-left hover:bg-[#142238] ${
+                className={`block w-full border-b border-[var(--border-subtle)] p-4 text-left hover:bg-[var(--surface-hover)] ${
                   selectedConversation?.id === conversation.id
-                    ? "bg-[#172b47]"
+                    ? "bg-[var(--surface-accent)]"
                     : ""
                 }`}
               >
@@ -182,10 +182,10 @@ export function WhatsAppView({
                   </span>
                   <StatusPill status={conversation.status} />
                 </div>
-                <p className="mt-1 truncate text-xs text-[#8797b0]">
+                <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
                   {conversation.messages.at(-1)?.content ?? "No text message"}
                 </p>
-                <p className="mt-1 text-xs text-[#98a2b3]">
+                <p className="mt-1 text-xs text-[var(--text-soft)]">
                   {formatDateTime(conversation.lastMessageAt)}
                 </p>
               </button>
@@ -196,12 +196,12 @@ export function WhatsAppView({
         <Card>
           {selectedConversation ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263449] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] p-4">
                 <div>
                   <h2 className="font-semibold">
                     {selectedConversation.contactName ?? "WhatsApp contact"}
                   </h2>
-                  <p className="text-xs text-[#8797b0]">
+                  <p className="text-xs text-[var(--text-muted)]">
                     {selectedConversation.contactPhone ??
                       selectedConversation.contactWaId}
                   </p>
@@ -209,32 +209,32 @@ export function WhatsAppView({
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={onRequestHandoff}
-                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
+                    className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
                   >
                     Handoff
                   </button>
                   <button
                     onClick={() => onUpdateStatus("open")}
-                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
+                    className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
                   >
                     Open
                   </button>
                   <button
                     onClick={() => onUpdateStatus("closed")}
-                    className="h-9 rounded-md bg-[#111c2e] px-3 text-sm text-white hover:bg-[#26344f]"
+                    className="h-9 rounded-md bg-[var(--surface-card)] px-3 text-sm text-[var(--text-strong)] hover:bg-[var(--surface-hover-strong)]"
                   >
                     Close
                   </button>
                 </div>
               </div>
-              <div className="max-h-[560px] space-y-3 overflow-auto bg-[#111c2e] p-4">
+              <div className="max-h-[560px] space-y-3 overflow-auto bg-[var(--surface-card)] p-4">
                 {selectedConversation.messages.map((message) => (
                   <WhatsAppBubble key={message.id} message={message} />
                 ))}
               </div>
               <form
                 onSubmit={onSendReply}
-                className="border-t border-[#263449] p-4"
+                className="border-t border-[var(--border-subtle)] p-4"
               >
                 <textarea
                   name="reply"
@@ -244,7 +244,7 @@ export function WhatsAppView({
                   required
                 />
                 <div className="mt-3 flex justify-end">
-                  <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white hover:bg-[#0f8895]">
+                  <button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-secondary-strong)]">
                     Send reply
                   </button>
                 </div>
@@ -267,13 +267,13 @@ function WhatsAppBubble({ message }: { message: WhatsAppMessage }) {
     <div
       className={`max-w-[80%] rounded-lg border p-3 ${
         isContact
-          ? "ml-auto border-[#1d3a60] bg-[#172b47]"
+          ? "ml-auto border-[var(--accent-primary)] bg-[var(--surface-accent)]"
           : isAgent
-            ? "border-[#1b4338] bg-[#15352f]"
-            : "border-[#263449] bg-[#111c2e]"
+            ? "border-[var(--accent-secondary)] bg-[var(--success-bg)]"
+            : "border-[var(--border-subtle)] bg-[var(--surface-card)]"
       }`}
     >
-      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[#8797b0]">
+      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[var(--text-muted)]">
         <span>{message.role}</span>
         <span>{message.type}</span>
       </div>

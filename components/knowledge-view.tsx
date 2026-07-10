@@ -19,7 +19,7 @@ export function KnowledgeView({
       <div className="space-y-4">
         <form
           onSubmit={onCreate}
-          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
         >
           <h2 className="font-semibold">Paste Text</h2>
           <div className="mt-4 space-y-4">
@@ -35,7 +35,7 @@ export function KnowledgeView({
               />
             </Field>
             <MemoryAccessFields />
-            <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
               Create source
             </button>
           </div>
@@ -43,7 +43,7 @@ export function KnowledgeView({
 
         <form
           onSubmit={onUploadFile}
-          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
         >
           <h2 className="font-semibold">Upload File</h2>
           <div className="mt-4 space-y-4">
@@ -60,7 +60,7 @@ export function KnowledgeView({
               />
             </Field>
             <MemoryAccessFields />
-            <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
               Upload source
             </button>
           </div>
@@ -68,7 +68,7 @@ export function KnowledgeView({
 
         <form
           onSubmit={onCreateUrl}
-          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
+          className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4"
         >
           <h2 className="font-semibold">Website URL</h2>
           <div className="mt-4 space-y-4">
@@ -85,7 +85,7 @@ export function KnowledgeView({
               />
             </Field>
             <MemoryAccessFields />
-            <button className="h-10 rounded-md border border-[#314158] px-4 text-sm font-medium hover:bg-[#18263b]">
+            <button className="h-10 rounded-md border border-[var(--border-strong)] px-4 text-sm font-medium hover:bg-[var(--surface-hover)]">
               Add URL source
             </button>
           </div>
@@ -95,7 +95,7 @@ export function KnowledgeView({
         <CardHeader>
           <h2 className="font-semibold">Sources</h2>
         </CardHeader>
-        <div className="divide-y divide-[#223047]">
+        <div className="divide-y divide-[var(--border-subtle)]">
           {sources.map((source) => (
             <div
               key={source.id}
@@ -103,7 +103,7 @@ export function KnowledgeView({
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{source.name}</p>
-                <p className="text-xs text-[#8797b0]">
+                <p className="text-xs text-[var(--text-muted)]">
                   {source.type} · level {source.sensitivityLevel ?? 0} · {source.productVisibility?.length ?? 4} products
                 </p>
               </div>
@@ -111,7 +111,7 @@ export function KnowledgeView({
                 <StatusPill status={source.status} />
                 <button
                   onClick={() => onIngest(source.id)}
-                  className="h-9 shrink-0 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
+                  className="h-9 shrink-0 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
                 >
                   Ingest
                 </button>
@@ -133,7 +133,7 @@ function MemoryAccessFields() {
   ] as const;
 
   return (
-    <div className="border-t border-[#263449] pt-4">
+    <div className="border-t border-[var(--border-subtle)] pt-4">
       <Field label="Sensitivity level">
         <select name="sensitivityLevel" className="input" defaultValue="0">
           <option value="0">0 · Public</option>
@@ -144,7 +144,7 @@ function MemoryAccessFields() {
         </select>
       </Field>
       <fieldset className="mt-3">
-        <legend className="text-sm font-medium text-[#c9d4e5]">Visible to products</legend>
+        <legend className="text-sm font-medium text-[var(--text-base)]">Visible to products</legend>
         <div className="mt-2 grid grid-cols-2 gap-2">
           {products.map(([key, label]) => (
             <label key={key} className="flex items-center gap-2 text-xs">

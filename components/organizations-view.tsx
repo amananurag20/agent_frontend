@@ -21,9 +21,9 @@ export function OrganizationsView({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[430px_minmax(320px,1fr)]">
-      <form onSubmit={onCreate} className="rounded-lg border border-[#263449] bg-[#111c2e] p-4">
+      <form onSubmit={onCreate} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4">
         <h2 className="font-semibold">Create organization</h2>
-        <p className="mt-1 text-xs text-[#8797b0]">
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
           A first organization administrator is required.
         </p>
         <div className="mt-4 space-y-4">
@@ -54,7 +54,7 @@ export function OrganizationsView({
               </select>
             </Field>
           </div>
-          <div className="border-t border-[#263449] pt-4">
+          <div className="border-t border-[var(--border-subtle)] pt-4">
             <h3 className="text-sm font-semibold">First org admin</h3>
             <div className="mt-3 space-y-3">
               <Field label="Name"><input name="adminName" className="input" required /></Field>
@@ -62,7 +62,7 @@ export function OrganizationsView({
               <Field label="Temporary password"><input name="adminPassword" type="password" className="input" required minLength={8} /></Field>
             </div>
           </div>
-          <fieldset className="border-t border-[#263449] pt-4">
+          <fieldset className="border-t border-[var(--border-subtle)] pt-4">
             <legend className="text-sm font-semibold">Enabled products</legend>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {products.map(([key, label]) => (
@@ -72,7 +72,7 @@ export function OrganizationsView({
               ))}
             </div>
           </fieldset>
-          <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
+          <button className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
             Create organization
           </button>
         </div>
@@ -80,17 +80,17 @@ export function OrganizationsView({
 
       <Card>
         <CardHeader><h2 className="font-semibold">Organizations</h2></CardHeader>
-        <div className="divide-y divide-[#223047]">
+        <div className="divide-y divide-[var(--border-subtle)]">
           {organizations.map((organization) => (
             <button
               key={organization.id}
               type="button"
               onClick={() => onSelect(organization.id)}
-              className={`flex w-full items-center justify-between gap-3 p-4 text-left hover:bg-[#142238] ${selectedOrganizationId === organization.id ? "bg-[#17343c]" : ""}`}
+              className={`flex w-full items-center justify-between gap-3 p-4 text-left hover:bg-[var(--surface-hover)] ${selectedOrganizationId === organization.id ? "bg-[var(--surface-accent)]" : ""}`}
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{organization.name}</p>
-                <p className="mt-1 text-xs text-[#8797b0]">
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
                   {organization.users?.[0]?.email ?? "No active admin shown"} · {organization._count?.users ?? 0} users
                 </p>
               </div>

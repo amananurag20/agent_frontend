@@ -166,7 +166,7 @@ export default function PublicBookingPage() {
                 </span>
                 <input name="organizationId" className="input" required />
               </label>
-              <button className="mt-4 h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+              <button className="mt-4 h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-[var(--text-strong)]">
                 Load services
               </button>
             </form>
@@ -195,7 +195,7 @@ export default function PublicBookingPage() {
                 </span>
                 <input name="date" type="date" className="input" required />
               </label>
-              <button className="mt-4 h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-white">
+              <button className="mt-4 h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-[var(--text-strong)]">
                 Search slots
               </button>
             </form>
@@ -229,7 +229,7 @@ export default function PublicBookingPage() {
                 </span>
                 <textarea name="notes" rows={3} className="input resize-y" />
               </label>
-              <button className="mt-4 h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+              <button className="mt-4 h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-[var(--text-strong)]">
                 Confirm booking
               </button>
             </form>

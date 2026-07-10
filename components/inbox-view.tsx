@@ -23,10 +23,10 @@ export function InboxView({
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
       <Card>
-        <div className="border-b border-[#263449] p-4">
+        <div className="border-b border-[var(--border-subtle)] p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Inbox</h2>
-            <span className="text-xs text-[#8797b0]">
+            <span className="text-xs text-[var(--text-muted)]">
               {conversations?.total ?? 0} conversations
             </span>
           </div>
@@ -54,7 +54,7 @@ export function InboxView({
           </div>
           <button
             onClick={onLoadConversations}
-            className="mt-3 h-9 w-full rounded-md bg-[#223047] text-sm hover:bg-[#314158]"
+            className="mt-3 h-9 w-full rounded-md bg-[var(--surface-tint)] text-sm hover:bg-[var(--surface-hover-strong)]"
           >
             Apply
           </button>
@@ -64,8 +64,8 @@ export function InboxView({
             <button
               key={conversation.id}
               onClick={() => onSelectConversation(conversation.id)}
-              className={`block w-full border-b border-[#223047] p-4 text-left hover:bg-[#142238] ${
-                selectedConversation?.id === conversation.id ? "bg-[#172b47]" : ""
+              className={`block w-full border-b border-[var(--border-subtle)] p-4 text-left hover:bg-[var(--surface-hover)] ${
+                selectedConversation?.id === conversation.id ? "bg-[var(--surface-accent)]" : ""
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -77,7 +77,7 @@ export function InboxView({
                 </span>
                 <StatusPill status={conversation.status} />
               </div>
-              <p className="mt-1 truncate text-xs text-[#8797b0]">
+              <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
                 {conversation.messages.at(-1)?.content ?? "No messages yet"}
               </p>
             </button>
@@ -88,38 +88,38 @@ export function InboxView({
       <Card>
         {selectedConversation ? (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263449] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] p-4">
               <div>
                 <h2 className="font-semibold">
                   {selectedConversation.visitorName ?? "Visitor conversation"}
                 </h2>
-                <p className="text-xs text-[#8797b0]">
+                <p className="text-xs text-[var(--text-muted)]">
                   {selectedConversation.visitorEmail ?? selectedConversation.id}
                 </p>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => onUpdateStatus("open")}
-                  className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
+                  className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
                 >
                   Open
                 </button>
                 <button
                   onClick={() => onUpdateStatus("closed")}
-                  className="h-9 rounded-md bg-[#111c2e] px-3 text-sm text-white hover:bg-[#26344f]"
+                  className="h-9 rounded-md bg-[var(--surface-card)] px-3 text-sm text-[var(--text-strong)] hover:bg-[var(--surface-hover-strong)]"
                 >
                   Close
                 </button>
               </div>
             </div>
-            <div className="max-h-[520px] space-y-3 overflow-auto bg-[#111c2e] p-4">
+            <div className="max-h-[520px] space-y-3 overflow-auto bg-[var(--surface-card)] p-4">
               {selectedConversation.messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
             </div>
             <form
               onSubmit={onSendReply}
-              className="border-t border-[#263449] p-4"
+              className="border-t border-[var(--border-subtle)] p-4"
             >
               <textarea
                 name="reply"
@@ -129,7 +129,7 @@ export function InboxView({
                 required
               />
               <div className="mt-3 flex justify-end">
-                <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white hover:bg-[#0f8895]">
+                <button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-secondary-strong)]">
                   Send reply
                 </button>
               </div>
@@ -151,13 +151,13 @@ function MessageBubble({ message }: { message: Message }) {
     <div
       className={`max-w-[80%] rounded-lg border p-3 ${
         isVisitor
-          ? "ml-auto border-[#1d3a60] bg-[#172b47]"
+          ? "ml-auto border-[var(--accent-primary)] bg-[var(--surface-accent)]"
           : isAgent
-            ? "border-[#1b4338] bg-[#15352f]"
-            : "border-[#263449] bg-[#111c2e]"
+            ? "border-[var(--accent-secondary)] bg-[var(--success-bg)]"
+            : "border-[var(--border-subtle)] bg-[var(--surface-card)]"
       }`}
     >
-      <div className="mb-1 text-xs font-medium uppercase text-[#8797b0]">
+      <div className="mb-1 text-xs font-medium uppercase text-[var(--text-muted)]">
         {message.role}
       </div>
       <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
@@ -165,12 +165,12 @@ function MessageBubble({ message }: { message: Message }) {
         <AiStatus metadata={message.metadata} />
       ) : null}
       {message.citations.length ? (
-        <div className="mt-3 border-t border-[#263449] pt-2">
-          <p className="text-xs font-medium text-[#a2b1c6]">Citations</p>
+        <div className="mt-3 border-t border-[var(--border-subtle)] pt-2">
+          <p className="text-xs font-medium text-[var(--text-base)]">Citations</p>
           {message.citations.slice(0, 2).map((citation) => (
             <p
               key={citation.chunkId}
-              className="mt-1 line-clamp-2 text-xs text-[#8797b0]"
+              className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]"
             >
               {citation.content}
             </p>
@@ -190,8 +190,8 @@ function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
     <p
       className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs ${
         usedFallback
-          ? "bg-[#3a2b18] text-[#f6b95f]"
-          : "bg-[#15352f] text-[#5ee2c3]"
+          ? "bg-[var(--warning-bg)] text-[var(--warning-text)]"
+          : "bg-[var(--success-bg)] text-[var(--success-text)]"
       }`}
     >
       {usedFallback ? "fallback" : `AI ${provider}`}

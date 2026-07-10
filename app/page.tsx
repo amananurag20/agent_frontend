@@ -5,6 +5,24 @@ import axios, {
   type AxiosResponse,
 } from "axios";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  BookOpenText,
+  Bot,
+  Boxes,
+  Building2,
+  CalendarDays,
+  LayoutDashboard,
+  MessageSquare,
+  MessagesSquare,
+  MoonStar,
+  PhoneCall,
+  RefreshCw,
+  ShieldCheck,
+  SunMedium,
+  Users2,
+  Waypoints,
+  type LucideIcon,
+} from "lucide-react";
 import { AIProvidersView } from "@/components/ai-providers-view";
 import { AppointmentsView } from "@/components/appointments-view";
 import { AuditView } from "@/components/audit-view";
@@ -14,7 +32,7 @@ import { KnowledgeView } from "@/components/knowledge-view";
 import { LoginPanel } from "@/components/login-panel";
 import { OrganizationsView } from "@/components/organizations-view";
 import { ProductsView } from "@/components/products-view";
-import { StatusPill, Toolbar } from "@/components/ui";
+import { StatusPill } from "@/components/ui";
 import { UsersView } from "@/components/users-view";
 import { VoiceReceptionistView } from "@/components/voice-receptionist-view";
 import { WidgetView } from "@/components/widget-view";
@@ -55,6 +73,8 @@ import type {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
 
+type ThemeMode = "light" | "dark";
+
 const navItems: Array<{ id: TabId; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "organizations", label: "Organizations" },
@@ -70,22 +90,23 @@ const navItems: Array<{ id: TabId; label: string }> = [
   { id: "audit", label: "Audit" },
 ];
 
-const navMeta: Record<TabId, { mark: string; description: string }> = {
-  dashboard: { mark: "DB", description: "Live platform overview" },
-  organizations: { mark: "OR", description: "Tenants, plans and ownership" },
-  inbox: { mark: "CH", description: "Customer conversations and handoff" },
-  knowledge: { mark: "KN", description: "Sources, ingestion and access levels" },
-  appointments: { mark: "AP", description: "Services, availability and bookings" },
-  whatsapp: { mark: "WA", description: "WhatsApp automation and support" },
-  voice: { mark: "VO", description: "Calls, routing and transcripts" },
-  widget: { mark: "WG", description: "Website assistant configuration" },
-  users: { mark: "US", description: "Roles, clearance and product access" },
-  products: { mark: "PR", description: "Organization product entitlements" },
-  ai: { mark: "AI", description: "Models, providers and credentials" },
-  audit: { mark: "AU", description: "Security and operations activity" },
+const navMeta: Record<TabId, { icon: LucideIcon; mark: string; description: string }> = {
+  dashboard: { icon: LayoutDashboard, mark: "DB", description: "Live platform overview" },
+  organizations: { icon: Building2, mark: "OR", description: "Tenants, plans and ownership" },
+  inbox: { icon: MessagesSquare, mark: "CH", description: "Customer conversations and handoff" },
+  knowledge: { icon: BookOpenText, mark: "KN", description: "Sources, ingestion and access levels" },
+  appointments: { icon: CalendarDays, mark: "AP", description: "Services, availability and bookings" },
+  whatsapp: { icon: MessageSquare, mark: "WA", description: "WhatsApp automation and support" },
+  voice: { icon: PhoneCall, mark: "VO", description: "Calls, routing and transcripts" },
+  widget: { icon: Waypoints, mark: "WG", description: "Website assistant configuration" },
+  users: { icon: Users2, mark: "US", description: "Roles, clearance and product access" },
+  products: { icon: Boxes, mark: "PR", description: "Organization product entitlements" },
+  ai: { icon: Bot, mark: "AI", description: "Models, providers and credentials" },
+  audit: { icon: ShieldCheck, mark: "AU", description: "Security and operations activity" },
 };
 
 export default function Home() {
+  const [theme, setTheme] = useState<ThemeMode>("light");
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -193,14 +214,20 @@ export default function Home() {
   useEffect(() => {
     const restoreSession = window.setTimeout(() => {
       const storedUser = window.localStorage.getItem("agentcore_user");
+      const storedTheme = window.localStorage.getItem("agentcore_theme");
       setToken(window.localStorage.getItem("agentcore_token"));
       setRefreshToken(window.localStorage.getItem("agentcore_refresh_token"));
       setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
+      setTheme(storedTheme === "dark" ? "dark" : "light");
     }, 0);
     void loadHealth();
     return () => window.clearTimeout(restoreSession);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("agentcore_theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!token) return;
@@ -1542,45 +1569,48 @@ export default function Home() {
   }
 
   return (
-    <main className="agentcore-app min-h-screen bg-[#0b1220] text-[#e7edf7]">
+    <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
       <div className="flex min-h-screen">
-        <aside className="hidden h-screen w-[272px] shrink-0 border-r border-[#263449] bg-[#0d1727] text-white lg:sticky lg:top-0 lg:flex lg:flex-col">
-          <div className="flex h-20 items-center gap-3 border-b border-white/10 px-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#4f7cff] text-sm font-bold shadow-[0_8px_24px_rgba(79,124,255,0.3)]">AC</div>
+        <aside className="hidden h-screen w-[272px] shrink-0 border-r border-[var(--border-subtle)] bg-[var(--surface-sidebar)] text-[var(--text-strong)] lg:sticky lg:top-0 lg:flex lg:flex-col">
+          <div className="flex h-20 items-center gap-3 border-b border-[var(--border-subtle)] px-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-primary)] text-sm font-bold text-[var(--text-on-accent)] shadow-[var(--shadow-soft)]">AC</div>
             <div>
               <div className="text-base font-semibold tracking-wide">AgentCore</div>
-              <div className="mt-0.5 text-[11px] uppercase text-[#7f91ad]">AI Business Suite</div>
+              <div className="mt-0.5 text-[11px] uppercase text-[var(--text-soft)]">AI Business Suite</div>
             </div>
           </div>
-          <div className="px-5 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#61728e]">Workspace</div>
+          <div className="px-5 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-soft)]">Workspace</div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-5">
-            {visibleNavItems.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`group flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition ${
-                  activeTab === item.id
-                    ? "bg-[#4f7cff] text-white shadow-[0_8px_20px_rgba(79,124,255,0.2)]"
-                    : "text-[#9babc2] hover:bg-white/[0.05] hover:text-white"
-                }`}
-              >
-                <span className={`flex h-7 w-7 items-center justify-center rounded text-[9px] font-bold ${activeTab === item.id ? "bg-white/15" : "bg-[#17253a] text-[#6f87aa] group-hover:text-[#94aef7]"}`}>
-                  {navMeta[item.id].mark}
-                </span>
-                <span className="flex-1 text-left">{item.label}</span>
-                {activeTab === item.id ? <span className="h-1.5 w-1.5 rounded-full bg-[#67e8f9]" /> : null}
-              </button>
-            ))}
+            {visibleNavItems.map((item) => {
+              const Icon = navMeta[item.id].icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`group flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition ${
+                    activeTab === item.id
+                      ? "bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-[var(--shadow-soft)]"
+                      : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                  }`}
+                >
+                  <span className={`flex h-7 w-7 items-center justify-center rounded-xl ${activeTab === item.id ? "bg-white/15 text-[var(--text-on-accent)]" : "bg-[var(--surface-tint)] text-[var(--accent-primary)]"}`}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                  {activeTab === item.id ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-cyan)]" /> : null}
+                </button>
+              );
+            })}
           </nav>
           {user ? (
-            <div className="border-t border-white/10 p-4">
-              <div className="flex items-center gap-3 rounded-md bg-white/[0.04] p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#19b8c9] text-xs font-bold text-[#07131f]">
+            <div className="border-t border-[var(--border-subtle)] p-4">
+              <div className="flex items-center gap-3 rounded-2xl bg-[var(--surface-card)] p-3 shadow-[var(--shadow-card)]">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent-secondary)] text-xs font-bold text-[var(--text-on-accent)]">
                   {(user.name ?? user.email).slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-white">{user.name ?? user.email}</p>
-                  <p className="mt-0.5 truncate text-[10px] text-[#7f91ad]">{user.roles.join(" · ")}</p>
+                  <p className="truncate text-xs font-medium text-[var(--text-strong)]">{user.name ?? user.email}</p>
+                  <p className="mt-0.5 truncate text-[10px] text-[var(--text-soft)]">{user.roles.join(" · ")}</p>
                 </div>
               </div>
             </div>
@@ -1588,24 +1618,44 @@ export default function Home() {
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-h-16 items-center justify-between border-b border-[#263449] bg-[#111c2e]/95 px-4 backdrop-blur md:px-7">
+          <header className="flex min-h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-header)] px-4 backdrop-blur md:px-7">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-md border border-[#2e405b] bg-[#17253a] text-[10px] font-bold text-[#80a0ff] lg:hidden">AC</div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-tint)] text-[10px] font-bold text-[var(--accent-primary)] lg:hidden">AC</div>
               <div>
-                <p className="text-xs text-[#70819b]">{organization?.name ?? "AgentCore workspace"}</p>
-                <h1 className="text-sm font-semibold text-white md:text-base">Operations Console</h1>
+                <p className="text-xs text-[var(--text-muted)]">{organization?.name ?? "AgentCore workspace"}</p>
+                <h1 className="text-sm font-semibold text-[var(--text-strong)] md:text-base">Operations Console</h1>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="hidden items-center gap-2 rounded-md border border-[#263449] bg-[#0d1727] px-3 py-2 text-xs text-[#8797b0] sm:flex">
-                <span className="h-2 w-2 rounded-full bg-[#2dd4bf] shadow-[0_0_10px_rgba(45,212,191,0.65)]" />
+              <div className="hidden items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-muted)] sm:flex">
+                <span className="h-2 w-2 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_10px_rgba(45,212,191,0.65)]" />
                 {health ? `API ${health.status} · DB ${health.database}` : "Checking services"}
               </div>
+              <button
+                type="button"
+                onClick={loadAll}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                title="Refresh data"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
+                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+              >
+                {theme === "light" ? (
+                  <MoonStar className="h-4 w-4" />
+                ) : (
+                  <SunMedium className="h-4 w-4" />
+                )}
+              </button>
               <StatusPill status={health?.status ?? "checking"} />
               {user ? (
                 <button
                   onClick={handleLogout}
-                  className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
+                  className="h-9 rounded-xl border border-[var(--border-strong)] px-3 text-sm text-[var(--text-base)] hover:bg-[var(--surface-hover)]"
                 >
                   Sign out
                 </button>
@@ -1613,7 +1663,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="border-b border-[#263449] bg-[#0d1727] px-4 py-2 lg:hidden">
+          <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-sidebar)] px-4 py-2 lg:hidden">
             <div className="flex gap-2 overflow-x-auto">
               {visibleNavItems.map((item) => (
                 <button
@@ -1621,8 +1671,8 @@ export default function Home() {
                   onClick={() => setActiveTab(item.id)}
                   className={`h-9 shrink-0 rounded-md px-3 text-sm ${
                     activeTab === item.id
-                      ? "bg-[#4f7cff] text-white"
-                      : "border border-[#314158]"
+                      ? "bg-[var(--accent-primary)] text-[var(--text-on-accent)]"
+                      : "border border-[var(--border-strong)] text-[var(--text-base)]"
                   }`}
                 >
                   {item.label}
@@ -1640,18 +1690,17 @@ export default function Home() {
               state={state}
             />
           ) : (
-            <div className="min-h-0 flex-1 p-4 md:p-7">
+            <div className="min-h-0 flex-1 p-4 md:p-5">
               <section className="mx-auto min-w-0 max-w-[1640px]">
-                <div className="mb-5">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#647695]">Workspace / {navMeta[activeTab].mark}</p>
-                  <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+                <div className="mb-3">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-[var(--text-soft)]">Workspace / {navMeta[activeTab].mark}</p>
+                  <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
                     <div>
-                      <h2 className="text-2xl font-semibold text-white">{navItems.find((item) => item.id === activeTab)?.label}</h2>
-                      <p className="mt-1 text-sm text-[#8797b0]">{navMeta[activeTab].description}</p>
+                      <h2 className="text-2xl font-semibold text-[var(--text-strong)]">{navItems.find((item) => item.id === activeTab)?.label}</h2>
+                      <p className="mt-0.5 text-sm text-[var(--text-muted)]">{navMeta[activeTab].description}</p>
                     </div>
                   </div>
                 </div>
-                <Toolbar state={state} onRefresh={loadAll} />
                 {activeTab === "dashboard" ? (
                   <DashboardView
                     health={health}
