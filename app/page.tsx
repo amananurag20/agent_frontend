@@ -90,6 +90,8 @@ const navItems: Array<{ id: TabId; label: string }> = [
   { id: "audit", label: "Audit" },
 ];
 
+const validTabIds = new Set<TabId>(navItems.map((item) => item.id));
+
 const navMeta: Record<TabId, { icon: LucideIcon; mark: string; description: string }> = {
   dashboard: { icon: LayoutDashboard, mark: "DB", description: "Live platform overview" },
   organizations: { icon: Building2, mark: "OR", description: "Tenants, plans and ownership" },
@@ -215,10 +217,14 @@ export default function Home() {
     const restoreSession = window.setTimeout(() => {
       const storedUser = window.localStorage.getItem("agentcore_user");
       const storedTheme = window.localStorage.getItem("agentcore_theme");
+      const storedTab = window.localStorage.getItem("agentcore_active_tab");
       setToken(window.localStorage.getItem("agentcore_token"));
       setRefreshToken(window.localStorage.getItem("agentcore_refresh_token"));
       setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
       setTheme(storedTheme === "dark" ? "dark" : "light");
+      if (storedTab && validTabIds.has(storedTab as TabId)) {
+        setActiveTab(storedTab as TabId);
+      }
     }, 0);
     void loadHealth();
     return () => window.clearTimeout(restoreSession);
@@ -228,6 +234,10 @@ export default function Home() {
   useEffect(() => {
     window.localStorage.setItem("agentcore_theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    window.localStorage.setItem("agentcore_active_tab", activeTab);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!token) return;
