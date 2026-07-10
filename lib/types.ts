@@ -6,7 +6,22 @@ export type User = {
   name?: string;
   orgId: string;
   roles: string[];
+  clearanceLevel: number;
+  productAccess: ProductAccessGrant[];
   isActive?: boolean;
+};
+
+export type ProductKey =
+  | "customer_chat"
+  | "appointment_booking"
+  | "whatsapp_assistant"
+  | "voice_receptionist";
+
+export type ProductAccessGrant = {
+  productKey: ProductKey;
+  canUse: boolean;
+  canConfigure: boolean;
+  canManageAgents: boolean;
 };
 
 export type AuthResponse = {
@@ -68,9 +83,13 @@ export type Organization = {
   id: string;
   name: string;
   slug: string;
+  contactEmail?: string | null;
+  contactPhone?: string | null;
   status: string;
   plan: string;
   deploymentMode: string;
+  users?: Array<Pick<User, "id" | "name" | "email" | "isActive">>;
+  _count?: { users: number; products: number };
 };
 
 export type ProductEntitlement = {
@@ -154,6 +173,10 @@ export type KnowledgeSource = {
   name: string;
   type: string;
   status: string;
+  sensitivityLevel: number;
+  productVisibility: ProductKey[];
+  categories: string[];
+  isQuarantined: boolean;
   rawText?: string | null;
   createdAt: string;
 };
@@ -376,6 +399,7 @@ export type ChildrenProps = {
 
 export type TabId =
   | "dashboard"
+  | "organizations"
   | "inbox"
   | "knowledge"
   | "appointments"

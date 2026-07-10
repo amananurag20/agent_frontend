@@ -34,6 +34,7 @@ export function KnowledgeView({
                 required
               />
             </Field>
+            <MemoryAccessFields />
             <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
               Create source
             </button>
@@ -58,6 +59,7 @@ export function KnowledgeView({
                 required
               />
             </Field>
+            <MemoryAccessFields />
             <button className="h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-white">
               Upload source
             </button>
@@ -82,6 +84,7 @@ export function KnowledgeView({
                 required
               />
             </Field>
+            <MemoryAccessFields />
             <button className="h-10 rounded-md border border-[#cfd6e2] px-4 text-sm font-medium hover:bg-[#f2f4f7]">
               Add URL source
             </button>
@@ -100,7 +103,9 @@ export function KnowledgeView({
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{source.name}</p>
-                <p className="text-xs text-[#667085]">{source.type}</p>
+                <p className="text-xs text-[#667085]">
+                  {source.type} · level {source.sensitivityLevel ?? 0} · {source.productVisibility?.length ?? 4} products
+                </p>
               </div>
               <div className="flex items-center gap-2">
                 <StatusPill status={source.status} />
@@ -115,6 +120,39 @@ export function KnowledgeView({
           ))}
         </div>
       </Card>
+    </div>
+  );
+}
+
+function MemoryAccessFields() {
+  const products = [
+    ["customer_chat", "Chat"],
+    ["appointment_booking", "Appointments"],
+    ["whatsapp_assistant", "WhatsApp"],
+    ["voice_receptionist", "Voice"],
+  ] as const;
+
+  return (
+    <div className="border-t border-[#e4e7ec] pt-4">
+      <Field label="Sensitivity level">
+        <select name="sensitivityLevel" className="input" defaultValue="0">
+          <option value="0">0 · Public</option>
+          <option value="1">1 · Internal</option>
+          <option value="2">2 · Restricted</option>
+          <option value="3">3 · Confidential</option>
+          <option value="4">4 · Owner only</option>
+        </select>
+      </Field>
+      <fieldset className="mt-3">
+        <legend className="text-sm font-medium text-[#344054]">Visible to products</legend>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          {products.map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-xs">
+              <input type="checkbox" name="productVisibility" value={key} defaultChecked /> {label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
     </div>
   );
 }

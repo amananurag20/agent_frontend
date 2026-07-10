@@ -12,6 +12,7 @@ import { DashboardView } from "@/components/dashboard-view";
 import { InboxView } from "@/components/inbox-view";
 import { KnowledgeView } from "@/components/knowledge-view";
 import { LoginPanel } from "@/components/login-panel";
+import { OrganizationsView } from "@/components/organizations-view";
 import { ProductsView } from "@/components/products-view";
 import { HealthPanel, StatusPill, Toolbar, UserPanel } from "@/components/ui";
 import { UsersView } from "@/components/users-view";
@@ -38,6 +39,7 @@ import type {
   Organization,
   PasswordResetRequestResponse,
   ProductEntitlement,
+  ProductKey,
   PublicWidgetConversationCreated,
   TabId,
   User,
@@ -55,6 +57,7 @@ const API_BASE_URL =
 
 const navItems: Array<{ id: TabId; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
+  { id: "organizations", label: "Organizations" },
   { id: "inbox", label: "Inbox" },
   { id: "knowledge", label: "Knowledge" },
   { id: "appointments", label: "Appointments" },
@@ -68,24 +71,16 @@ const navItems: Array<{ id: TabId; label: string }> = [
 ];
 
 export default function Home() {
-  const [token, setToken] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem("agentcore_token");
-  });
-  const [refreshToken, setRefreshToken] = useState<string | null>(() => {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem("agentcore_refresh_token");
-  });
-  const [user, setUser] = useState<User | null>(() => {
-    if (typeof window === "undefined") return null;
-    const storedUser = window.localStorage.getItem("agentcore_user");
-    return storedUser ? (JSON.parse(storedUser) as User) : null;
-  });
+  const [token, setToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [health, setHealth] = useState<Health | null>(null);
   const [observability, setObservability] =
     useState<ObservabilitySummary | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<ProductEntitlement[]>([]);
   const [aiProviders, setAIProviders] = useState<AIProvider[]>([]);
@@ -152,8 +147,43 @@ export default function Home() {
     [token],
   );
 
+  const visibleNavItems = useMemo(() => {
+    if (!user) return navItems.filter((item) => item.id === "dashboard");
+    const isSuperAdmin = user.roles.includes("super_admin");
+    const isOrgAdmin = user.roles.includes("org_admin");
+    const isEnabled = (productKey: ProductKey) =>
+      isSuperAdmin ||
+      products.some(
+        (item) => item.product.key === productKey && item.status === "enabled",
+      );
+    const canConfigureChat = isSuperAdmin || isOrgAdmin || user.productAccess?.some((access) => access.productKey === "customer_chat" && access.canConfigure);
+    const canUse = (productKey: ProductKey) =>
+      isEnabled(productKey) &&
+      (isSuperAdmin ||
+        isOrgAdmin ||
+        user.productAccess?.some((access) => access.productKey === productKey && access.canUse));
+
+    return navItems.filter((item) => {
+      if (item.id === "organizations") return isSuperAdmin;
+      if (["users", "products", "ai", "audit", "knowledge"].includes(item.id)) return isSuperAdmin || isOrgAdmin;
+      if (item.id === "inbox") return canUse("customer_chat");
+      if (item.id === "widget") return canUse("customer_chat") && canConfigureChat;
+      if (item.id === "appointments") return canUse("appointment_booking");
+      if (item.id === "whatsapp") return canUse("whatsapp_assistant");
+      if (item.id === "voice") return canUse("voice_receptionist");
+      return true;
+    });
+  }, [products, user]);
+
   useEffect(() => {
+    const restoreSession = window.setTimeout(() => {
+      const storedUser = window.localStorage.getItem("agentcore_user");
+      setToken(window.localStorage.getItem("agentcore_token"));
+      setRefreshToken(window.localStorage.getItem("agentcore_refresh_token"));
+      setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
+    }, 0);
     void loadHealth();
+    return () => window.clearTimeout(restoreSession);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -162,6 +192,12 @@ export default function Home() {
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    if (!token || !selectedOrganizationId || !user?.roles.includes("super_admin")) return;
+    void loadProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedOrganizationId]);
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await axios.request<T>({
@@ -358,25 +394,54 @@ export default function Home() {
   }
 
   async function loadAll() {
-    await Promise.all([
+    if (!user) return;
+    const isSuperAdmin = user.roles.includes("super_admin");
+    const isOrgAdmin = user.roles.includes("org_admin");
+    const loadedProducts = await loadProducts();
+    const isEnabled = (productKey: ProductKey) =>
+      isSuperAdmin ||
+      Boolean(
+        loadedProducts?.some(
+          (item) => item.product.key === productKey && item.status === "enabled",
+        ),
+      );
+    const canUse = (productKey: ProductKey) =>
+      isEnabled(productKey) &&
+      (isSuperAdmin ||
+        isOrgAdmin ||
+        user.productAccess?.some((access) => access.productKey === productKey && access.canUse));
+
+    const baseTasks: Array<Promise<unknown>> = [
       loadHealth(),
-      loadObservability(),
       loadOrganization(),
-      loadUsers(),
-      loadProducts(),
-      loadAIProviders(),
-      loadConversations(),
-      loadWidgetConfig(),
-      loadKnowledgeSources(),
-      loadAppointmentServices(),
-      loadAppointmentStaff(),
-      loadAppointmentBookings(),
-      loadWhatsAppConfigs(),
-      loadWhatsAppConversations(),
-      loadVoiceConfigs(),
-      loadVoiceCalls(),
-      loadAuditLogs(),
-    ]);
+    ];
+    if (isSuperAdmin) baseTasks.push(loadOrganizations());
+    if (isSuperAdmin || isOrgAdmin) {
+      baseTasks.push(
+        loadObservability(),
+        loadUsers(),
+        loadAIProviders(),
+        loadKnowledgeSources(),
+        loadAuditLogs(),
+      );
+    }
+    if (canUse("customer_chat")) {
+      baseTasks.push(loadConversations(), loadWidgetConfig());
+    }
+    if (canUse("appointment_booking")) {
+      baseTasks.push(
+        loadAppointmentServices(),
+        loadAppointmentStaff(),
+        loadAppointmentBookings(),
+      );
+    }
+    if (canUse("whatsapp_assistant")) {
+      baseTasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
+    }
+    if (canUse("voice_receptionist")) {
+      baseTasks.push(loadVoiceConfigs(), loadVoiceCalls());
+    }
+    await Promise.all(baseTasks);
   }
 
   async function loadHealth() {
@@ -396,16 +461,29 @@ export default function Home() {
     if (result) setOrganization(result);
   }
 
+  async function loadOrganizations() {
+    const result = await run(() => api<Organization[]>("/organizations"));
+    if (result) {
+      setOrganizations(result);
+      setSelectedOrganizationId((current) => current ?? result[0]?.id ?? null);
+    }
+    return result;
+  }
+
   async function loadUsers() {
     const result = await run(() => api<User[]>("/users"));
     if (result) setUsers(result);
   }
 
   async function loadProducts() {
+    const path = user?.roles.includes("super_admin") && selectedOrganizationId
+      ? `/organizations/${selectedOrganizationId}/products`
+      : "/organizations/me/products";
     const result = await run(() =>
-      api<ProductEntitlement[]>("/organizations/me/products"),
+      api<ProductEntitlement[]>(path),
     );
     if (result) setProducts(result);
+    return result;
   }
 
   async function loadAIProviders() {
@@ -738,6 +816,8 @@ export default function Home() {
             type: "text",
             name: String(form.get("name")),
             rawText: String(form.get("rawText")),
+            sensitivityLevel: Number(form.get("sensitivityLevel") || 0),
+            productVisibility: form.getAll("productVisibility"),
           }),
         }),
       "Knowledge source created",
@@ -761,6 +841,8 @@ export default function Home() {
             type: "website_url",
             name: String(form.get("name")),
             url: String(form.get("url")),
+            sensitivityLevel: Number(form.get("sensitivityLevel") || 0),
+            productVisibility: form.getAll("productVisibility"),
           }),
         }),
       "Website source created",
@@ -887,6 +969,46 @@ export default function Home() {
     }
   }
 
+  function productAccessFromForm(form: FormData) {
+    const role = String(form.get("role"));
+    return (form.getAll("productKeys") as ProductKey[]).map((productKey) => ({
+      productKey,
+      canUse: true,
+      canConfigure: role === "product_admin",
+      canManageAgents: role === "product_admin",
+    }));
+  }
+
+  async function createOrganization(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () => api<Organization>("/organizations", {
+        method: "POST",
+        body: JSON.stringify({
+          name: String(form.get("name")),
+          contactEmail: String(form.get("contactEmail")) || undefined,
+          contactPhone: String(form.get("contactPhone")) || undefined,
+          plan: String(form.get("plan")),
+          deploymentMode: String(form.get("deploymentMode")),
+          firstAdmin: {
+            name: String(form.get("adminName")),
+            email: String(form.get("adminEmail")),
+            password: String(form.get("adminPassword")),
+          },
+          enabledProducts: form.getAll("products"),
+        }),
+      }),
+      "Organization and first admin created",
+    );
+    if (result) {
+      formElement.reset();
+      setSelectedOrganizationId(result.id);
+      await Promise.all([loadOrganizations(), loadUsers()]);
+    }
+  }
+
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -900,6 +1022,9 @@ export default function Home() {
             email: String(form.get("email")),
             password: String(form.get("password")),
             roles: [String(form.get("role"))],
+            orgId: String(form.get("orgId")) || undefined,
+            clearanceLevel: Number(form.get("clearanceLevel") || 0),
+            productAccess: productAccessFromForm(form),
           }),
         }),
       "User created",
@@ -923,6 +1048,9 @@ export default function Home() {
           name: name || undefined,
           email: String(form.get("email")),
           roles: [String(form.get("role"))],
+          orgId: String(form.get("orgId")) || undefined,
+          clearanceLevel: Number(form.get("clearanceLevel") || 0),
+          productAccess: productAccessFromForm(form),
         }),
       }),
     );
@@ -954,13 +1082,41 @@ export default function Home() {
     await loadUsers();
   }
 
+  async function updateUserAccess(
+    target: User,
+    role: string,
+    productKeys: ProductKey[],
+    clearanceLevel: number,
+  ) {
+    const result = await run(
+      () => api<User>(`/users/${target.id}/roles`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          roles: [role],
+          clearanceLevel,
+          productAccess: productKeys.map((productKey) => ({
+            productKey,
+            canUse: true,
+            canConfigure: role === "product_admin",
+            canManageAgents: role === "product_admin",
+          })),
+        }),
+      }),
+      "User access updated",
+    );
+    if (result) await loadUsers();
+  }
+
   async function updateProductStatus(
     productKey: string,
     status: "enabled" | "disabled",
   ) {
+    const path = user?.roles.includes("super_admin") && selectedOrganizationId
+      ? `/organizations/${selectedOrganizationId}/products/${productKey}`
+      : `/organizations/me/products/${productKey}`;
     await run(
       () =>
-        api<ProductEntitlement>(`/organizations/me/products/${productKey}`, {
+        api<ProductEntitlement>(path, {
           method: "PATCH",
           body: JSON.stringify({ status }),
         }),
@@ -1390,7 +1546,7 @@ export default function Home() {
             <div className="mt-1 text-xs text-[#a9b4c8]">Operations Console</div>
           </div>
           <nav className="space-y-1 px-3 py-4">
-            {navItems.map((item) => (
+            {visibleNavItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
@@ -1434,7 +1590,7 @@ export default function Home() {
 
           <div className="border-b border-[#d8dde6] bg-white px-4 py-2 lg:hidden">
             <div className="flex gap-2 overflow-x-auto">
-              {navItems.map((item) => (
+              {visibleNavItems.map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
@@ -1470,6 +1626,14 @@ export default function Home() {
                     users={users}
                     products={products}
                     aiProviders={aiProviders}
+                  />
+                ) : null}
+                {activeTab === "organizations" ? (
+                  <OrganizationsView
+                    organizations={organizations}
+                    selectedOrganizationId={selectedOrganizationId}
+                    onSelect={setSelectedOrganizationId}
+                    onCreate={createOrganization}
                   />
                 ) : null}
                 {activeTab === "inbox" ? (
@@ -1551,8 +1715,12 @@ export default function Home() {
                 {activeTab === "users" ? (
                   <UsersView
                     users={users}
+                    organizations={organizations}
+                    selectedOrganizationId={selectedOrganizationId ?? user.orgId}
+                    isSuperAdmin={user.roles.includes("super_admin")}
                     onCreate={createUser}
                     onInvite={createInvite}
+                    onUpdateAccess={updateUserAccess}
                     onToggleStatus={toggleUserStatus}
                   />
                 ) : null}
