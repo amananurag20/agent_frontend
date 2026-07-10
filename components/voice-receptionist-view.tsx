@@ -48,7 +48,7 @@ export function VoiceReceptionistView({
       <div className="space-y-4">
         <form
           onSubmit={onCreateConfig}
-          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
         >
           <h2 className="font-semibold">Voice Provider</h2>
           <div className="mt-4 space-y-4">
@@ -91,7 +91,7 @@ export function VoiceReceptionistView({
             <Field label="Transfer phone">
               <input name="transferPhoneNumber" className="input" />
             </Field>
-            <label className="flex items-center gap-2 text-sm text-[#344054]">
+            <label className="flex items-center gap-2 text-sm text-[#c9d4e5]">
               <input
                 name="voicemailEnabled"
                 type="checkbox"
@@ -100,14 +100,14 @@ export function VoiceReceptionistView({
               />
               Enable voicemail fallback
             </label>
-            <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
               Save config
             </button>
           </div>
         </form>
 
         <Card>
-          <div className="border-b border-[#e4e7ec] p-4">
+          <div className="border-b border-[#263449] p-4">
             <h2 className="font-semibold">Current Config</h2>
           </div>
           {activeConfig ? (
@@ -116,7 +116,7 @@ export function VoiceReceptionistView({
                 <span className="font-medium">{activeConfig.name}</span>
                 <StatusPill status={activeConfig.status} />
               </div>
-              <p className="text-xs text-[#667085]">
+              <p className="text-xs text-[#8797b0]">
                 {activeConfig.provider} ·{" "}
                 {activeConfig.phoneNumber ?? activeConfig.sipDomain ?? "No endpoint"}
               </p>
@@ -131,7 +131,7 @@ export function VoiceReceptionistView({
                   status={activeConfig.voicemailEnabled ? "voicemail" : "no vm"}
                 />
               </div>
-              <pre className="overflow-auto rounded-md bg-[#101828] p-3 text-xs text-white">
+              <pre className="overflow-auto rounded-md bg-[#111c2e] p-3 text-xs text-white">
                 {`GET /api/v1/voice-receptionist/webhook/${activeConfig.id}`}
                 {"\n"}
                 {`POST /api/v1/voice-receptionist/webhook/${activeConfig.id}/events`}
@@ -145,10 +145,10 @@ export function VoiceReceptionistView({
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card>
-          <div className="border-b border-[#e4e7ec] p-4">
+          <div className="border-b border-[#263449] p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Voice Calls</h2>
-              <span className="text-xs text-[#667085]">{calls?.total ?? 0}</span>
+              <span className="text-xs text-[#8797b0]">{calls?.total ?? 0}</span>
             </div>
             <div className="mt-3 grid grid-cols-[1fr_130px] gap-2">
               <input
@@ -176,7 +176,7 @@ export function VoiceReceptionistView({
             </div>
             <button
               onClick={onLoadCalls}
-              className="mt-3 h-9 w-full rounded-md bg-[#eef2f6] text-sm hover:bg-[#e3e8ef]"
+              className="mt-3 h-9 w-full rounded-md bg-[#223047] text-sm hover:bg-[#314158]"
             >
               Apply
             </button>
@@ -186,8 +186,8 @@ export function VoiceReceptionistView({
               <button
                 key={call.id}
                 onClick={() => onSelectCall(call.id)}
-                className={`block w-full border-b border-[#eef2f6] p-4 text-left hover:bg-[#f8fafc] ${
-                  selectedCall?.id === call.id ? "bg-[#eef6ff]" : ""
+                className={`block w-full border-b border-[#223047] p-4 text-left hover:bg-[#142238] ${
+                  selectedCall?.id === call.id ? "bg-[#172b47]" : ""
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -196,7 +196,7 @@ export function VoiceReceptionistView({
                   </span>
                   <StatusPill status={call.status} />
                 </div>
-                <p className="mt-1 truncate text-xs text-[#667085]">
+                <p className="mt-1 truncate text-xs text-[#8797b0]">
                   {call.events.at(-1)?.content ?? "No transcript yet"}
                 </p>
                 <p className="mt-1 text-xs text-[#98a2b3]">
@@ -210,50 +210,50 @@ export function VoiceReceptionistView({
         <Card>
           {selectedCall ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e7ec] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263449] p-4">
                 <div>
                   <h2 className="font-semibold">
                     {selectedCall.callerName ?? "Voice caller"}
                   </h2>
-                  <p className="text-xs text-[#667085]">
+                  <p className="text-xs text-[#8797b0]">
                     {selectedCall.fromNumber ?? selectedCall.providerCallId}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={onRequestHandoff}
-                    className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                   >
                     Handoff
                   </button>
                   <button
                     onClick={() => onRouteCall("transfer")}
-                    className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                   >
                     Transfer
                   </button>
                   <button
                     onClick={() => onRouteCall("voicemail")}
-                    className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                   >
                     Voicemail
                   </button>
                   <button
                     onClick={() => onUpdateStatus("completed")}
-                    className="h-9 rounded-md bg-[#101828] px-3 text-sm text-white hover:bg-[#26344f]"
+                    className="h-9 rounded-md bg-[#111c2e] px-3 text-sm text-white hover:bg-[#26344f]"
                   >
                     End
                   </button>
                 </div>
               </div>
-              <div className="max-h-[560px] space-y-3 overflow-auto bg-[#fbfcfe] p-4">
+              <div className="max-h-[560px] space-y-3 overflow-auto bg-[#111c2e] p-4">
                 {selectedCall.events.map((event) => (
                   <VoiceEventBubble key={event.id} event={event} />
                 ))}
               </div>
               <form
                 onSubmit={onSendMessage}
-                className="border-t border-[#e4e7ec] p-4"
+                className="border-t border-[#263449] p-4"
               >
                 <textarea
                   name="reply"
@@ -263,7 +263,7 @@ export function VoiceReceptionistView({
                   required
                 />
                 <div className="mt-3 flex justify-end">
-                  <button className="h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-white hover:bg-[#0d5355]">
+                  <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white hover:bg-[#0f8895]">
                     Speak message
                   </button>
                 </div>
@@ -286,13 +286,13 @@ function VoiceEventBubble({ event }: { event: VoiceCallEvent }) {
     <div
       className={`max-w-[80%] rounded-lg border p-3 ${
         isCaller
-          ? "ml-auto border-[#cfe4ff] bg-[#eff7ff]"
+          ? "ml-auto border-[#1d3a60] bg-[#172b47]"
           : isAgent
-            ? "border-[#cce9db] bg-[#effaf4]"
-            : "border-[#e4e7ec] bg-white"
+            ? "border-[#1b4338] bg-[#15352f]"
+            : "border-[#263449] bg-[#111c2e]"
       }`}
     >
-      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[#667085]">
+      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[#8797b0]">
         <span>{event.role}</span>
         <span>{event.type}</span>
       </div>

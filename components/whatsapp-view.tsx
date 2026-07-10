@@ -46,7 +46,7 @@ export function WhatsAppView({
       <div className="space-y-4">
         <form
           onSubmit={onCreateConfig}
-          className="rounded-lg border border-[#d8dde6] bg-white p-4"
+          className="rounded-lg border border-[#263449] bg-[#111c2e] p-4"
         >
           <h2 className="font-semibold">WhatsApp Provider</h2>
           <div className="mt-4 space-y-4">
@@ -81,14 +81,14 @@ export function WhatsAppView({
             <Field label="Default locale">
               <input name="defaultLocale" className="input" defaultValue="en" />
             </Field>
-            <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+            <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
               Save config
             </button>
           </div>
         </form>
 
         <Card>
-          <div className="border-b border-[#e4e7ec] p-4">
+          <div className="border-b border-[#263449] p-4">
             <h2 className="font-semibold">Current Config</h2>
           </div>
           {activeConfig ? (
@@ -97,7 +97,7 @@ export function WhatsAppView({
                 <span className="font-medium">{activeConfig.name}</span>
                 <StatusPill status={activeConfig.status} />
               </div>
-              <p className="text-xs text-[#667085]">
+              <p className="text-xs text-[#8797b0]">
                 {activeConfig.provider} · {activeConfig.phoneNumberId ?? "No phone ID"}
               </p>
               <div className="grid grid-cols-3 gap-2 text-xs">
@@ -113,7 +113,7 @@ export function WhatsAppView({
                   status={activeConfig.hasAppSecret ? "secret" : "no secret"}
                 />
               </div>
-              <pre className="overflow-auto rounded-md bg-[#101828] p-3 text-xs text-white">
+              <pre className="overflow-auto rounded-md bg-[#111c2e] p-3 text-xs text-white">
                 {`GET /api/v1/whatsapp-assistant/webhook/${activeConfig.id}`}
                 {"\n"}
                 {`POST /api/v1/whatsapp-assistant/webhook/${activeConfig.id}/inbound`}
@@ -127,10 +127,10 @@ export function WhatsAppView({
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card>
-          <div className="border-b border-[#e4e7ec] p-4">
+          <div className="border-b border-[#263449] p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">WhatsApp Inbox</h2>
-              <span className="text-xs text-[#667085]">
+              <span className="text-xs text-[#8797b0]">
                 {conversations?.total ?? 0}
               </span>
             </div>
@@ -158,7 +158,7 @@ export function WhatsAppView({
             </div>
             <button
               onClick={onLoadConversations}
-              className="mt-3 h-9 w-full rounded-md bg-[#eef2f6] text-sm hover:bg-[#e3e8ef]"
+              className="mt-3 h-9 w-full rounded-md bg-[#223047] text-sm hover:bg-[#314158]"
             >
               Apply
             </button>
@@ -168,9 +168,9 @@ export function WhatsAppView({
               <button
                 key={conversation.id}
                 onClick={() => onSelectConversation(conversation.id)}
-                className={`block w-full border-b border-[#eef2f6] p-4 text-left hover:bg-[#f8fafc] ${
+                className={`block w-full border-b border-[#223047] p-4 text-left hover:bg-[#142238] ${
                   selectedConversation?.id === conversation.id
-                    ? "bg-[#eef6ff]"
+                    ? "bg-[#172b47]"
                     : ""
                 }`}
               >
@@ -182,7 +182,7 @@ export function WhatsAppView({
                   </span>
                   <StatusPill status={conversation.status} />
                 </div>
-                <p className="mt-1 truncate text-xs text-[#667085]">
+                <p className="mt-1 truncate text-xs text-[#8797b0]">
                   {conversation.messages.at(-1)?.content ?? "No text message"}
                 </p>
                 <p className="mt-1 text-xs text-[#98a2b3]">
@@ -196,12 +196,12 @@ export function WhatsAppView({
         <Card>
           {selectedConversation ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e7ec] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263449] p-4">
                 <div>
                   <h2 className="font-semibold">
                     {selectedConversation.contactName ?? "WhatsApp contact"}
                   </h2>
-                  <p className="text-xs text-[#667085]">
+                  <p className="text-xs text-[#8797b0]">
                     {selectedConversation.contactPhone ??
                       selectedConversation.contactWaId}
                   </p>
@@ -209,32 +209,32 @@ export function WhatsAppView({
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={onRequestHandoff}
-                    className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                   >
                     Handoff
                   </button>
                   <button
                     onClick={() => onUpdateStatus("open")}
-                    className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                    className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                   >
                     Open
                   </button>
                   <button
                     onClick={() => onUpdateStatus("closed")}
-                    className="h-9 rounded-md bg-[#101828] px-3 text-sm text-white hover:bg-[#26344f]"
+                    className="h-9 rounded-md bg-[#111c2e] px-3 text-sm text-white hover:bg-[#26344f]"
                   >
                     Close
                   </button>
                 </div>
               </div>
-              <div className="max-h-[560px] space-y-3 overflow-auto bg-[#fbfcfe] p-4">
+              <div className="max-h-[560px] space-y-3 overflow-auto bg-[#111c2e] p-4">
                 {selectedConversation.messages.map((message) => (
                   <WhatsAppBubble key={message.id} message={message} />
                 ))}
               </div>
               <form
                 onSubmit={onSendReply}
-                className="border-t border-[#e4e7ec] p-4"
+                className="border-t border-[#263449] p-4"
               >
                 <textarea
                   name="reply"
@@ -244,7 +244,7 @@ export function WhatsAppView({
                   required
                 />
                 <div className="mt-3 flex justify-end">
-                  <button className="h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-white hover:bg-[#0d5355]">
+                  <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white hover:bg-[#0f8895]">
                     Send reply
                   </button>
                 </div>
@@ -267,13 +267,13 @@ function WhatsAppBubble({ message }: { message: WhatsAppMessage }) {
     <div
       className={`max-w-[80%] rounded-lg border p-3 ${
         isContact
-          ? "ml-auto border-[#cfe4ff] bg-[#eff7ff]"
+          ? "ml-auto border-[#1d3a60] bg-[#172b47]"
           : isAgent
-            ? "border-[#cce9db] bg-[#effaf4]"
-            : "border-[#e4e7ec] bg-white"
+            ? "border-[#1b4338] bg-[#15352f]"
+            : "border-[#263449] bg-[#111c2e]"
       }`}
     >
-      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[#667085]">
+      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[#8797b0]">
         <span>{message.role}</span>
         <span>{message.type}</span>
       </div>

@@ -23,10 +23,10 @@ export function InboxView({
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
       <Card>
-        <div className="border-b border-[#e4e7ec] p-4">
+        <div className="border-b border-[#263449] p-4">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Inbox</h2>
-            <span className="text-xs text-[#667085]">
+            <span className="text-xs text-[#8797b0]">
               {conversations?.total ?? 0} conversations
             </span>
           </div>
@@ -54,7 +54,7 @@ export function InboxView({
           </div>
           <button
             onClick={onLoadConversations}
-            className="mt-3 h-9 w-full rounded-md bg-[#eef2f6] text-sm hover:bg-[#e3e8ef]"
+            className="mt-3 h-9 w-full rounded-md bg-[#223047] text-sm hover:bg-[#314158]"
           >
             Apply
           </button>
@@ -64,8 +64,8 @@ export function InboxView({
             <button
               key={conversation.id}
               onClick={() => onSelectConversation(conversation.id)}
-              className={`block w-full border-b border-[#eef2f6] p-4 text-left hover:bg-[#f8fafc] ${
-                selectedConversation?.id === conversation.id ? "bg-[#eef6ff]" : ""
+              className={`block w-full border-b border-[#223047] p-4 text-left hover:bg-[#142238] ${
+                selectedConversation?.id === conversation.id ? "bg-[#172b47]" : ""
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -77,7 +77,7 @@ export function InboxView({
                 </span>
                 <StatusPill status={conversation.status} />
               </div>
-              <p className="mt-1 truncate text-xs text-[#667085]">
+              <p className="mt-1 truncate text-xs text-[#8797b0]">
                 {conversation.messages.at(-1)?.content ?? "No messages yet"}
               </p>
             </button>
@@ -88,38 +88,38 @@ export function InboxView({
       <Card>
         {selectedConversation ? (
           <>
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e4e7ec] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#263449] p-4">
               <div>
                 <h2 className="font-semibold">
                   {selectedConversation.visitorName ?? "Visitor conversation"}
                 </h2>
-                <p className="text-xs text-[#667085]">
+                <p className="text-xs text-[#8797b0]">
                   {selectedConversation.visitorEmail ?? selectedConversation.id}
                 </p>
               </div>
               <div className="flex gap-2">
                 <button
                   onClick={() => onUpdateStatus("open")}
-                  className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                  className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                 >
                   Open
                 </button>
                 <button
                   onClick={() => onUpdateStatus("closed")}
-                  className="h-9 rounded-md bg-[#101828] px-3 text-sm text-white hover:bg-[#26344f]"
+                  className="h-9 rounded-md bg-[#111c2e] px-3 text-sm text-white hover:bg-[#26344f]"
                 >
                   Close
                 </button>
               </div>
             </div>
-            <div className="max-h-[520px] space-y-3 overflow-auto bg-[#fbfcfe] p-4">
+            <div className="max-h-[520px] space-y-3 overflow-auto bg-[#111c2e] p-4">
               {selectedConversation.messages.map((message) => (
                 <MessageBubble key={message.id} message={message} />
               ))}
             </div>
             <form
               onSubmit={onSendReply}
-              className="border-t border-[#e4e7ec] p-4"
+              className="border-t border-[#263449] p-4"
             >
               <textarea
                 name="reply"
@@ -129,7 +129,7 @@ export function InboxView({
                 required
               />
               <div className="mt-3 flex justify-end">
-                <button className="h-10 rounded-md bg-[#116466] px-4 text-sm font-medium text-white hover:bg-[#0d5355]">
+                <button className="h-10 rounded-md bg-[#19b8c9] px-4 text-sm font-medium text-white hover:bg-[#0f8895]">
                   Send reply
                 </button>
               </div>
@@ -151,13 +151,13 @@ function MessageBubble({ message }: { message: Message }) {
     <div
       className={`max-w-[80%] rounded-lg border p-3 ${
         isVisitor
-          ? "ml-auto border-[#cfe4ff] bg-[#eff7ff]"
+          ? "ml-auto border-[#1d3a60] bg-[#172b47]"
           : isAgent
-            ? "border-[#cce9db] bg-[#effaf4]"
-            : "border-[#e4e7ec] bg-white"
+            ? "border-[#1b4338] bg-[#15352f]"
+            : "border-[#263449] bg-[#111c2e]"
       }`}
     >
-      <div className="mb-1 text-xs font-medium uppercase text-[#667085]">
+      <div className="mb-1 text-xs font-medium uppercase text-[#8797b0]">
         {message.role}
       </div>
       <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
@@ -165,12 +165,12 @@ function MessageBubble({ message }: { message: Message }) {
         <AiStatus metadata={message.metadata} />
       ) : null}
       {message.citations.length ? (
-        <div className="mt-3 border-t border-[#e4e7ec] pt-2">
-          <p className="text-xs font-medium text-[#475467]">Citations</p>
+        <div className="mt-3 border-t border-[#263449] pt-2">
+          <p className="text-xs font-medium text-[#a2b1c6]">Citations</p>
           {message.citations.slice(0, 2).map((citation) => (
             <p
               key={citation.chunkId}
-              className="mt-1 line-clamp-2 text-xs text-[#667085]"
+              className="mt-1 line-clamp-2 text-xs text-[#8797b0]"
             >
               {citation.content}
             </p>
@@ -190,8 +190,8 @@ function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
     <p
       className={`mt-2 inline-flex rounded-full px-2 py-1 text-xs ${
         usedFallback
-          ? "bg-[#fff6ed] text-[#b54708]"
-          : "bg-[#ecfdf3] text-[#027a48]"
+          ? "bg-[#3a2b18] text-[#f6b95f]"
+          : "bg-[#15352f] text-[#5ee2c3]"
       }`}
     >
       {usedFallback ? "fallback" : `AI ${provider}`}

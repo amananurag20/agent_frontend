@@ -14,7 +14,7 @@ import { KnowledgeView } from "@/components/knowledge-view";
 import { LoginPanel } from "@/components/login-panel";
 import { OrganizationsView } from "@/components/organizations-view";
 import { ProductsView } from "@/components/products-view";
-import { HealthPanel, StatusPill, Toolbar, UserPanel } from "@/components/ui";
+import { StatusPill, Toolbar } from "@/components/ui";
 import { UsersView } from "@/components/users-view";
 import { VoiceReceptionistView } from "@/components/voice-receptionist-view";
 import { WidgetView } from "@/components/widget-view";
@@ -69,6 +69,21 @@ const navItems: Array<{ id: TabId; label: string }> = [
   { id: "ai", label: "AI Providers" },
   { id: "audit", label: "Audit" },
 ];
+
+const navMeta: Record<TabId, { mark: string; description: string }> = {
+  dashboard: { mark: "DB", description: "Live platform overview" },
+  organizations: { mark: "OR", description: "Tenants, plans and ownership" },
+  inbox: { mark: "CH", description: "Customer conversations and handoff" },
+  knowledge: { mark: "KN", description: "Sources, ingestion and access levels" },
+  appointments: { mark: "AP", description: "Services, availability and bookings" },
+  whatsapp: { mark: "WA", description: "WhatsApp automation and support" },
+  voice: { mark: "VO", description: "Calls, routing and transcripts" },
+  widget: { mark: "WG", description: "Website assistant configuration" },
+  users: { mark: "US", description: "Roles, clearance and product access" },
+  products: { mark: "PR", description: "Organization product entitlements" },
+  ai: { mark: "AI", description: "Models, providers and credentials" },
+  audit: { mark: "AU", description: "Security and operations activity" },
+};
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -719,17 +734,6 @@ export default function Home() {
         }),
       );
     }
-    clearSession();
-  }
-
-  async function logoutAllDevices() {
-    await run(
-      () =>
-        api<{ loggedOut: boolean }>("/auth/logout-all", {
-          method: "POST",
-        }),
-      "Signed out all devices",
-    );
     clearSession();
   }
 
@@ -1538,49 +1542,70 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f6f7f9] text-[#111827]">
+    <main className="agentcore-app min-h-screen bg-[#0b1220] text-[#e7edf7]">
       <div className="flex min-h-screen">
-        <aside className="hidden w-64 shrink-0 border-r border-[#d8dde6] bg-[#101828] text-white lg:block">
-          <div className="border-b border-white/10 px-5 py-5">
-            <div className="text-lg font-semibold">AgentCore</div>
-            <div className="mt-1 text-xs text-[#a9b4c8]">Operations Console</div>
+        <aside className="hidden h-screen w-[272px] shrink-0 border-r border-[#263449] bg-[#0d1727] text-white lg:sticky lg:top-0 lg:flex lg:flex-col">
+          <div className="flex h-20 items-center gap-3 border-b border-white/10 px-5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#4f7cff] text-sm font-bold shadow-[0_8px_24px_rgba(79,124,255,0.3)]">AC</div>
+            <div>
+              <div className="text-base font-semibold tracking-wide">AgentCore</div>
+              <div className="mt-0.5 text-[11px] uppercase text-[#7f91ad]">AI Business Suite</div>
+            </div>
           </div>
-          <nav className="space-y-1 px-3 py-4">
+          <div className="px-5 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#61728e]">Workspace</div>
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-5">
             {visibleNavItems.map((item) => (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex h-10 w-full items-center justify-between rounded-md px-3 text-sm transition ${
+                className={`group flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition ${
                   activeTab === item.id
-                    ? "bg-white text-[#101828]"
-                    : "text-[#dbe3f3] hover:bg-white/10"
+                    ? "bg-[#4f7cff] text-white shadow-[0_8px_20px_rgba(79,124,255,0.2)]"
+                    : "text-[#9babc2] hover:bg-white/[0.05] hover:text-white"
                 }`}
               >
-                <span>{item.label}</span>
-                <span className="text-xs">›</span>
+                <span className={`flex h-7 w-7 items-center justify-center rounded text-[9px] font-bold ${activeTab === item.id ? "bg-white/15" : "bg-[#17253a] text-[#6f87aa] group-hover:text-[#94aef7]"}`}>
+                  {navMeta[item.id].mark}
+                </span>
+                <span className="flex-1 text-left">{item.label}</span>
+                {activeTab === item.id ? <span className="h-1.5 w-1.5 rounded-full bg-[#67e8f9]" /> : null}
               </button>
             ))}
           </nav>
+          {user ? (
+            <div className="border-t border-white/10 p-4">
+              <div className="flex items-center gap-3 rounded-md bg-white/[0.04] p-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#19b8c9] text-xs font-bold text-[#07131f]">
+                  {(user.name ?? user.email).slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-white">{user.name ?? user.email}</p>
+                  <p className="mt-0.5 truncate text-[10px] text-[#7f91ad]">{user.roles.join(" · ")}</p>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-h-16 items-center justify-between border-b border-[#d8dde6] bg-white px-4 md:px-6">
-            <div>
-              <h1 className="text-base font-semibold md:text-lg">
-                AgentCore Console
-              </h1>
-              <p className="text-xs text-[#667085]">
-                {health
-                  ? `API ${health.status} · DB ${health.database}`
-                  : "Checking API"}
-              </p>
+          <header className="flex min-h-16 items-center justify-between border-b border-[#263449] bg-[#111c2e]/95 px-4 backdrop-blur md:px-7">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-md border border-[#2e405b] bg-[#17253a] text-[10px] font-bold text-[#80a0ff] lg:hidden">AC</div>
+              <div>
+                <p className="text-xs text-[#70819b]">{organization?.name ?? "AgentCore workspace"}</p>
+                <h1 className="text-sm font-semibold text-white md:text-base">Operations Console</h1>
+              </div>
             </div>
             <div className="flex items-center gap-2">
+              <div className="hidden items-center gap-2 rounded-md border border-[#263449] bg-[#0d1727] px-3 py-2 text-xs text-[#8797b0] sm:flex">
+                <span className="h-2 w-2 rounded-full bg-[#2dd4bf] shadow-[0_0_10px_rgba(45,212,191,0.65)]" />
+                {health ? `API ${health.status} · DB ${health.database}` : "Checking services"}
+              </div>
               <StatusPill status={health?.status ?? "checking"} />
               {user ? (
                 <button
                   onClick={handleLogout}
-                  className="h-9 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]"
+                  className="h-9 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]"
                 >
                   Sign out
                 </button>
@@ -1588,7 +1613,7 @@ export default function Home() {
             </div>
           </header>
 
-          <div className="border-b border-[#d8dde6] bg-white px-4 py-2 lg:hidden">
+          <div className="border-b border-[#263449] bg-[#0d1727] px-4 py-2 lg:hidden">
             <div className="flex gap-2 overflow-x-auto">
               {visibleNavItems.map((item) => (
                 <button
@@ -1596,8 +1621,8 @@ export default function Home() {
                   onClick={() => setActiveTab(item.id)}
                   className={`h-9 shrink-0 rounded-md px-3 text-sm ${
                     activeTab === item.id
-                      ? "bg-[#101828] text-white"
-                      : "border border-[#cfd6e2]"
+                      ? "bg-[#4f7cff] text-white"
+                      : "border border-[#314158]"
                   }`}
                 >
                   {item.label}
@@ -1615,8 +1640,17 @@ export default function Home() {
               state={state}
             />
           ) : (
-            <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 md:p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <section className="min-w-0">
+            <div className="min-h-0 flex-1 p-4 md:p-7">
+              <section className="mx-auto min-w-0 max-w-[1640px]">
+                <div className="mb-5">
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#647695]">Workspace / {navMeta[activeTab].mark}</p>
+                  <div className="mt-1 flex flex-wrap items-end justify-between gap-3">
+                    <div>
+                      <h2 className="text-2xl font-semibold text-white">{navItems.find((item) => item.id === activeTab)?.label}</h2>
+                      <p className="mt-1 text-sm text-[#8797b0]">{navMeta[activeTab].description}</p>
+                    </div>
+                  </div>
+                </div>
                 <Toolbar state={state} onRefresh={loadAll} />
                 {activeTab === "dashboard" ? (
                   <DashboardView
@@ -1738,11 +1772,6 @@ export default function Home() {
                 ) : null}
                 {activeTab === "audit" ? <AuditView logs={auditLogs} /> : null}
               </section>
-
-              <aside className="space-y-4">
-                <HealthPanel health={health} />
-                <UserPanel user={user} onLogoutAll={logoutAllDevices} />
-              </aside>
             </div>
           )}
         </section>

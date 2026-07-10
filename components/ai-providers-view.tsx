@@ -10,7 +10,7 @@ export function AIProvidersView({
 }) {
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[420px_minmax(0,1fr)]">
-      <form onSubmit={onCreate} className="rounded-lg border border-[#d8dde6] bg-white p-4">
+      <form onSubmit={onCreate} className="rounded-lg border border-[#263449] bg-[#111c2e] p-4">
         <h2 className="font-semibold">Add AI Provider</h2>
         <div className="mt-4 space-y-4">
           <Field label="Provider">
@@ -49,7 +49,7 @@ export function AIProvidersView({
           <Field label="Embedding model">
             <input name="embeddingModel" className="input" defaultValue="text-embedding-3-small" />
           </Field>
-          <button className="h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+          <button className="h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
             Save provider
           </button>
         </div>
@@ -58,12 +58,12 @@ export function AIProvidersView({
         <CardHeader>
           <h2 className="font-semibold">Providers</h2>
         </CardHeader>
-        <div className="divide-y divide-[#eef2f6]">
+        <div className="divide-y divide-[#223047]">
           {providers.map((provider) => (
             <div key={provider.id} className="flex items-center justify-between gap-3 p-4">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium">{provider.name}</p>
-                <p className="text-xs text-[#667085]">
+                <p className="text-xs text-[#8797b0]">
                   {provider.provider} · {provider.chatModel ?? "no chat model"} · key{" "}
                   {provider.hasApiKey ? "set" : "missing"}
                 </p>

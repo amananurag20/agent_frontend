@@ -21,8 +21,8 @@ export function LoginPanel({
 
   return (
     <div className="flex flex-1 items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-lg border border-[#d8dde6] bg-white p-5 shadow-sm">
-        <div className="flex rounded-md border border-[#d8dde6] bg-[#f8fafc] p-1">
+      <div className="w-full max-w-sm rounded-lg border border-[#263449] bg-[#111c2e] p-5 shadow-sm">
+        <div className="flex rounded-md border border-[#263449] bg-[#142238] p-1">
           <AuthModeButton
             active={mode === "login"}
             onClick={() => setMode("login")}
@@ -64,7 +64,7 @@ export function LoginPanel({
                 required
               />
             </Field>
-            <button className="h-10 w-full rounded-md bg-[#101828] text-sm font-medium text-white hover:bg-[#26344f]">
+            <button className="h-10 w-full rounded-md bg-[#4f7cff] text-sm font-medium text-white hover:bg-[#26344f]">
               Sign in
             </button>
           </form>
@@ -81,13 +81,13 @@ export function LoginPanel({
                 required
               />
             </Field>
-            <button className="h-10 w-full rounded-md bg-[#101828] text-sm font-medium text-white hover:bg-[#26344f]">
+            <button className="h-10 w-full rounded-md bg-[#4f7cff] text-sm font-medium text-white hover:bg-[#26344f]">
               Create reset token
             </button>
             <button
               type="button"
               onClick={() => setMode("reset-confirm")}
-              className="h-9 w-full rounded-md border border-[#cfd6e2] text-sm hover:bg-[#f2f4f7]"
+              className="h-9 w-full rounded-md border border-[#314158] text-sm hover:bg-[#18263b]"
             >
               I have a reset token
             </button>
@@ -109,7 +109,7 @@ export function LoginPanel({
                 minLength={8}
               />
             </Field>
-            <button className="h-10 w-full rounded-md bg-[#101828] text-sm font-medium text-white hover:bg-[#26344f]">
+            <button className="h-10 w-full rounded-md bg-[#4f7cff] text-sm font-medium text-white hover:bg-[#26344f]">
               Reset password
             </button>
           </form>
@@ -133,7 +133,7 @@ export function LoginPanel({
                 minLength={8}
               />
             </Field>
-            <button className="h-10 w-full rounded-md bg-[#101828] text-sm font-medium text-white hover:bg-[#26344f]">
+            <button className="h-10 w-full rounded-md bg-[#4f7cff] text-sm font-medium text-white hover:bg-[#26344f]">
               Join organization
             </button>
           </form>
@@ -161,7 +161,7 @@ function AuthModeButton({
       type="button"
       onClick={onClick}
       className={`h-8 flex-1 rounded text-sm ${
-        active ? "bg-white shadow-sm" : "text-[#667085]"
+        active ? "bg-[#111c2e] shadow-sm" : "text-[#8797b0]"
       }`}
     >
       {children}

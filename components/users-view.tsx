@@ -67,10 +67,10 @@ export function UsersView({
         <CardHeader>
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Users</h2>
-            <span className="text-xs text-[#667085]">{visibleUsers.length} accounts</span>
+            <span className="text-xs text-[#8797b0]">{visibleUsers.length} accounts</span>
           </div>
         </CardHeader>
-        <div className="divide-y divide-[#eef2f6]">
+        <div className="divide-y divide-[#223047]">
           {visibleUsers.map((user) => (
             <UserAccessRow
               key={user.id}
@@ -103,7 +103,7 @@ function UserForm({
   includePassword?: boolean;
 }) {
   return (
-    <form onSubmit={onSubmit} className="rounded-lg border border-[#d8dde6] bg-white p-4">
+    <form onSubmit={onSubmit} className="rounded-lg border border-[#263449] bg-[#111c2e] p-4">
       <h2 className="font-semibold">{title}</h2>
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Name"><input name="name" className="input" required={includePassword} /></Field>
@@ -134,7 +134,7 @@ function UserForm({
         ) : null}
       </div>
       <ProductChecks />
-      <button className="mt-4 h-10 rounded-md bg-[#101828] px-4 text-sm font-medium text-white">
+      <button className="mt-4 h-10 rounded-md bg-[#4f7cff] px-4 text-sm font-medium text-white">
         {submitLabel}
       </button>
     </form>
@@ -143,8 +143,8 @@ function UserForm({
 
 function ProductChecks({ selected = [] }: { selected?: ProductKey[] }) {
   return (
-    <fieldset className="mt-4 border-t border-[#e4e7ec] pt-4">
-      <legend className="text-sm font-medium text-[#344054]">Product access</legend>
+    <fieldset className="mt-4 border-t border-[#263449] pt-4">
+      <legend className="text-sm font-medium text-[#c9d4e5]">Product access</legend>
       <div className="mt-2 grid grid-cols-2 gap-2">
         {productOptions.map(([key, label]) => (
           <label key={key} className="flex items-center gap-2 text-sm">
@@ -185,7 +185,7 @@ function UserAccessRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{user.name ?? user.email}</p>
-          <p className="text-xs text-[#667085]">{user.email}</p>
+          <p className="text-xs text-[#8797b0]">{user.email}</p>
         </div>
         <StatusPill status={user.isActive === false ? "inactive" : "active"} />
       </div>
@@ -211,8 +211,8 @@ function UserAccessRow({
             </label>
           ))}
         </div>
-        <button className="h-10 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]">Save access</button>
-        <button type="button" onClick={() => onToggleStatus(user)} className="h-10 rounded-md border border-[#cfd6e2] px-3 text-sm hover:bg-[#f2f4f7]">
+        <button className="h-10 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]">Save access</button>
+        <button type="button" onClick={() => onToggleStatus(user)} className="h-10 rounded-md border border-[#314158] px-3 text-sm hover:bg-[#18263b]">
           {user.isActive === false ? "Activate" : "Deactivate"}
         </button>
       </div>
