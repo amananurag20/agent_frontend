@@ -110,6 +110,7 @@ const navMeta: Record<TabId, { icon: LucideIcon; mark: string; description: stri
 };
 
 export default function Home() {
+  const [isSessionReady, setIsSessionReady] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
@@ -228,15 +229,21 @@ export default function Home() {
 
   useEffect(() => {
     const restoreSession = window.setTimeout(() => {
-      const storedUser = window.localStorage.getItem("agentcore_user");
-      const storedTheme = window.localStorage.getItem("agentcore_theme");
-      const storedTab = window.localStorage.getItem("agentcore_active_tab");
-      setToken(window.localStorage.getItem("agentcore_token"));
-      setRefreshToken(window.localStorage.getItem("agentcore_refresh_token"));
-      setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
-      setTheme(storedTheme === "dark" ? "dark" : "light");
-      if (storedTab && validTabIds.has(storedTab as TabId)) {
-        setActiveTab(storedTab as TabId);
+      try {
+        const storedUser = window.localStorage.getItem("agentcore_user");
+        const storedTheme = window.localStorage.getItem("agentcore_theme");
+        const storedTab = window.localStorage.getItem("agentcore_active_tab");
+        setToken(window.localStorage.getItem("agentcore_token"));
+        setRefreshToken(window.localStorage.getItem("agentcore_refresh_token"));
+        setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
+        setTheme(storedTheme === "dark" ? "dark" : "light");
+        if (storedTab && validTabIds.has(storedTab as TabId)) {
+          setActiveTab(storedTab as TabId);
+        }
+      } catch {
+        clearSession();
+      } finally {
+        setIsSessionReady(true);
       }
     }, 0);
     void loadHealth();
@@ -1687,6 +1694,50 @@ export default function Home() {
     return new Date(String(value)).toISOString();
   }
 
+  if (!isSessionReady) {
+    return (
+      <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
+        <div className="flex min-h-screen items-center justify-center px-4">
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-5 py-4 text-sm text-[var(--text-muted)] shadow-sm">
+            Restoring session...
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
+        <div className="flex min-h-screen flex-col">
+          <header className="flex min-h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-header)] px-4 md:px-7">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-primary)] text-sm font-bold text-[var(--text-on-accent)] shadow-[var(--shadow-soft)]">
+                AC
+              </div>
+              <div>
+                <div className="text-base font-semibold tracking-wide text-[var(--text-strong)]">
+                  AgentCore
+                </div>
+                <div className="mt-0.5 text-[11px] uppercase text-[var(--text-soft)]">
+                  AI Business Suite
+                </div>
+              </div>
+            </div>
+            {health ? <StatusPill status={health.status} /> : null}
+          </header>
+          <LoginPanel
+            onSubmit={handleLogin}
+            onRequestPasswordReset={requestPasswordReset}
+            onResetPassword={resetPassword}
+            onAcceptInvite={acceptInvite}
+            state={state}
+          />
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
       <div className="flex min-h-screen">
@@ -1746,10 +1797,12 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <div className="hidden items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-muted)] sm:flex">
-                <span className="h-2 w-2 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_10px_rgba(45,212,191,0.65)]" />
-                {health ? `API ${health.status} · DB ${health.database}` : "Checking services"}
-              </div>
+              {health ? (
+                <div className="hidden items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-muted)] sm:flex">
+                  <span className="h-2 w-2 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_10px_rgba(45,212,191,0.65)]" />
+                  API {health.status} · DB {health.database}
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={loadAll}
@@ -1800,16 +1853,7 @@ export default function Home() {
             </div>
           </div>
 
-          {!user ? (
-            <LoginPanel
-              onSubmit={handleLogin}
-              onRequestPasswordReset={requestPasswordReset}
-              onResetPassword={resetPassword}
-              onAcceptInvite={acceptInvite}
-              state={state}
-            />
-          ) : (
-            <div className="min-h-0 flex-1 p-4 md:p-5">
+          <div className="min-h-0 flex-1 p-4 md:p-5">
               <section className="mx-auto min-w-0 max-w-[1640px]">
                 <div className="mb-3">
                   <p className="text-xs font-medium uppercase tracking-[0.14em] text-[var(--text-soft)]">Workspace / {navMeta[activeTab].mark}</p>
@@ -1945,8 +1989,7 @@ export default function Home() {
                 ) : null}
                 {activeTab === "audit" ? <AuditView logs={auditLogs} /> : null}
               </section>
-            </div>
-          )}
+          </div>
         </section>
       </div>
     </main>
