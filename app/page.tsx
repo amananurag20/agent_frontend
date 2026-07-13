@@ -55,6 +55,10 @@ import type {
   KnowledgeSource,
   KnowledgeCategory,
   KnowledgeFolder,
+  KnowledgePageInfo,
+  KnowledgeSourceList,
+  KnowledgeSourceQuery,
+  KnowledgeSourceVersion,
   ObservabilitySummary,
   Organization,
   PasswordResetRequestResponse,
@@ -141,6 +145,16 @@ export default function Home() {
   );
   const [knowledgeCategories, setKnowledgeCategories] = useState<KnowledgeCategory[]>([]);
   const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
+  const [knowledgePageInfo, setKnowledgePageInfo] = useState<KnowledgePageInfo>({
+    page: 1,
+    limit: 25,
+    total: 0,
+    totalPages: 1,
+  });
+  const [knowledgeQuery, setKnowledgeQuery] = useState<KnowledgeSourceQuery>({
+    page: 1,
+    limit: 25,
+  });
   const [appointmentServices, setAppointmentServices] = useState<
     AppointmentService[]
   >([]);
@@ -611,18 +625,54 @@ export default function Home() {
     if (result) setWidgetConfig(result);
   }
 
-  async function loadKnowledgeSources() {
+  async function loadKnowledgeSources(queryOverride?: KnowledgeSourceQuery) {
     const organizationId = selectedOrganizationId ?? user?.orgId;
-    const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
+    const nextQuery = queryOverride ?? knowledgeQuery;
+    if (queryOverride) setKnowledgeQuery(nextQuery);
+    const sourceParams = new URLSearchParams();
+    if (organizationId) sourceParams.set("organizationId", organizationId);
+    sourceParams.set("page", String(nextQuery.page ?? 1));
+    sourceParams.set("limit", String(nextQuery.limit ?? 25));
+    if (nextQuery.search) sourceParams.set("search", nextQuery.search);
+    if (nextQuery.status) sourceParams.set("status", nextQuery.status);
+    if (nextQuery.type) sourceParams.set("type", nextQuery.type);
+    if (nextQuery.folderId) sourceParams.set("folderId", nextQuery.folderId);
+    if (nextQuery.quarantined !== undefined) sourceParams.set("quarantined", String(nextQuery.quarantined));
+    const taxonomyQuery = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
     const result = await run(() => Promise.all([
-      api<KnowledgeSource[]>(`/knowledge/sources${query}`),
-      api<KnowledgeCategory[]>(`/knowledge/taxonomy/categories${query}`),
-      api<KnowledgeFolder[]>(`/knowledge/taxonomy/folders${query}`),
+      api<KnowledgeSourceList>(`/knowledge/sources?${sourceParams.toString()}`),
+      api<KnowledgeCategory[]>(`/knowledge/taxonomy/categories${taxonomyQuery}`),
+      api<KnowledgeFolder[]>(`/knowledge/taxonomy/folders${taxonomyQuery}`),
     ]));
     if (result) {
-      setKnowledgeSources(result[0]);
+      setKnowledgeSources(result[0].data);
+      setKnowledgePageInfo(result[0].pageInfo);
       setKnowledgeCategories(result[1]);
       setKnowledgeFolders(result[2]);
+    }
+  }
+
+  async function refreshKnowledgeSourcesSilently() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const sourceParams = new URLSearchParams();
+    if (organizationId) sourceParams.set("organizationId", organizationId);
+    sourceParams.set("page", String(knowledgeQuery.page ?? 1));
+    sourceParams.set("limit", String(knowledgeQuery.limit ?? 25));
+    if (knowledgeQuery.search) sourceParams.set("search", knowledgeQuery.search);
+    if (knowledgeQuery.status) sourceParams.set("status", knowledgeQuery.status);
+    if (knowledgeQuery.type) sourceParams.set("type", knowledgeQuery.type);
+    if (knowledgeQuery.folderId) sourceParams.set("folderId", knowledgeQuery.folderId);
+    if (knowledgeQuery.quarantined !== undefined) sourceParams.set("quarantined", String(knowledgeQuery.quarantined));
+    try {
+      const result = await api<KnowledgeSourceList>(
+        `/knowledge/sources?${sourceParams.toString()}`,
+      );
+      setKnowledgeSources(result.data);
+      setKnowledgePageInfo(result.pageInfo);
+    } catch {
+      // The next explicit refresh surfaces the API error without interrupting the workspace.
     }
   }
 
@@ -934,6 +984,7 @@ export default function Home() {
             productVisibility: form.getAll("productVisibility"),
             categories: parseCategories(form),
             folderId: String(form.get("folderId") || "") || undefined,
+            recrawlIntervalHours: Number(form.get("recrawlIntervalHours") || 24),
           }),
         }),
       "Website source created",
@@ -1035,6 +1086,87 @@ export default function Home() {
       "Knowledge source approved",
     );
     await loadKnowledgeSources();
+  }
+
+  async function deleteKnowledgeSource(id: string) {
+    const result = await run(
+      () => api<{ deleted: boolean }>(`/knowledge/sources/${id}`, {
+        method: "DELETE",
+      }),
+      "Knowledge source deleted",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
+  async function updateKnowledgeSource(
+    id: string,
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const recrawlValue = String(form.get("recrawlIntervalHours") ?? "");
+    const result = await run(
+      () => api<KnowledgeSource>(`/knowledge/sources/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: String(form.get("name")),
+          url: String(form.get("url") || "") || undefined,
+          sensitivityLevel: Number(form.get("sensitivityLevel") ?? 0),
+          productVisibility: form.getAll("productVisibility"),
+          categories: parseCategories(form),
+          folderId: String(form.get("folderId") || "") || null,
+          recrawlIntervalHours: recrawlValue ? Number(recrawlValue) : null,
+        }),
+      }),
+      "Knowledge source updated",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
+  async function updateKnowledgeCategory(id: string, name: string) {
+    const result = await run(
+      () => api<KnowledgeCategory>(`/knowledge/taxonomy/categories/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+      "Category updated",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
+  async function deleteKnowledgeCategory(id: string) {
+    const result = await run(
+      () => api<{ deleted: boolean }>(`/knowledge/taxonomy/categories/${id}`, { method: "DELETE" }),
+      "Category deleted",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
+  async function updateKnowledgeFolder(id: string, name: string) {
+    const result = await run(
+      () => api<KnowledgeFolder>(`/knowledge/taxonomy/folders/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+      "Folder updated",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
+  async function deleteKnowledgeFolder(id: string) {
+    const result = await run(
+      () => api<{ deleted: boolean }>(`/knowledge/taxonomy/folders/${id}`, { method: "DELETE" }),
+      "Folder deleted",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
+  async function loadKnowledgeVersions(id: string) {
+    return (
+      (await run(() =>
+        api<KnowledgeSourceVersion[]>(`/knowledge/sources/${id}/versions`),
+      )) ?? []
+    );
   }
 
   async function updateWidgetConfig(event: FormEvent<HTMLFormElement>) {
@@ -1899,11 +2031,21 @@ export default function Home() {
                     sources={knowledgeSources}
                     categories={knowledgeCategories}
                     folders={knowledgeFolders}
+                    pageInfo={knowledgePageInfo}
+                    onQueryChange={loadKnowledgeSources}
+                    onRefresh={refreshKnowledgeSourcesSilently}
                     onCreate={createKnowledgeSource}
                     onCreateUrl={createWebsiteKnowledgeSource}
                     onUploadFile={uploadKnowledgeFile}
                     onIngest={ingestKnowledgeSource}
                     onReleaseQuarantine={releaseKnowledgeQuarantine}
+                    onDelete={deleteKnowledgeSource}
+                    onUpdate={updateKnowledgeSource}
+                    onUpdateCategory={updateKnowledgeCategory}
+                    onDeleteCategory={deleteKnowledgeCategory}
+                    onUpdateFolder={updateKnowledgeFolder}
+                    onDeleteFolder={deleteKnowledgeFolder}
+                    onLoadVersions={loadKnowledgeVersions}
                     onCreateCategory={createKnowledgeCategory}
                     onCreateFolder={createKnowledgeFolder}
                   />

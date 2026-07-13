@@ -32,13 +32,20 @@ export function StatusPill({ status }: { status: string }) {
     status === "ok" ||
     status === "open" ||
     status === "enabled" ||
-    status === "active"
+    status === "active" ||
+    status === "ready" ||
+    status === "completed"
       ? "bg-[var(--success-bg)] text-[var(--success-text)]"
       : status === "closed" ||
           status === "disabled" ||
           status === "inactive"
         ? "bg-[var(--neutral-bg)] text-[var(--neutral-text)]"
-        : status === "degraded" || status === "waiting_for_agent"
+        : status === "degraded" ||
+            status === "waiting_for_agent" ||
+            status === "pending" ||
+            status === "processing" ||
+            status === "quarantined" ||
+            status === "stale"
           ? "bg-[var(--warning-bg)] text-[var(--warning-text)]"
           : "bg-[var(--danger-bg)] text-[var(--danger-text)]";
 

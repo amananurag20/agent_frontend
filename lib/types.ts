@@ -206,7 +206,55 @@ export type KnowledgeSource = {
   levelSource?: "auto" | "manual";
   folderId?: string | null;
   isQuarantined: boolean;
+  url?: string | null;
+  fileName?: string | null;
+  mimeType?: string | null;
+  fileSizeBytes?: number | null;
   rawText?: string | null;
+  metadata?: Record<string, unknown>;
+  errorMessage?: string | null;
+  lastIngestedAt?: string | null;
+  contentFingerprint?: string | null;
+  version?: number;
+  malwareScanStatus?: string;
+  malwareScanMessage?: string | null;
+  recrawlIntervalHours?: number | null;
+  lastCrawledAt?: string | null;
+  nextCrawlAt?: string | null;
+  staleAfterAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+};
+
+export type KnowledgePageInfo = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type KnowledgeSourceList = {
+  data: KnowledgeSource[];
+  pageInfo: KnowledgePageInfo;
+};
+
+export type KnowledgeSourceQuery = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  type?: string;
+  folderId?: string;
+  quarantined?: boolean;
+};
+
+export type KnowledgeSourceVersion = {
+  id: string;
+  version: number;
+  contentFingerprint: string;
+  documentCount: number;
+  chunkCount: number;
+  metadata: Record<string, unknown>;
   createdAt: string;
 };
 
