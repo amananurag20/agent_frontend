@@ -176,12 +176,27 @@ export type ConversationList = {
 };
 
 export type WidgetConfig = {
+  id: string;
   organizationId: string;
+  name: string;
   widgetKey: string;
   enabled: boolean;
+  knowledgeScope: "all" | "folders";
+  folderIds: string[];
   greetingText: string;
   allowedDomains: string[];
   settings: Record<string, unknown>;
+};
+
+export type WidgetPageInfo = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type WidgetConfigList = WidgetPageInfo & {
+  data: WidgetConfig[];
 };
 
 export type PublicWidgetConversationCreated = {

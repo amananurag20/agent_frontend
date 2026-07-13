@@ -71,6 +71,8 @@ import type {
   VoiceCallList,
   VoiceConfig,
   WidgetConfig,
+  WidgetConfigList,
+  WidgetPageInfo,
   WhatsAppConfig,
   WhatsAppConversation,
   WhatsAppConversationList,
@@ -134,6 +136,13 @@ export default function Home() {
   );
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
+  const [widgetConfigs, setWidgetConfigs] = useState<WidgetConfig[]>([]);
+  const [widgetPageInfo, setWidgetPageInfo] = useState<WidgetPageInfo>({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  });
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | null>(null);
   const [widgetTestConversation, setWidgetTestConversation] =
     useState<Conversation | null>(null);
@@ -204,6 +213,14 @@ export default function Home() {
     [token],
   );
 
+  const workspaceOrganization = useMemo(
+    () =>
+      (user?.roles.includes("super_admin")
+        ? organizations.find((item) => item.id === selectedOrganizationId)
+        : null) ?? organization,
+    [organization, organizations, selectedOrganizationId, user],
+  );
+
   const visibleNavItems = useMemo(() => {
     if (!user) return navItems.filter((item) => item.id === "dashboard");
     const isSuperAdmin = user.roles.includes("super_admin");
@@ -213,7 +230,6 @@ export default function Home() {
       ...(user.customRoles ?? []).flatMap((role) => role.productAccess),
     ];
     const isEnabled = (productKey: ProductKey) =>
-      isSuperAdmin ||
       products.some(
         (item) => item.product.key === productKey && item.status === "enabled",
       );
@@ -281,9 +297,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!token || !selectedOrganizationId || !user?.roles.includes("super_admin")) return;
-    void loadProducts();
-    void loadUsers();
-    void loadKnowledgeSources();
+    void loadSelectedOrganizationData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrganizationId]);
 
@@ -495,7 +509,6 @@ export default function Home() {
     );
     const loadedProducts = await loadProducts();
     const isEnabled = (productKey: ProductKey) =>
-      isSuperAdmin ||
       Boolean(
         loadedProducts?.some(
           (item) => item.product.key === productKey && item.status === "enabled",
@@ -544,6 +557,32 @@ export default function Home() {
     await Promise.all(baseTasks);
   }
 
+  async function loadSelectedOrganizationData() {
+    setProducts([]);
+    setConversations(null);
+    setSelectedConversation(null);
+    setWidgetConfigs([]);
+    setWidgetConfig(null);
+    setWidgetTestConversation(null);
+    setWidgetVisitorToken(null);
+    const loadedProducts = await loadProducts();
+    const isEnabled = (productKey: ProductKey) =>
+      Boolean(
+        loadedProducts?.some(
+          (item) => item.product.key === productKey && item.status === "enabled",
+        ),
+      );
+    const tasks: Array<Promise<unknown>> = [
+      loadUsers(),
+      loadKnowledgeSources(),
+    ];
+
+    if (isEnabled("customer_chat")) {
+      tasks.push(loadConversations(), loadWidgetConfig());
+    }
+    await Promise.all(tasks);
+  }
+
   async function loadHealth() {
     const result = await run(() => api<Health>("/health"));
     if (result) setHealth(result);
@@ -565,7 +604,13 @@ export default function Home() {
     const result = await run(() => api<Organization[]>("/organizations"));
     if (result) {
       setOrganizations(result);
-      setSelectedOrganizationId((current) => current ?? result[0]?.id ?? null);
+      setSelectedOrganizationId(
+        (current) =>
+          current ??
+          result.find((item) => item.id === user?.orgId)?.id ??
+          result[0]?.id ??
+          null,
+      );
     }
     return result;
   }
@@ -594,6 +639,9 @@ export default function Home() {
   async function loadConversations() {
     const params = new URLSearchParams({
       limit: "30",
+      ...(selectedOrganizationId
+        ? { organizationId: selectedOrganizationId }
+        : {}),
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.search ? { search: filters.search } : {}),
     });
@@ -618,11 +666,27 @@ export default function Home() {
     if (result) setSelectedConversation(result);
   }
 
-  async function loadWidgetConfig() {
+  async function loadWidgetConfig(page = 1) {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams({ page: String(page), limit: "10" });
+    if (organizationId) params.set("organizationId", organizationId);
     const result = await run(() =>
-      api<WidgetConfig>("/customer-chat/widget-config"),
+      api<WidgetConfigList>(`/customer-chat/widget-configs?${params.toString()}`),
     );
-    if (result) setWidgetConfig(result);
+    if (result) {
+      setWidgetConfigs(result.data);
+      setWidgetPageInfo({
+        page: result.page,
+        limit: result.limit,
+        total: result.total,
+        totalPages: result.totalPages,
+      });
+      setWidgetConfig((current) =>
+        current
+          ? result.data.find((widget) => widget.id === current.id) ?? current
+          : null,
+      );
+    }
   }
 
   async function loadKnowledgeSources(queryOverride?: KnowledgeSourceQuery) {
@@ -1173,31 +1237,108 @@ export default function Home() {
 
   async function updateWidgetConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!widgetConfig) return;
     const form = new FormData(event.currentTarget);
-    const allowedDomains = String(form.get("allowedDomains"))
-      .split("\n")
-      .map((item) => item.trim())
-      .filter(Boolean);
     const result = await run(
       () =>
-        api<WidgetConfig>("/customer-chat/widget-config", {
+        api<WidgetConfig>(`/customer-chat/widget-configs/${widgetConfig.id}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            enabled: form.get("enabled") === "on",
-            greetingText: String(form.get("greetingText")),
-            allowedDomains,
-            settings: {
-              assistantName: String(form.get("assistantName")),
-              primaryColor: String(form.get("primaryColor")),
-              launcherLabel: String(form.get("launcherLabel")),
-              position: String(form.get("position")),
-            },
-          }),
+          body: JSON.stringify(widgetPayloadFromForm(form)),
         }),
       "Widget saved",
     );
 
-    if (result) setWidgetConfig(result);
+    if (result) {
+      setWidgetConfig(result);
+      setWidgetConfigs((current) =>
+        current.map((widget) => (widget.id === result.id ? result : widget)),
+      );
+    }
+  }
+
+  async function createWidgetConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () =>
+        api<WidgetConfig>("/customer-chat/widget-configs", {
+          method: "POST",
+          body: JSON.stringify({
+            ...widgetPayloadFromForm(form),
+            organizationId: selectedOrganizationId ?? user?.orgId,
+          }),
+        }),
+      "Widget created",
+    );
+    if (result) {
+      await loadWidgetConfig(1);
+      setWidgetConfig(result);
+      setWidgetTestConversation(null);
+      setWidgetVisitorToken(null);
+    }
+  }
+
+  async function deleteWidgetConfig(configToDelete: WidgetConfig) {
+    const deletedId = configToDelete.id;
+    const result = await run(
+      () =>
+        api<{ deleted: boolean }>(`/customer-chat/widget-configs/${deletedId}`, {
+          method: "DELETE",
+        }),
+      "Widget deleted",
+    );
+    if (result) {
+      const remainingTotal = Math.max(0, widgetPageInfo.total - 1);
+      const remainingPages = Math.max(
+        1,
+        Math.ceil(remainingTotal / widgetPageInfo.limit),
+      );
+      setWidgetConfigs((current) =>
+        current.filter((widget) => widget.id !== deletedId),
+      );
+      setWidgetPageInfo((current) => ({
+        ...current,
+        total: remainingTotal,
+        totalPages: remainingPages,
+      }));
+      if (widgetConfig?.id === deletedId) {
+        setWidgetConfig(null);
+        setWidgetTestConversation(null);
+        setWidgetVisitorToken(null);
+      }
+      await loadWidgetConfig(Math.min(widgetPageInfo.page, remainingPages));
+    }
+  }
+
+  function widgetPayloadFromForm(form: FormData) {
+    const knowledgeScope = String(form.get("knowledgeScope")) as
+      | "all"
+      | "folders";
+    return {
+      name: String(form.get("name")),
+      enabled: form.get("enabled") === "on",
+      knowledgeScope,
+      folderIds:
+        knowledgeScope === "folders"
+          ? form.getAll("folderIds").map(String)
+          : [],
+      greetingText: String(form.get("greetingText")),
+      allowedDomains: [
+        ...new Set(
+          form
+            .getAll("allowedDomains")
+            .map(String)
+            .map((domain) => domain.trim())
+            .filter(Boolean),
+        ),
+      ],
+      settings: {
+        assistantName: String(form.get("assistantName")),
+        primaryColor: String(form.get("primaryColor")),
+        launcherLabel: String(form.get("launcherLabel")),
+        position: String(form.get("position")),
+      },
+    };
   }
 
   async function sendWidgetTestMessage(event: FormEvent<HTMLFormElement>) {
@@ -1932,7 +2073,7 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-tint)] text-[10px] font-bold text-[var(--accent-primary)] lg:hidden">AC</div>
               <div>
-                <p className="text-xs text-[var(--text-muted)]">{organization?.name ?? "AgentCore workspace"}</p>
+                <p className="text-xs text-[var(--text-muted)]">{workspaceOrganization?.name ?? "AgentCore workspace"}</p>
                 <h1 className="text-sm font-semibold text-[var(--text-strong)] md:text-base">Operations Console</h1>
               </div>
             </div>
@@ -2008,7 +2149,7 @@ export default function Home() {
                   <DashboardView
                     health={health}
                     observability={observability}
-                    organization={organization}
+                    organization={workspaceOrganization}
                     users={users}
                     products={products}
                     aiProviders={aiProviders}
@@ -2107,8 +2248,24 @@ export default function Home() {
                 ) : null}
                 {activeTab === "widget" ? (
                   <WidgetView
+                    configs={widgetConfigs}
+                    pageInfo={widgetPageInfo}
                     config={widgetConfig}
+                    folders={knowledgeFolders}
+                    onSelect={(widget) => {
+                      setWidgetConfig(widget);
+                      setWidgetTestConversation(null);
+                      setWidgetVisitorToken(null);
+                    }}
+                    onBack={() => {
+                      setWidgetConfig(null);
+                      setWidgetTestConversation(null);
+                      setWidgetVisitorToken(null);
+                    }}
+                    onCreate={createWidgetConfig}
                     onSubmit={updateWidgetConfig}
+                    onDelete={deleteWidgetConfig}
+                    onPageChange={loadWidgetConfig}
                     testConversation={widgetTestConversation}
                     onSendTestMessage={sendWidgetTestMessage}
                     onResetTestChat={() => {
