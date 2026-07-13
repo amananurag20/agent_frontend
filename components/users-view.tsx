@@ -40,9 +40,20 @@ export function UsersView({
   const visibleUsers = selectedOrganizationId
     ? users.filter((user) => user.orgId === selectedOrganizationId)
     : users;
+  const managedOrganizationId =
+    selectedOrganizationId ?? visibleUsers[0]?.orgId ?? null;
 
   return (
     <div className="space-y-4">
+      {managedOrganizationId ? (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4">
+          <div>
+            <p className="text-sm font-medium">Access policy workspace</p>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">Manage custom roles, service identities, and organization-level access.</p>
+          </div>
+          <a href={`/organizations/${managedOrganizationId}`} className="h-10 rounded-md bg-[var(--accent-primary)] px-4 py-2.5 text-sm font-medium text-[var(--text-on-accent)]">Open workspace</a>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <UserForm
           title="Invite user"

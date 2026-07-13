@@ -8,11 +8,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Archive,
+  BadgeCheck,
   Blocks,
   Building2,
   ChevronRight,
   CreditCard,
   Globe2,
+  KeyRound,
   LayoutGrid,
   Mail,
   Phone,
@@ -28,10 +31,12 @@ import {
 import type {
   ApiState,
   AuthResponse,
+  CustomRole,
   InviteResponse,
   Organization,
   ProductEntitlement,
   ProductKey,
+  ServicePrincipal,
   User,
 } from "@/lib/types";
 import { Card, CardHeader, Field, StateMessage, StatusPill } from "./ui";
@@ -67,7 +72,7 @@ const productCatalog: Array<{
 ];
 
 type ThemeMode = "light" | "dark";
-type OrganizationSection = "overview" | "team" | "products" | "settings";
+type OrganizationSection = "overview" | "team" | "roles" | "services" | "products" | "settings";
 
 export function OrganizationDetailsPage({
   organizationId,
@@ -83,6 +88,9 @@ export function OrganizationDetailsPage({
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<ProductEntitlement[]>([]);
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([]);
+  const [servicePrincipals, setServicePrincipals] = useState<ServicePrincipal[]>([]);
+  const [latestServiceSecret, setLatestServiceSecret] = useState<ServicePrincipal | null>(null);
   const [activeSection, setActiveSection] =
     useState<OrganizationSection>("overview");
   const [state, setState] = useState<ApiState>({
@@ -102,20 +110,29 @@ export function OrganizationDetailsPage({
   );
 
   async function loadPageData() {
+    const isSuperAdmin = currentUser?.roles.includes("super_admin") ?? false;
     await run(
       async () => {
-        const [organizationResult, usersResult, productsResult] =
+        const [organizationResult, usersResult, productsResult, rolesResult, principalsResult] =
           await Promise.all([
-            api<Organization>(`/organizations/${organizationId}`),
+            api<Organization>(
+              isSuperAdmin ? `/organizations/${organizationId}` : "/organizations/me",
+            ),
             api<User[]>("/users"),
             api<ProductEntitlement[]>(
-              `/organizations/${organizationId}/products`,
+              isSuperAdmin
+                ? `/organizations/${organizationId}/products`
+                : "/organizations/me/products",
             ),
+            api<CustomRole[]>(`/custom-roles?orgId=${organizationId}`),
+            api<ServicePrincipal[]>(`/service-principals?orgId=${organizationId}`),
           ]);
 
         setOrganization(organizationResult);
         setUsers(usersResult.filter((entry) => entry.orgId === organizationId));
         setProducts(productsResult);
+        setCustomRoles(rolesResult);
+        setServicePrincipals(principalsResult);
         return organizationResult;
       },
       undefined,
@@ -141,7 +158,7 @@ export function OrganizationDetailsPage({
     if (!token) return;
     void loadPageData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, organizationId]);
+  }, [token, organizationId, currentUser]);
 
   async function refreshSession() {
     if (!refreshToken) return null;
@@ -245,7 +262,22 @@ export function OrganizationDetailsPage({
       canUse: true,
       canConfigure: role === "product_admin",
       canManageAgents: role === "product_admin",
+      canManageKnowledge: role === "product_admin",
     }));
+  }
+
+  function customRoleAccessFromForm(form: FormData) {
+    return productCatalog.flatMap((product) => {
+      const canUse = form.get(`access_${product.key}_use`) === "on";
+      if (!canUse) return [];
+      return [{
+        productKey: product.key,
+        canUse: true,
+        canConfigure: form.get(`access_${product.key}_configure`) === "on",
+        canManageAgents: form.get(`access_${product.key}_agents`) === "on",
+        canManageKnowledge: form.get(`access_${product.key}_knowledge`) === "on",
+      }];
+    });
   }
 
   async function saveOrganization(event: FormEvent<HTMLFormElement>) {
@@ -253,7 +285,11 @@ export function OrganizationDetailsPage({
     const form = new FormData(event.currentTarget);
     const result = await run(
       () =>
-        api<Organization>(`/organizations/${organizationId}`, {
+        api<Organization>(
+          currentUser?.roles.includes("super_admin")
+            ? `/organizations/${organizationId}`
+            : "/organizations/me",
+          {
           method: "PATCH",
           body: JSON.stringify({
             name: String(form.get("name")),
@@ -264,7 +300,8 @@ export function OrganizationDetailsPage({
             plan: String(form.get("plan")),
             deploymentMode: String(form.get("deploymentMode")),
           }),
-        }),
+          },
+        ),
       "Organization updated",
     );
 
@@ -315,6 +352,7 @@ export function OrganizationDetailsPage({
             orgId: organizationId,
             clearanceLevel: Number(form.get("clearanceLevel") || 0),
             productAccess: productAccessFromForm(form),
+            customRoleIds: form.getAll("customRoleIds"),
           }),
         }),
       "User created",
@@ -343,6 +381,7 @@ export function OrganizationDetailsPage({
             orgId: organizationId,
             clearanceLevel: Number(form.get("clearanceLevel") || 0),
             productAccess: productAccessFromForm(form),
+            customRoleIds: form.getAll("customRoleIds"),
           }),
         }),
       "Invite created",
@@ -384,6 +423,7 @@ export function OrganizationDetailsPage({
     role: string,
     productKeys: ProductKey[],
     clearanceLevel: number,
+    customRoleIds: string[],
   ) {
     const result = await run(
       () =>
@@ -397,7 +437,9 @@ export function OrganizationDetailsPage({
               canUse: true,
               canConfigure: role === "product_admin",
               canManageAgents: role === "product_admin",
+              canManageKnowledge: role === "product_admin",
             })),
+            customRoleIds,
           }),
         }),
       "User access updated",
@@ -406,6 +448,99 @@ export function OrganizationDetailsPage({
     if (result) {
       await loadPageData();
     }
+  }
+
+  async function createCustomRole(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () => api<CustomRole>("/custom-roles", {
+        method: "POST",
+        body: JSON.stringify({
+          orgId: organizationId,
+          name: String(form.get("name")),
+          description: String(form.get("description")) || undefined,
+          clearanceLevel: Number(form.get("clearanceLevel")),
+          productAccess: customRoleAccessFromForm(form),
+        }),
+      }),
+      "Custom role created",
+    );
+    if (result) {
+      formElement.reset();
+      await loadPageData();
+    }
+  }
+
+  async function updateCustomRole(event: FormEvent<HTMLFormElement>, roleId: string) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const result = await run(
+      () => api<CustomRole>(`/custom-roles/${roleId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: String(form.get("name")),
+          description: String(form.get("description")) || undefined,
+          clearanceLevel: Number(form.get("clearanceLevel")),
+          productAccess: customRoleAccessFromForm(form),
+        }),
+      }),
+      "Custom role updated",
+    );
+    if (result) await loadPageData();
+  }
+
+  async function archiveCustomRole(role: CustomRole) {
+    const result = await run(
+      () => api<CustomRole>(`/custom-roles/${role.id}`, { method: "DELETE" }),
+      "Custom role archived",
+    );
+    if (result) await loadPageData();
+  }
+
+  async function createServicePrincipal(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () => api<ServicePrincipal>("/service-principals", {
+        method: "POST",
+        body: JSON.stringify({
+          orgId: organizationId,
+          name: String(form.get("name")),
+          productKey: String(form.get("productKey")),
+        }),
+      }),
+      "Service identity created",
+    );
+    if (result) {
+      setLatestServiceSecret(result);
+      formElement.reset();
+      await loadPageData();
+    }
+  }
+
+  async function rotateServicePrincipal(principal: ServicePrincipal) {
+    const result = await run(
+      () => api<ServicePrincipal>(`/service-principals/${principal.id}/rotate`, { method: "POST" }),
+      "Service secret rotated",
+    );
+    if (result) {
+      setLatestServiceSecret(result);
+      await loadPageData();
+    }
+  }
+
+  async function toggleServicePrincipal(principal: ServicePrincipal) {
+    const result = await run(
+      () => api<ServicePrincipal>(`/service-principals/${principal.id}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !principal.isActive }),
+      }),
+      "Service identity status updated",
+    );
+    if (result) await loadPageData();
   }
 
   const entitlementMap = new Map(products.map((item) => [item.product.key, item]));
@@ -439,12 +574,17 @@ export function OrganizationDetailsPage({
     );
   }
 
-  if (currentUser && !currentUser.roles.includes("super_admin")) {
+  if (
+    currentUser &&
+    !currentUser.roles.some((role) =>
+      ["super_admin", "org_admin", "product_admin"].includes(role),
+    )
+  ) {
     return (
       <main className={`theme-${theme} min-h-screen bg-[var(--background)] px-4 py-10 text-[var(--foreground)]`}>
         <CenteredNotice
           title="Access restricted"
-          description="Only super admins can open organization management pages."
+          description="Organization administration access is required."
         />
       </main>
     );
@@ -574,17 +714,31 @@ export function OrganizationDetailsPage({
               onClick={() => setActiveSection("team")}
             />
             <SectionTab
+              icon={BadgeCheck}
+              label="Custom roles"
+              active={activeSection === "roles"}
+              onClick={() => setActiveSection("roles")}
+            />
+            <SectionTab
+              icon={KeyRound}
+              label="Service identities"
+              active={activeSection === "services"}
+              onClick={() => setActiveSection("services")}
+            />
+            <SectionTab
               icon={Blocks}
               label="Products"
               active={activeSection === "products"}
               onClick={() => setActiveSection("products")}
             />
-            <SectionTab
-              icon={Settings2}
-              label="Settings"
-              active={activeSection === "settings"}
-              onClick={() => setActiveSection("settings")}
-            />
+            {currentUser?.roles.some((role) => ["super_admin", "org_admin"].includes(role)) ? (
+              <SectionTab
+                icon={Settings2}
+                label="Settings"
+                active={activeSection === "settings"}
+                onClick={() => setActiveSection("settings")}
+              />
+            ) : null}
           </div>
         </div>
 
@@ -802,7 +956,8 @@ export function OrganizationDetailsPage({
                             onClick={() =>
                               updateProductStatus(product.key, "enabled")
                             }
-                            className={`h-9 rounded-xl px-3 text-sm ${
+                            disabled={!currentUser?.roles.includes("super_admin")}
+                            className={`h-9 rounded-xl px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
                               product.status === "enabled"
                                 ? "bg-[var(--accent-primary)] text-[var(--text-on-accent)]"
                                 : "border border-[var(--border-strong)] text-[var(--text-base)] hover:bg-[var(--surface-hover)]"
@@ -815,7 +970,8 @@ export function OrganizationDetailsPage({
                             onClick={() =>
                               updateProductStatus(product.key, "disabled")
                             }
-                            className={`h-9 rounded-xl px-3 text-sm ${
+                            disabled={!currentUser?.roles.includes("super_admin")}
+                            className={`h-9 rounded-xl px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
                               product.status === "disabled"
                                 ? "bg-[var(--neutral-bg)] text-[var(--neutral-text)]"
                                 : "border border-[var(--border-strong)] text-[var(--text-base)] hover:bg-[var(--surface-hover)]"
@@ -831,6 +987,121 @@ export function OrganizationDetailsPage({
               </table>
             </div>
           </Card>
+        ) : null}
+
+        {activeSection === "roles" ? (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div>
+                  <h2 className="font-semibold text-[var(--text-strong)]">Create custom role</h2>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">
+                    Bundle product permissions and a clearance ceiling into a reusable tenant role.
+                  </p>
+                </div>
+              </CardHeader>
+              <CustomRoleForm onSubmit={createCustomRole} submitLabel="Create role" />
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-[var(--text-strong)]">Role directory</h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Changes take effect on the next authenticated request.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-[var(--surface-tint)] px-3 py-1 text-xs font-medium text-[var(--accent-primary)]">
+                    {customRoles.filter((role) => role.isActive).length} active
+                  </span>
+                </div>
+              </CardHeader>
+              <div className="divide-y divide-[var(--border-subtle)]">
+                {customRoles.map((role) => (
+                  <CustomRoleForm
+                    key={role.id}
+                    role={role}
+                    onSubmit={(event) => updateCustomRole(event, role.id)}
+                    onArchive={() => archiveCustomRole(role)}
+                    submitLabel="Save role"
+                  />
+                ))}
+                {!customRoles.length ? (
+                  <div className="p-6 text-sm text-[var(--text-muted)]">No custom roles created yet.</div>
+                ) : null}
+              </div>
+            </Card>
+          </div>
+        ) : null}
+
+        {activeSection === "services" ? (
+          <div className="space-y-4">
+            {latestServiceSecret?.clientSecret ? (
+              <div className="rounded-2xl border border-[var(--warning-text)]/30 bg-[var(--warning-bg)] p-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="font-semibold text-[var(--text-strong)]">Save this secret now</h2>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">It is shown once and cannot be recovered. Rotate the identity if it is lost.</p>
+                  </div>
+                  <button type="button" onClick={() => setLatestServiceSecret(null)} className="text-sm text-[var(--text-base)]">Dismiss</button>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <SecretValue label="Client ID" value={latestServiceSecret.clientId} />
+                  <SecretValue label="Client secret" value={latestServiceSecret.clientSecret} />
+                </div>
+              </div>
+            ) : null}
+
+            <Card>
+              <CardHeader>
+                <div>
+                  <h2 className="font-semibold text-[var(--text-strong)]">Create service identity</h2>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">Issue product-bound machine credentials for internal memory calls.</p>
+                </div>
+              </CardHeader>
+              <form onSubmit={createServicePrincipal} className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[minmax(240px,1fr)_minmax(220px,1fr)_auto] md:items-end">
+                <Field label="Identity name"><input name="name" className="input" required minLength={2} placeholder="Customer Chat runtime" /></Field>
+                <Field label="Product">
+                  <select name="productKey" className="input" defaultValue="customer_chat">
+                    {productCatalog.map((product) => <option key={product.key} value={product.key}>{product.name}</option>)}
+                  </select>
+                </Field>
+                <button className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">Create identity</button>
+              </form>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-[var(--text-strong)]">Service identity directory</h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">Rotate credentials regularly and disable identities that are no longer used.</p>
+                  </div>
+                  <span className="text-xs text-[var(--text-muted)]">{servicePrincipals.length} identities</span>
+                </div>
+              </CardHeader>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead className="bg-[var(--surface-card-muted)] text-[11px] uppercase tracking-[0.14em] text-[var(--text-soft)]">
+                    <tr><th className="px-5 py-3 font-medium">Identity</th><th className="px-5 py-3 font-medium">Product</th><th className="px-5 py-3 font-medium">Client ID</th><th className="px-5 py-3 font-medium">Last used</th><th className="px-5 py-3 font-medium">Status</th><th className="px-5 py-3 font-medium">Actions</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--border-subtle)]">
+                    {servicePrincipals.map((principal) => (
+                      <tr key={principal.id}>
+                        <td className="px-5 py-4 font-medium text-[var(--text-strong)]">{principal.name}</td>
+                        <td className="px-5 py-4 text-[var(--text-muted)]">{formatValueLabel(principal.productKey)}</td>
+                        <td className="px-5 py-4 font-mono text-xs text-[var(--text-base)]">{principal.clientId}</td>
+                        <td className="px-5 py-4 text-[var(--text-muted)]">{principal.lastUsedAt ? new Date(principal.lastUsedAt).toLocaleString() : "Never"}</td>
+                        <td className="px-5 py-4"><StatusPill status={principal.isActive ? "active" : "inactive"} /></td>
+                        <td className="px-5 py-4"><div className="flex gap-2"><button type="button" onClick={() => rotateServicePrincipal(principal)} className="h-9 rounded-xl border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]">Rotate</button><button type="button" onClick={() => toggleServicePrincipal(principal)} className="h-9 rounded-xl border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]">{principal.isActive ? "Disable" : "Enable"}</button></div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
         ) : null}
 
         {activeSection === "team" ? (
@@ -873,6 +1144,7 @@ export function OrganizationDetailsPage({
                   user={user}
                   onUpdateAccess={updateUserAccess}
                   onToggleStatus={toggleUserStatus}
+                  customRoles={customRoles}
                 />
               ))}
               {!users.length ? (
@@ -893,6 +1165,7 @@ export function OrganizationDetailsPage({
           onClose={() => setIsCreateUserOpen(false)}
           onSubmit={createUser}
           includePassword
+          customRoles={customRoles}
         />
       ) : null}
 
@@ -903,6 +1176,7 @@ export function OrganizationDetailsPage({
           submitLabel="Create invite"
           onClose={() => setIsInviteUserOpen(false)}
           onSubmit={createInvite}
+          customRoles={customRoles}
         />
       ) : null}
     </main>
@@ -913,6 +1187,7 @@ function UserRow({
   user,
   onUpdateAccess,
   onToggleStatus,
+  customRoles,
 }: {
   user: User;
   onUpdateAccess: (
@@ -920,8 +1195,10 @@ function UserRow({
     role: string,
     productKeys: ProductKey[],
     clearanceLevel: number,
+    customRoleIds: string[],
   ) => void;
   onToggleStatus: (user: User) => void;
+  customRoles: CustomRole[];
 }) {
   const selectedRole =
     ["super_admin", "org_admin", "product_admin", "agent", "user"].find(
@@ -941,6 +1218,7 @@ function UserRow({
           String(form.get("role")),
           form.getAll("productKeys") as ProductKey[],
           Number(form.get("clearanceLevel") || 0),
+          form.getAll("customRoleIds") as string[],
         );
       }}
     >
@@ -1015,6 +1293,24 @@ function UserRow({
           {user.isActive === false ? "Activate" : "Deactivate"}
         </button>
       </div>
+      {customRoles.length ? (
+        <fieldset className="mt-3 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] px-4 py-3">
+          <legend className="px-1 text-xs font-medium uppercase tracking-[0.14em] text-[var(--text-soft)]">Custom roles</legend>
+          <div className="mt-2 flex flex-wrap gap-3">
+            {customRoles.filter((role) => role.isActive).map((role) => (
+              <label key={role.id} className="flex items-center gap-2 text-xs text-[var(--text-base)]">
+                <input
+                  type="checkbox"
+                  name="customRoleIds"
+                  value={role.id}
+                  defaultChecked={user.customRoles?.some((assigned) => assigned.id === role.id)}
+                />
+                {role.name} (L{role.clearanceLevel})
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
     </form>
   );
 }
@@ -1026,6 +1322,7 @@ function UserModal({
   onClose,
   onSubmit,
   includePassword = false,
+  customRoles,
 }: {
   title: string;
   description: string;
@@ -1033,6 +1330,7 @@ function UserModal({
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   includePassword?: boolean;
+  customRoles: CustomRole[];
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
@@ -1109,6 +1407,20 @@ function UserModal({
             </div>
           </fieldset>
 
+          {customRoles.length ? (
+            <fieldset className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] px-4 py-4">
+              <legend className="px-1 text-sm font-medium text-[var(--text-base)]">Custom roles</legend>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {customRoles.filter((role) => role.isActive).map((role) => (
+                  <label key={role.id} className="flex items-center gap-2 text-sm text-[var(--text-base)]">
+                    <input type="checkbox" name="customRoleIds" value={role.id} />
+                    <span>{role.name} <span className="text-[var(--text-soft)]">L{role.clearanceLevel}</span></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
           <div className="flex justify-end gap-3">
             <button
               type="button"
@@ -1123,6 +1435,98 @@ function UserModal({
           </div>
         </form>
       </div>
+    </div>
+  );
+}
+
+function CustomRoleForm({
+  role,
+  onSubmit,
+  onArchive,
+  submitLabel,
+}: {
+  role?: CustomRole;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onArchive?: () => void;
+  submitLabel: string;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="p-5">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[minmax(220px,1fr)_minmax(300px,2fr)_120px]">
+        <Field label="Role name">
+          <input name="name" className="input" defaultValue={role?.name ?? ""} required minLength={2} />
+        </Field>
+        <Field label="Description">
+          <input name="description" className="input" defaultValue={role?.description ?? ""} placeholder="What this role is responsible for" />
+        </Field>
+        <Field label="Clearance">
+          <select name="clearanceLevel" className="input" defaultValue={role?.clearanceLevel ?? 0}>
+            {[0, 1, 2, 3, 4].map((level) => <option key={level} value={level}>Level {level}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-[var(--border-subtle)]">
+        <table className="w-full min-w-[760px] text-left text-sm">
+          <thead className="bg-[var(--surface-card-muted)] text-[11px] uppercase tracking-[0.14em] text-[var(--text-soft)]">
+            <tr>
+              <th className="px-4 py-3 font-medium">Product</th>
+              <th className="px-4 py-3 font-medium">Use</th>
+              <th className="px-4 py-3 font-medium">Configure</th>
+              <th className="px-4 py-3 font-medium">Manage agents</th>
+              <th className="px-4 py-3 font-medium">Manage knowledge</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border-subtle)]">
+            {productCatalog.map((product) => {
+              const access = role?.productAccess.find((entry) => entry.productKey === product.key);
+              return (
+                <tr key={product.key}>
+                  <td className="px-4 py-3 font-medium text-[var(--text-strong)]">{product.name}</td>
+                  <PermissionCell name={`access_${product.key}_use`} checked={access?.canUse} />
+                  <PermissionCell name={`access_${product.key}_configure`} checked={access?.canConfigure} />
+                  <PermissionCell name={`access_${product.key}_agents`} checked={access?.canManageAgents} />
+                  <PermissionCell name={`access_${product.key}_knowledge`} checked={access?.canManageKnowledge} />
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+          {role?.isTemplate ? <BadgeCheck className="h-4 w-4 text-[var(--accent-primary)]" /> : null}
+          {role ? `${role._count?.assignments ?? 0} assignments` : "At least one product must have Use enabled"}
+        </div>
+        <div className="flex gap-2">
+          {role?.isActive && onArchive ? (
+            <button type="button" onClick={onArchive} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--border-strong)] px-3 text-sm text-[var(--text-base)] hover:bg-[var(--surface-hover)]">
+              <Archive className="h-4 w-4" /> Archive
+            </button>
+          ) : null}
+          <button disabled={role?.isActive === false} className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] disabled:cursor-not-allowed disabled:opacity-50">
+            {role?.isActive === false ? "Archived" : submitLabel}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function PermissionCell({ name, checked }: { name: string; checked?: boolean }) {
+  return (
+    <td className="px-4 py-3">
+      <input type="checkbox" name={name} defaultChecked={checked} className="h-4 w-4" />
+    </td>
+  );
+}
+
+function SecretValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-soft)]">{label}</p>
+      <code className="mt-2 block overflow-x-auto rounded-xl bg-[var(--surface-card)] px-3 py-3 text-xs text-[var(--text-strong)]">{value}</code>
     </div>
   );
 }

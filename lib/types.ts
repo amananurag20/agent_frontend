@@ -8,6 +8,7 @@ export type User = {
   roles: string[];
   clearanceLevel: number;
   productAccess: ProductAccessGrant[];
+  customRoles: CustomRole[];
   isActive?: boolean;
 };
 
@@ -22,6 +23,32 @@ export type ProductAccessGrant = {
   canUse: boolean;
   canConfigure: boolean;
   canManageAgents: boolean;
+  canManageKnowledge: boolean;
+};
+
+export type CustomRole = {
+  id: string;
+  organizationId?: string;
+  name: string;
+  description?: string | null;
+  clearanceLevel: number;
+  isTemplate: boolean;
+  isActive: boolean;
+  productAccess: ProductAccessGrant[];
+  _count?: { assignments: number };
+};
+
+export type ServicePrincipal = {
+  id: string;
+  organizationId: string;
+  productKey: ProductKey;
+  name: string;
+  clientId: string;
+  clientSecret?: string;
+  isActive: boolean;
+  lastUsedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AuthResponse = {
@@ -176,9 +203,27 @@ export type KnowledgeSource = {
   sensitivityLevel: number;
   productVisibility: ProductKey[];
   categories: string[];
+  levelSource?: "auto" | "manual";
+  folderId?: string | null;
   isQuarantined: boolean;
   rawText?: string | null;
   createdAt: string;
+};
+
+export type KnowledgeCategory = {
+  id: string;
+  organizationId: string;
+  name: string;
+  slug: string;
+  isSystem: boolean;
+};
+
+export type KnowledgeFolder = {
+  id: string;
+  organizationId: string;
+  name: string;
+  parentId?: string | null;
+  _count?: { sources: number; children: number };
 };
 
 export type AuditLog = {

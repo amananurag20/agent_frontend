@@ -53,6 +53,8 @@ import type {
   Health,
   InviteResponse,
   KnowledgeSource,
+  KnowledgeCategory,
+  KnowledgeFolder,
   ObservabilitySummary,
   Organization,
   PasswordResetRequestResponse,
@@ -136,6 +138,8 @@ export default function Home() {
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>(
     [],
   );
+  const [knowledgeCategories, setKnowledgeCategories] = useState<KnowledgeCategory[]>([]);
+  const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
   const [appointmentServices, setAppointmentServices] = useState<
     AppointmentService[]
   >([]);
@@ -189,21 +193,30 @@ export default function Home() {
     if (!user) return navItems.filter((item) => item.id === "dashboard");
     const isSuperAdmin = user.roles.includes("super_admin");
     const isOrgAdmin = user.roles.includes("org_admin");
+    const grants = [
+      ...(user.productAccess ?? []),
+      ...(user.customRoles ?? []).flatMap((role) => role.productAccess),
+    ];
     const isEnabled = (productKey: ProductKey) =>
       isSuperAdmin ||
       products.some(
         (item) => item.product.key === productKey && item.status === "enabled",
       );
-    const canConfigureChat = isSuperAdmin || isOrgAdmin || user.productAccess?.some((access) => access.productKey === "customer_chat" && access.canConfigure);
+    const canConfigureChat = isSuperAdmin || isOrgAdmin || grants.some((access) => access.productKey === "customer_chat" && access.canConfigure);
     const canUse = (productKey: ProductKey) =>
       isEnabled(productKey) &&
       (isSuperAdmin ||
         isOrgAdmin ||
-        user.productAccess?.some((access) => access.productKey === productKey && access.canUse));
-
+        grants.some((access) => access.productKey === productKey && access.canUse));
+    const canManageAgents = grants.some((access) => access.canManageAgents);
+    const canManageKnowledge = grants.some(
+      (access) => access.canManageKnowledge || access.canConfigure,
+    );
     return navItems.filter((item) => {
       if (item.id === "organizations") return isSuperAdmin;
-      if (["users", "products", "ai", "audit", "knowledge"].includes(item.id)) return isSuperAdmin || isOrgAdmin;
+      if (item.id === "users") return isSuperAdmin || isOrgAdmin || canManageAgents;
+      if (item.id === "knowledge") return isSuperAdmin || isOrgAdmin || canManageKnowledge;
+      if (["products", "ai", "audit"].includes(item.id)) return isSuperAdmin || isOrgAdmin;
       if (item.id === "inbox") return canUse("customer_chat");
       if (item.id === "widget") return canUse("customer_chat") && canConfigureChat;
       if (item.id === "appointments") return canUse("appointment_booking");
@@ -248,6 +261,8 @@ export default function Home() {
   useEffect(() => {
     if (!token || !selectedOrganizationId || !user?.roles.includes("super_admin")) return;
     void loadProducts();
+    void loadUsers();
+    void loadKnowledgeSources();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrganizationId]);
 
@@ -449,6 +464,14 @@ export default function Home() {
     if (!user) return;
     const isSuperAdmin = user.roles.includes("super_admin");
     const isOrgAdmin = user.roles.includes("org_admin");
+    const grants = [
+      ...(user.productAccess ?? []),
+      ...(user.customRoles ?? []).flatMap((role) => role.productAccess),
+    ];
+    const canManageAgents = grants.some((access) => access.canManageAgents);
+    const canManageKnowledge = grants.some(
+      (access) => access.canManageKnowledge || access.canConfigure,
+    );
     const loadedProducts = await loadProducts();
     const isEnabled = (productKey: ProductKey) =>
       isSuperAdmin ||
@@ -461,7 +484,7 @@ export default function Home() {
       isEnabled(productKey) &&
       (isSuperAdmin ||
         isOrgAdmin ||
-        user.productAccess?.some((access) => access.productKey === productKey && access.canUse));
+        grants.some((access) => access.productKey === productKey && access.canUse));
 
     const baseTasks: Array<Promise<unknown>> = [
       loadHealth(),
@@ -471,11 +494,15 @@ export default function Home() {
     if (isSuperAdmin || isOrgAdmin) {
       baseTasks.push(
         loadObservability(),
-        loadUsers(),
         loadAIProviders(),
-        loadKnowledgeSources(),
         loadAuditLogs(),
       );
+    }
+    if (isSuperAdmin || isOrgAdmin || canManageAgents) {
+      baseTasks.push(loadUsers());
+    }
+    if (isSuperAdmin || isOrgAdmin || canManageKnowledge) {
+      baseTasks.push(loadKnowledgeSources());
     }
     if (canUse("customer_chat")) {
       baseTasks.push(loadConversations(), loadWidgetConfig());
@@ -578,8 +605,18 @@ export default function Home() {
   }
 
   async function loadKnowledgeSources() {
-    const result = await run(() => api<KnowledgeSource[]>("/knowledge/sources"));
-    if (result) setKnowledgeSources(result);
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
+    const result = await run(() => Promise.all([
+      api<KnowledgeSource[]>(`/knowledge/sources${query}`),
+      api<KnowledgeCategory[]>(`/knowledge/taxonomy/categories${query}`),
+      api<KnowledgeFolder[]>(`/knowledge/taxonomy/folders${query}`),
+    ]));
+    if (result) {
+      setKnowledgeSources(result[0]);
+      setKnowledgeCategories(result[1]);
+      setKnowledgeFolders(result[2]);
+    }
   }
 
   async function loadAuditLogs() {
@@ -855,10 +892,13 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({
             type: "text",
+            organizationId: selectedOrganizationId ?? undefined,
             name: String(form.get("name")),
             rawText: String(form.get("rawText")),
-            sensitivityLevel: Number(form.get("sensitivityLevel") || 0),
+            sensitivityLevel: parseOptionalLevel(form),
             productVisibility: form.getAll("productVisibility"),
+            categories: parseCategories(form),
+            folderId: String(form.get("folderId") || "") || undefined,
           }),
         }),
       "Knowledge source created",
@@ -880,10 +920,13 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({
             type: "website_url",
+            organizationId: selectedOrganizationId ?? undefined,
             name: String(form.get("name")),
             url: String(form.get("url")),
-            sensitivityLevel: Number(form.get("sensitivityLevel") || 0),
+            sensitivityLevel: parseOptionalLevel(form),
             productVisibility: form.getAll("productVisibility"),
+            categories: parseCategories(form),
+            folderId: String(form.get("folderId") || "") || undefined,
           }),
         }),
       "Website source created",
@@ -899,11 +942,66 @@ export default function Home() {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
+    if (selectedOrganizationId) form.set("organizationId", selectedOrganizationId);
+    if (!form.get("sensitivityLevel")) form.delete("sensitivityLevel");
     const result = await run(
       () => uploadApi<KnowledgeSource>("/knowledge/sources/upload", form),
       "File uploaded",
     );
 
+    if (result) {
+      formElement.reset();
+      await loadKnowledgeSources();
+    }
+  }
+
+  function parseOptionalLevel(form: FormData) {
+    const value = String(form.get("sensitivityLevel") ?? "");
+    return value === "" ? undefined : Number(value);
+  }
+
+  function parseCategories(form: FormData) {
+    return String(form.get("categories") ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  async function createKnowledgeCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () => api<KnowledgeCategory>("/knowledge/taxonomy/categories", {
+        method: "POST",
+        body: JSON.stringify({
+          name: String(form.get("name")),
+          organizationId: selectedOrganizationId ?? undefined,
+        }),
+      }),
+      "Category created",
+    );
+    if (result) {
+      formElement.reset();
+      await loadKnowledgeSources();
+    }
+  }
+
+  async function createKnowledgeFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () => api<KnowledgeFolder>("/knowledge/taxonomy/folders", {
+        method: "POST",
+        body: JSON.stringify({
+          name: String(form.get("name")),
+          parentId: String(form.get("parentId") || "") || undefined,
+          organizationId: selectedOrganizationId ?? undefined,
+        }),
+      }),
+      "Folder created",
+    );
     if (result) {
       formElement.reset();
       await loadKnowledgeSources();
@@ -917,6 +1015,17 @@ export default function Home() {
           method: "POST",
         }),
       "Ingestion started",
+    );
+    await loadKnowledgeSources();
+  }
+
+  async function releaseKnowledgeQuarantine(id: string) {
+    await run(
+      () => api<KnowledgeSource>(`/knowledge/sources/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isQuarantined: false }),
+      }),
+      "Knowledge source approved",
     );
     await loadKnowledgeSources();
   }
@@ -1744,10 +1853,15 @@ export default function Home() {
                 {activeTab === "knowledge" ? (
                   <KnowledgeView
                     sources={knowledgeSources}
+                    categories={knowledgeCategories}
+                    folders={knowledgeFolders}
                     onCreate={createKnowledgeSource}
                     onCreateUrl={createWebsiteKnowledgeSource}
                     onUploadFile={uploadKnowledgeFile}
                     onIngest={ingestKnowledgeSource}
+                    onReleaseQuarantine={releaseKnowledgeQuarantine}
+                    onCreateCategory={createKnowledgeCategory}
+                    onCreateFolder={createKnowledgeFolder}
                   />
                 ) : null}
                 {activeTab === "appointments" ? (
