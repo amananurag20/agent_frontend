@@ -1002,6 +1002,8 @@ export default function Home() {
     const form = new FormData(formElement);
     if (selectedOrganizationId) form.set("organizationId", selectedOrganizationId);
     if (!form.get("sensitivityLevel")) form.delete("sensitivityLevel");
+    if (!form.get("folderId")) form.delete("folderId");
+    if (!form.get("categories")) form.delete("categories");
     const result = await run(
       () => uploadApi<KnowledgeSource>("/knowledge/sources/upload", form),
       "File uploaded",
