@@ -220,6 +220,21 @@ export default function Home() {
         : null) ?? organization,
     [organization, organizations, selectedOrganizationId, user],
   );
+  const isSuperAdminPlatformContext = Boolean(
+    user?.roles.includes("super_admin") && !selectedOrganizationId,
+  );
+  const usesPlatformTestWorkspace =
+    isSuperAdminPlatformContext &&
+    [
+      "inbox",
+      "knowledge",
+      "appointments",
+      "whatsapp",
+      "voice",
+      "widget",
+      "products",
+      "ai",
+    ].includes(activeTab);
 
   const visibleNavItems = useMemo(() => {
     if (!user) return navItems.filter((item) => item.id === "dashboard");
@@ -604,13 +619,6 @@ export default function Home() {
     const result = await run(() => api<Organization[]>("/organizations"));
     if (result) {
       setOrganizations(result);
-      setSelectedOrganizationId(
-        (current) =>
-          current ??
-          result.find((item) => item.id === user?.orgId)?.id ??
-          result[0]?.id ??
-          null,
-      );
     }
     return result;
   }
@@ -1442,7 +1450,6 @@ export default function Home() {
     );
     if (result) {
       formElement.reset();
-      setSelectedOrganizationId(result.id);
       await Promise.all([loadOrganizations(), loadUsers()]);
     }
   }
@@ -2073,8 +2080,16 @@ export default function Home() {
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-tint)] text-[10px] font-bold text-[var(--accent-primary)] lg:hidden">AC</div>
               <div>
-                <p className="text-xs text-[var(--text-muted)]">{workspaceOrganization?.name ?? "AgentCore workspace"}</p>
-                <h1 className="text-sm font-semibold text-[var(--text-strong)] md:text-base">Operations Console</h1>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {isSuperAdminPlatformContext
+                    ? "Platform administration"
+                    : workspaceOrganization?.name ?? "AgentCore workspace"}
+                </p>
+                <h1 className="text-sm font-semibold text-[var(--text-strong)] md:text-base">
+                  {isSuperAdminPlatformContext
+                    ? "Super Admin Console"
+                    : "Operations Console"}
+                </h1>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -2143,6 +2158,11 @@ export default function Home() {
                       <h2 className="text-2xl font-semibold text-[var(--text-strong)]">{navItems.find((item) => item.id === activeTab)?.label}</h2>
                       <p className="mt-0.5 text-sm text-[var(--text-muted)]">{navMeta[activeTab].description}</p>
                     </div>
+                    {usesPlatformTestWorkspace ? (
+                      <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
+                        Platform Test Workspace
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 {activeTab === "dashboard" ? (
