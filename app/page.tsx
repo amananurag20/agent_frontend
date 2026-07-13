@@ -2108,7 +2108,11 @@ export default function Home() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-medium text-[var(--text-strong)]">{user.name ?? user.email}</p>
-                  <p className="mt-0.5 truncate text-[10px] text-[var(--text-soft)]">{user.roles.join(" · ")}</p>
+                  <p className="mt-0.5 truncate text-[10px] text-[var(--text-soft)]">
+                    {user.roles.includes("super_admin")
+                      ? "super_admin"
+                      : user.roles.join(" · ")}
+                  </p>
                 </div>
               </div>
             </div>
