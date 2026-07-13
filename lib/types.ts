@@ -115,6 +115,7 @@ export type Organization = {
   status: string;
   plan: string;
   deploymentMode: string;
+  isSystem?: boolean;
   users?: Array<Pick<User, "id" | "name" | "email" | "isActive">>;
   _count?: { users: number; products: number };
 };

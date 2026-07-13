@@ -640,16 +640,19 @@ export default function Home() {
   }
 
   async function loadAIProviders() {
-    const result = await run(() => api<AIProvider[]>("/ai/providers"));
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
+    const result = await run(() => api<AIProvider[]>(`/ai/providers${query}`));
     if (result) setAIProviders(result);
   }
 
   async function loadConversations() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({
       limit: "30",
-      ...(selectedOrganizationId
-        ? { organizationId: selectedOrganizationId }
-        : {}),
+      ...(organizationId ? { organizationId } : {}),
       ...(filters.status ? { status: filters.status } : {}),
       ...(filters.search ? { search: filters.search } : {}),
     });
@@ -756,36 +759,53 @@ export default function Home() {
   }
 
   async function loadAppointmentServices() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
     const result = await run(() =>
-      api<AppointmentService[]>("/appointment-booking/services"),
+      api<AppointmentService[]>(`/appointment-booking/services${query}`),
     );
     if (result) setAppointmentServices(result);
   }
 
   async function loadAppointmentStaff() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
     const result = await run(() =>
-      api<AppointmentStaff[]>("/appointment-booking/staff"),
+      api<AppointmentStaff[]>(`/appointment-booking/staff${query}`),
     );
     if (result) setAppointmentStaff(result);
   }
 
   async function loadAppointmentBookings() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams({ limit: "30" });
+    if (organizationId) params.set("organizationId", organizationId);
     const result = await run(() =>
-      api<AppointmentBookingList>("/appointment-booking/bookings?limit=30"),
+      api<AppointmentBookingList>(`/appointment-booking/bookings?${params}`),
     );
     if (result) setAppointmentBookings(result.data);
   }
 
   async function loadWhatsAppConfigs() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
     const result = await run(() =>
-      api<WhatsAppConfig[]>("/whatsapp-assistant/configs"),
+      api<WhatsAppConfig[]>(`/whatsapp-assistant/configs${query}`),
     );
     if (result) setWhatsAppConfigs(result);
   }
 
   async function loadWhatsAppConversations() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({
       limit: "30",
+      ...(organizationId ? { organizationId } : {}),
       ...(whatsAppFilters.status ? { status: whatsAppFilters.status } : {}),
       ...(whatsAppFilters.search ? { search: whatsAppFilters.search } : {}),
     });
@@ -813,15 +833,21 @@ export default function Home() {
   }
 
   async function loadVoiceConfigs() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
     const result = await run(() =>
-      api<VoiceConfig[]>("/voice-receptionist/configs"),
+      api<VoiceConfig[]>(`/voice-receptionist/configs${query}`),
     );
     if (result) setVoiceConfigs(result);
   }
 
   async function loadVoiceCalls() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({
       limit: "30",
+      ...(organizationId ? { organizationId } : {}),
       ...(voiceFilters.status ? { status: voiceFilters.status } : {}),
       ...(voiceFilters.search ? { search: voiceFilters.search } : {}),
     });
@@ -941,6 +967,9 @@ export default function Home() {
   }
 
   function persistSession(auth: AuthResponse) {
+    setSelectedOrganizationId(null);
+    setOrganization(null);
+    setOrganizations([]);
     setToken(auth.accessToken);
     setRefreshToken(auth.refreshToken);
     setUser(auth.user);
@@ -959,6 +988,9 @@ export default function Home() {
     setToken(null);
     setRefreshToken(null);
     setUser(null);
+    setSelectedOrganizationId(null);
+    setOrganization(null);
+    setOrganizations([]);
     setSelectedConversation(null);
     setSelectedWhatsAppConversation(null);
     setSelectedVoiceCall(null);
@@ -1579,6 +1611,7 @@ export default function Home() {
         api<AIProvider>("/ai/providers", {
           method: "POST",
           body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
             provider: String(form.get("provider")),
             name: String(form.get("name")),
             baseUrl: String(form.get("baseUrl")) || undefined,
@@ -1602,6 +1635,7 @@ export default function Home() {
         api<AppointmentService>("/appointment-booking/services", {
           method: "POST",
           body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
             name: String(form.get("name")),
             description: String(form.get("description")) || undefined,
             durationMinutes: Number(form.get("durationMinutes")),
@@ -1628,6 +1662,7 @@ export default function Home() {
         api<AppointmentStaff>("/appointment-booking/staff", {
           method: "POST",
           body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
             name: String(form.get("name")),
             email: String(form.get("email")) || undefined,
             timezone: String(form.get("timezone")) || "UTC",
@@ -1693,6 +1728,8 @@ export default function Home() {
       serviceId: String(form.get("serviceId")),
       date: String(form.get("date")),
     });
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    if (organizationId) params.set("organizationId", organizationId);
     const result = await run(
       () =>
         api<AppointmentSlot[]>(`/appointment-booking/availability?${params}`),
@@ -1712,6 +1749,7 @@ export default function Home() {
         api<AppointmentBooking>("/appointment-booking/bookings", {
           method: "POST",
           body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
             serviceId: String(form.get("serviceId")),
             staffId: staffId || undefined,
             customerName: String(form.get("customerName")),
@@ -1777,6 +1815,7 @@ export default function Home() {
         api<WhatsAppConfig>("/whatsapp-assistant/configs", {
           method: "POST",
           body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
             name: String(form.get("name")),
             provider: String(form.get("provider")),
             phoneNumberId: String(form.get("phoneNumberId")) || undefined,
@@ -1870,6 +1909,7 @@ export default function Home() {
         api<VoiceConfig>("/voice-receptionist/configs", {
           method: "POST",
           body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
             name: String(form.get("name")),
             provider: String(form.get("provider")),
             phoneNumber: String(form.get("phoneNumber")) || undefined,
