@@ -1184,6 +1184,12 @@ export default function Home() {
             enabled: form.get("enabled") === "on",
             greetingText: String(form.get("greetingText")),
             allowedDomains,
+            settings: {
+              assistantName: String(form.get("assistantName")),
+              primaryColor: String(form.get("primaryColor")),
+              launcherLabel: String(form.get("launcherLabel")),
+              position: String(form.get("position")),
+            },
           }),
         }),
       "Widget saved",
@@ -2103,6 +2109,11 @@ export default function Home() {
                     onSubmit={updateWidgetConfig}
                     testConversation={widgetTestConversation}
                     onSendTestMessage={sendWidgetTestMessage}
+                    onResetTestChat={() => {
+                      setWidgetTestConversation(null);
+                      setWidgetVisitorToken(null);
+                    }}
+                    apiBaseUrl={API_BASE_URL}
                   />
                 ) : null}
                 {activeTab === "users" ? (
