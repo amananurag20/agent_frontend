@@ -326,6 +326,16 @@ export type AppointmentStaff = {
   metadata: Record<string, unknown>;
 };
 
+export type AppointmentResource = {
+  id: string;
+  organizationId: string;
+  name: string;
+  type: string;
+  capacity: number;
+  status: "active" | "inactive";
+  metadata: Record<string, unknown>;
+};
+
 export type AppointmentSlot = {
   staffId: string;
   staffName: string;
@@ -356,6 +366,21 @@ export type AppointmentBookingList = {
   total: number;
   page: number;
   limit: number;
+};
+
+export type AppointmentCalendarConnection = {
+  id: string;
+  organizationId: string;
+  staffId: string;
+  provider: "google" | "microsoft";
+  status: "pending" | "active" | "error" | "disconnected";
+  accountEmail?: string | null;
+  calendarId: string;
+  calendarName?: string | null;
+  lastSyncedAt?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+  staff?: { id: string; name: string; timezone: string };
 };
 
 export type WhatsAppConfig = {

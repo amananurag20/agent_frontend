@@ -42,6 +42,8 @@ import type {
   ApiState,
   AppointmentBooking,
   AppointmentBookingList,
+  AppointmentCalendarConnection,
+  AppointmentResource,
   AppointmentService,
   AppointmentSlot,
   AppointmentStaff,
@@ -170,12 +172,17 @@ export default function Home() {
   const [appointmentStaff, setAppointmentStaff] = useState<AppointmentStaff[]>(
     [],
   );
+  const [appointmentResources, setAppointmentResources] = useState<
+    AppointmentResource[]
+  >([]);
   const [appointmentSlots, setAppointmentSlots] = useState<AppointmentSlot[]>(
     [],
   );
   const [appointmentBookings, setAppointmentBookings] = useState<
     AppointmentBooking[]
   >([]);
+  const [appointmentCalendarConnections, setAppointmentCalendarConnections] =
+    useState<AppointmentCalendarConnection[]>([]);
   const [whatsAppConfigs, setWhatsAppConfigs] = useState<WhatsAppConfig[]>([]);
   const [whatsAppConversations, setWhatsAppConversations] =
     useState<WhatsAppConversationList | null>(null);
@@ -560,7 +567,9 @@ export default function Home() {
       baseTasks.push(
         loadAppointmentServices(),
         loadAppointmentStaff(),
+        loadAppointmentResources(),
         loadAppointmentBookings(),
+        loadAppointmentCalendarConnections(),
       );
     }
     if (canUse("whatsapp_assistant")) {
@@ -594,6 +603,15 @@ export default function Home() {
 
     if (isEnabled("customer_chat")) {
       tasks.push(loadConversations(), loadWidgetConfig());
+    }
+    if (isEnabled("appointment_booking")) {
+      tasks.push(
+        loadAppointmentServices(),
+        loadAppointmentStaff(),
+        loadAppointmentResources(),
+        loadAppointmentBookings(),
+        loadAppointmentCalendarConnections(),
+      );
     }
     await Promise.all(tasks);
   }
@@ -780,6 +798,17 @@ export default function Home() {
     if (result) setAppointmentStaff(result);
   }
 
+  async function loadAppointmentResources() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
+    const result = await run(() =>
+      api<AppointmentResource[]>(`/appointment-booking/resources${query}`),
+    );
+    if (result) setAppointmentResources(result);
+  }
+
   async function loadAppointmentBookings() {
     const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({ limit: "30" });
@@ -788,6 +817,18 @@ export default function Home() {
       api<AppointmentBookingList>(`/appointment-booking/bookings?${params}`),
     );
     if (result) setAppointmentBookings(result.data);
+  }
+
+  async function loadAppointmentCalendarConnections() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams();
+    if (organizationId) params.set("organizationId", organizationId);
+    const result = await run(() =>
+      api<AppointmentCalendarConnection[]>(
+        `/appointment-booking/calendars/connections?${params}`,
+      ),
+    );
+    if (result) setAppointmentCalendarConnections(result);
   }
 
   async function loadWhatsAppConfigs() {
@@ -1678,6 +1719,40 @@ export default function Home() {
     }
   }
 
+  async function createAppointmentResource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const serviceId = String(form.get("serviceId") || "");
+    const result = await run(
+      () =>
+        api<AppointmentResource>("/appointment-booking/resources", {
+          method: "POST",
+          body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
+            name: String(form.get("name")),
+            type: String(form.get("type")) || "generic",
+            capacity: Number(form.get("capacity") || 1),
+          }),
+        }),
+      "Resource created",
+    );
+    if (result && serviceId) {
+      await run(
+        () =>
+          api(`/appointment-booking/services/${serviceId}/resources`, {
+            method: "POST",
+            body: JSON.stringify({ resourceId: result.id, quantity: 1 }),
+          }),
+        "Resource created and assigned",
+      );
+    }
+    if (result) {
+      formElement.reset();
+      await loadAppointmentResources();
+    }
+  }
+
   async function createStaffAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -1804,6 +1879,36 @@ export default function Home() {
       "Booking cancelled",
     );
     await loadAppointmentBookings();
+  }
+
+  async function connectAppointmentCalendar(
+    provider: "google" | "microsoft",
+    staffId: string,
+  ) {
+    const result = await run(
+      () =>
+        api<{ authorizationUrl: string }>(
+          "/appointment-booking/calendars/connections",
+          {
+            method: "POST",
+            body: JSON.stringify({ provider, staffId }),
+          },
+        ),
+      `Opening ${provider === "google" ? "Google" : "Microsoft"} authorization`,
+    );
+    if (result?.authorizationUrl) window.location.assign(result.authorizationUrl);
+  }
+
+  async function disconnectAppointmentCalendar(id: string) {
+    const result = await run(
+      () =>
+        api<{ disconnected: boolean }>(
+          `/appointment-booking/calendars/connections/${id}`,
+          { method: "DELETE" },
+        ),
+      "Calendar disconnected",
+    );
+    if (result) await loadAppointmentCalendarConnections();
   }
 
   async function createWhatsAppConfig(event: FormEvent<HTMLFormElement>) {
@@ -2267,16 +2372,21 @@ export default function Home() {
                   <AppointmentsView
                     services={appointmentServices}
                     staff={appointmentStaff}
+                    resources={appointmentResources}
                     slots={appointmentSlots}
                     bookings={appointmentBookings}
+                    calendarConnections={appointmentCalendarConnections}
                     onCreateService={createAppointmentService}
                     onCreateStaff={createAppointmentStaff}
+                    onCreateResource={createAppointmentResource}
                     onCreateAvailability={createStaffAvailability}
                     onCreateTimeOff={createStaffTimeOff}
                     onSearchSlots={searchAppointmentSlots}
                     onCreateBooking={createAppointmentBooking}
                     onRescheduleBooking={rescheduleAppointmentBooking}
                     onCancelBooking={cancelAppointmentBooking}
+                    onConnectCalendar={connectAppointmentCalendar}
+                    onDisconnectCalendar={disconnectAppointmentCalendar}
                   />
                 ) : null}
                 {activeTab === "whatsapp" ? (
