@@ -27,6 +27,8 @@
     session: readSession(),
     open: false,
     sending: false,
+    refreshing: false,
+    streamAbort: null,
     error: "",
   };
 
@@ -38,7 +40,7 @@
     ".ac-root.ac-left{right:auto;left:24px}",
     ".ac-launcher{height:56px;display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:0 20px;background:var(--ac-color);color:#fff;font:600 14px/1 inherit;box-shadow:0 14px 38px rgba(15,23,42,.24);cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background .16s ease}",
     ".ac-launcher:hover{background:var(--ac-color-dark);transform:translateY(-1px);box-shadow:0 17px 42px rgba(15,23,42,.28)}",
-    ".ac-launcher:focus-visible,.ac-close:focus-visible,.ac-send:focus-visible,.ac-retry:focus-visible,.ac-input:focus-visible{outline:3px solid rgba(14,165,233,.45);outline-offset:2px}",
+    ".ac-launcher:focus-visible,.ac-close:focus-visible,.ac-send:focus-visible,.ac-handoff:focus-visible,.ac-retry:focus-visible,.ac-input:focus-visible{outline:3px solid rgba(14,165,233,.45);outline-offset:2px}",
     ".ac-launcher svg{width:21px;height:21px;flex:none}",
     ".ac-panel{position:absolute;right:0;bottom:70px;width:min(380px,calc(100vw - 32px));height:min(620px,calc(100vh - 112px));display:none;grid-template-rows:auto 1fr auto;overflow:hidden;border:1px solid #dbe4f0;border-radius:18px;background:#fff;box-shadow:0 24px 72px rgba(15,23,42,.23);transform-origin:bottom right}",
     ".ac-left .ac-panel{right:auto;left:0;transform-origin:bottom left}",
@@ -76,6 +78,9 @@
     ".ac-send{width:40px;height:40px;display:grid;place-items:center;flex:none;border:0;border-radius:10px;background:var(--ac-color);color:#fff;cursor:pointer}",
     ".ac-send:hover{background:var(--ac-color-dark)}.ac-send:disabled{cursor:not-allowed;opacity:.55}",
     ".ac-send svg{width:17px;height:17px}",
+    ".ac-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}",
+    ".ac-handoff{border:0;background:transparent;padding:2px;color:#64748b;font:600 10px/1.3 inherit;cursor:pointer}",
+    ".ac-handoff:hover{color:var(--ac-color);text-decoration:underline}.ac-handoff:disabled{cursor:default;color:#94a3b8;text-decoration:none}",
     ".ac-footer{margin-top:8px;text-align:center;color:#94a3b8;font-size:9px}",
     ".ac-hidden{display:none!important}",
     "@media(max-width:520px){.ac-root,.ac-root.ac-left{right:12px;bottom:12px;left:12px}.ac-launcher{margin-left:auto}.ac-left .ac-launcher{margin-right:auto;margin-left:0}.ac-panel,.ac-left .ac-panel{position:fixed;inset:12px;width:auto;height:auto;border-radius:16px}.ac-open .ac-panel{display:grid}.ac-open .ac-launcher{display:none}}",
@@ -93,7 +98,7 @@
     '<main class="ac-messages" role="log" aria-live="polite" aria-relevant="additions"></main>' +
     '<footer class="ac-composer"><form class="ac-form"><textarea class="ac-input" rows="1" maxlength="2000" placeholder="Type your message..." aria-label="Message"></textarea>' +
     '<button class="ac-send" type="submit" aria-label="Send message">' + sendIcon() + '</button></form>' +
-    '<div class="ac-footer">Powered by AgentCore</div></footer></section>' +
+    '<div class="ac-actions"><button class="ac-handoff" type="button">Talk to a human</button><span class="ac-footer">Powered by AgentCore</span></div></footer></section>' +
     '<button class="ac-launcher" type="button" aria-label="Open support chat">' + chatIcon() + '<span>Chat with us</span></button>';
   shadow.appendChild(root);
 
@@ -104,10 +109,12 @@
   var form = root.querySelector(".ac-form");
   var input = root.querySelector(".ac-input");
   var sendButton = root.querySelector(".ac-send");
+  var handoffButton = root.querySelector(".ac-handoff");
 
   launcher.addEventListener("click", openWidget);
   closeButton.addEventListener("click", closeWidget);
   form.addEventListener("submit", onSubmit);
+  handoffButton.addEventListener("click", requestHandoff);
   input.addEventListener("keydown", function (event) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -132,6 +139,7 @@
       );
       applyConfig();
       await restoreConversation();
+      startRealtime();
       renderMessages();
     } catch (error) {
       state.error = readableError(error, "Chat is currently unavailable.");
@@ -202,6 +210,7 @@
         },
       );
       state.conversation = response.conversation;
+      startRealtime();
     } catch (error) {
       state.error = readableError(error, "Your message could not be sent. Please try again.");
       removeOptimisticMessages();
@@ -240,6 +249,92 @@
       visitorToken: created.visitorToken,
     };
     writeSession(state.session);
+    startRealtime();
+  }
+
+  async function requestHandoff() {
+    if (state.sending) return;
+    state.sending = true;
+    setSending(true);
+    try {
+      await ensureConversation();
+      state.conversation = await apiRequest(
+        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/handoff",
+        {
+          method: "PATCH",
+          headers: { "x-visitor-token": state.session.visitorToken },
+        },
+      );
+      renderMessages();
+    } catch (error) {
+      state.error = readableError(error, "A human agent could not be requested right now.");
+      renderMessages();
+    } finally {
+      state.sending = false;
+      setSending(false);
+    }
+  }
+
+  function startRealtime() {
+    if (!state.session || !state.session.conversationId || !state.session.visitorToken) return;
+    if (state.streamAbort) state.streamAbort.abort();
+    var controller = new AbortController();
+    state.streamAbort = controller;
+    void consumeRealtime(controller);
+  }
+
+  async function consumeRealtime(controller) {
+    try {
+      var response = await fetch(
+        apiBase + "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/events",
+        {
+          method: "GET",
+          headers: { "x-visitor-token": state.session.visitorToken },
+          mode: "cors",
+          credentials: "omit",
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok || !response.body) throw Object.assign(new Error("Realtime unavailable"), { status: response.status });
+      var reader = response.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      while (!controller.signal.aborted) {
+        var result = await reader.read();
+        if (result.done) break;
+        buffer += decoder.decode(result.value, { stream: true });
+        var blocks = buffer.split("\n\n");
+        buffer = blocks.pop() || "";
+        for (var index = 0; index < blocks.length; index += 1) {
+          if (blocks[index].indexOf("event: heartbeat") === -1) await refreshConversation();
+        }
+      }
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      if (error && (error.status === 401 || error.status === 404)) {
+        clearSession();
+        return;
+      }
+    }
+    if (!controller.signal.aborted) {
+      window.setTimeout(function () {
+        if (!controller.signal.aborted) startRealtime();
+      }, 3000);
+    }
+  }
+
+  async function refreshConversation() {
+    if (state.refreshing || !state.session) return;
+    state.refreshing = true;
+    try {
+      state.conversation = await apiRequest(
+        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId),
+        { headers: { "x-visitor-token": state.session.visitorToken } },
+      );
+      renderMessages();
+    } finally {
+      state.refreshing = false;
+    }
   }
 
   function renderMessages(showTyping) {
@@ -260,13 +355,14 @@
 
     if (showTyping) appendTyping();
     if (state.error) appendError(state.error);
+    setSending(state.sending);
     window.requestAnimationFrame(function () {
       messages.scrollTop = messages.scrollHeight;
     });
   }
 
   function appendBubble(role, content, citations) {
-    if (role !== "visitor" && role !== "assistant" && role !== "agent") return;
+    if (role !== "visitor" && role !== "assistant" && role !== "agent" && role !== "system") return;
     var row = document.createElement("div");
     var isUser = role === "visitor";
     row.className = "ac-row " + (isUser ? "ac-row-user" : "ac-row-assistant");
@@ -307,6 +403,12 @@
   function setSending(sending) {
     sendButton.disabled = sending;
     input.disabled = sending;
+    handoffButton.disabled =
+      sending || (state.conversation && state.conversation.status === "waiting_for_agent");
+    handoffButton.textContent =
+      state.conversation && state.conversation.status === "waiting_for_agent"
+        ? "Human agent requested"
+        : "Talk to a human";
   }
 
   function removeOptimisticMessages() {
@@ -333,6 +435,7 @@
   }
 
   function destroyWidget() {
+    if (state.streamAbort) state.streamAbort.abort();
     rootHost.remove();
     try { delete window.AgentCoreWidget; } catch { window.AgentCoreWidget = undefined; }
   }
@@ -375,6 +478,8 @@
   }
 
   function clearSession() {
+    if (state.streamAbort) state.streamAbort.abort();
+    state.streamAbort = null;
     state.session = null;
     state.conversation = null;
     try { localStorage.removeItem(storageKey); } catch {}

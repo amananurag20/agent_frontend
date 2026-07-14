@@ -247,6 +247,9 @@ export default function Home() {
     if (!user) return navItems.filter((item) => item.id === "dashboard");
     const isSuperAdmin = user.roles.includes("super_admin");
     const isOrgAdmin = user.roles.includes("org_admin");
+    const canHandleCustomerChat = user.roles.some((role) =>
+      ["super_admin", "org_admin", "product_admin", "agent"].includes(role),
+    );
     const grants = [
       ...(user.productAccess ?? []),
       ...(user.customRoles ?? []).flatMap((role) => role.productAccess),
@@ -270,7 +273,8 @@ export default function Home() {
       if (item.id === "users") return isSuperAdmin || isOrgAdmin || canManageAgents;
       if (item.id === "knowledge") return isSuperAdmin || isOrgAdmin || canManageKnowledge;
       if (["products", "ai", "audit"].includes(item.id)) return isSuperAdmin || isOrgAdmin;
-      if (item.id === "inbox") return canUse("customer_chat");
+      if (item.id === "inbox")
+        return canUse("customer_chat") && canHandleCustomerChat;
       if (item.id === "widget") return canUse("customer_chat") && canConfigureChat;
       if (item.id === "appointments") return canUse("appointment_booking");
       if (item.id === "whatsapp") return canUse("whatsapp_assistant");
@@ -322,6 +326,51 @@ export default function Home() {
     void loadSelectedOrganizationData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrganizationId]);
+
+  useEffect(() => {
+    if (!token || activeTab !== "inbox") return;
+    const controller = new AbortController();
+    const selectedId = selectedConversation?.id;
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+
+    async function connect() {
+      try {
+        const params = new URLSearchParams();
+        if (organizationId) params.set("organizationId", organizationId);
+        const response = await fetch(
+          `${API_BASE_URL}/customer-chat/events?${params.toString()}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok || !response.body) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const result = await reader.read();
+          if (result.done) break;
+          buffer += decoder.decode(result.value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+          if (blocks.some((block) => !block.includes("event: heartbeat"))) {
+            await loadConversations();
+            if (selectedId) await loadConversation(selectedId);
+          }
+        }
+      } catch {
+        // Expected during navigation, reconnect, or sign-out.
+      }
+      if (!controller.signal.aborted) {
+        window.setTimeout(() => void connect(), 3000);
+      }
+    }
+
+    void connect();
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeTab, selectedOrganizationId, selectedConversation?.id]);
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await axios.request<T>({

@@ -153,7 +153,7 @@ export type Message = {
   content: string;
   metadata: Record<string, unknown>;
   createdAt: string;
-  citations: Array<{ chunkId: string; score: number; content: string }>;
+  citations: Array<{ chunkId: string; score: number; content?: string }>;
 };
 
 export type Conversation = {
@@ -208,7 +208,7 @@ export type PublicWidgetConversationCreated = {
 export type CustomerChatSendMessageResponse = {
   conversation: Conversation;
   visitorMessage: Message;
-  assistantMessage: Message;
+  assistantMessage: Message | null;
 };
 
 export type KnowledgeSource = {
