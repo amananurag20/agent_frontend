@@ -160,6 +160,7 @@ export type Conversation = {
   id: string;
   organizationId: string;
   status: "open" | "waiting_for_agent" | "closed";
+  version: number;
   assignedAgentId?: string | null;
   visitorId?: string | null;
   visitorName?: string | null;

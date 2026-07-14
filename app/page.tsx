@@ -1121,7 +1121,10 @@ export default function Home() {
           `/customer-chat/conversations/${selectedConversation.id}/status`,
           {
             method: "PATCH",
-            body: JSON.stringify({ status }),
+            body: JSON.stringify({
+              status,
+              expectedVersion: selectedConversation.version,
+            }),
           },
         ),
       "Status updated",
