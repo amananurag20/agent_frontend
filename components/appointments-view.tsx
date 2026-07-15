@@ -9,25 +9,31 @@ import {
   Plus,
   RefreshCw,
   Settings2,
+  SlidersHorizontal,
   Users2,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
   AppointmentBooking,
+  AppointmentBlackout,
   AppointmentCalendarConnection,
+  AppointmentPolicy,
   AppointmentResource,
   AppointmentService,
   AppointmentSlot,
   AppointmentStaff,
+  AppointmentWaitlistEntry,
   FormHandler,
 } from "@/lib/types";
 import { Card, CardHeader, EmptyState, Field, StatusPill } from "./ui";
+import { AppointmentOperations } from "./appointment-operations";
 
-type Tab = "bookings" | "services" | "team" | "calendars";
+type Tab = "bookings" | "services" | "team" | "calendars" | "operations";
 type Dialog =
   | "booking"
   | "service"
+  | "service_edit"
   | "staff"
   | "resource"
   | "availability"
@@ -41,6 +47,7 @@ const tabs: Array<{ id: Tab; label: string; icon: typeof CalendarDays }> = [
   { id: "services", label: "Services", icon: Settings2 },
   { id: "team", label: "Team & availability", icon: Users2 },
   { id: "calendars", label: "Calendar sync", icon: CalendarCheck },
+  { id: "operations", label: "Policies & operations", icon: SlidersHorizontal },
 ];
 
 function formatDateTime(value: string) {
@@ -54,6 +61,7 @@ function dialogTitle(dialog: Dialog) {
   return {
     booking: "New booking",
     service: "Add service",
+    service_edit: "Edit service",
     staff: "Add team member",
     resource: "Add resource",
     availability: "Add weekly hours",
@@ -128,7 +136,11 @@ export function AppointmentsView({
   slots,
   bookings,
   calendarConnections,
+  policy,
+  blackouts,
+  waitlist,
   onCreateService,
+  onUpdateService,
   onCreateStaff,
   onCreateResource,
   onCreateAvailability,
@@ -137,6 +149,11 @@ export function AppointmentsView({
   onCreateBooking,
   onRescheduleBooking,
   onCancelBooking,
+  onCheckInBooking,
+  onCancelSeries,
+  onUpdatePolicy,
+  onCreateBlackout,
+  onDeleteBlackout,
   onConnectCalendar,
   onDisconnectCalendar,
 }: {
@@ -146,7 +163,11 @@ export function AppointmentsView({
   slots: AppointmentSlot[];
   bookings: AppointmentBooking[];
   calendarConnections: AppointmentCalendarConnection[];
+  policy: AppointmentPolicy | null;
+  blackouts: AppointmentBlackout[];
+  waitlist: AppointmentWaitlistEntry[];
   onCreateService: FormHandler;
+  onUpdateService: FormHandler;
   onCreateStaff: FormHandler;
   onCreateResource: FormHandler;
   onCreateAvailability: FormHandler;
@@ -155,6 +176,11 @@ export function AppointmentsView({
   onCreateBooking: FormHandler;
   onRescheduleBooking: FormHandler;
   onCancelBooking: (id: string) => void;
+  onCheckInBooking: (id: string) => void;
+  onCancelSeries: (seriesId: string, fromOccurrenceIndex?: number) => void;
+  onUpdatePolicy: FormHandler;
+  onCreateBlackout: FormHandler;
+  onDeleteBlackout: (id: string) => void;
   onConnectCalendar: (
     provider: "google" | "microsoft",
     staffId: string,
@@ -170,6 +196,7 @@ export function AppointmentsView({
   const [bookingDefaults, setBookingDefaults] = useState<AppointmentSlot | null>(
     null,
   );
+  const [selectedService, setSelectedService] = useState<AppointmentService | null>(null);
 
   useEffect(() => {
     if (new URLSearchParams(window.location.search).has("calendar")) {
@@ -183,6 +210,7 @@ export function AppointmentsView({
     setSelectedBooking(null);
     setSelectedStaffId("");
     setBookingDefaults(null);
+    setSelectedService(null);
   };
   const submitDialog = (handler: FormHandler): FormHandler => (event) => {
     handler(event);
@@ -197,7 +225,9 @@ export function AppointmentsView({
           ? "service"
           : activeTab === "team"
             ? "staff"
-            : "calendar",
+            : activeTab === "calendars"
+              ? "calendar"
+              : null,
     );
   };
 
@@ -206,6 +236,7 @@ export function AppointmentsView({
     services: "Add service",
     team: "Add team member",
     calendars: "Connect calendar",
+    operations: "",
   }[activeTab];
 
   return (
@@ -245,7 +276,7 @@ export function AppointmentsView({
                   Add resource
                 </button>
               ) : null}
-              <button
+              {activeTab !== "operations" ? <button
                 type="button"
                 onClick={openPrimaryDialog}
                 disabled={activeTab === "team" && !services.length}
@@ -253,7 +284,7 @@ export function AppointmentsView({
               >
                 <Plus className="h-4 w-4" />
                 {primaryLabel}
-              </button>
+              </button> : null}
             </div>
           </div>
         </CardHeader>
@@ -303,7 +334,7 @@ export function AppointmentsView({
                         {formatDateTime(slot.startAt)}
                       </p>
                       <p className="mt-1 text-xs text-[var(--text-muted)]">
-                        {slot.staffName}
+                        {slot.staffName} · {slot.seatsRemaining} seat{slot.seatsRemaining === 1 ? "" : "s"} left
                       </p>
                     </button>
                   ))}
@@ -342,7 +373,10 @@ export function AppointmentsView({
                               {booking.customerName}
                             </p>
                             <p className="mt-1 text-xs text-[var(--text-muted)]">
-                              {booking.customerEmail ?? "No email"}
+                              {booking.customerEmail ?? booking.customerPhone ?? "No contact"}
+                              {booking.partySize > 1 ? ` · Party of ${booking.partySize}` : ""}
+                              {booking.seriesId ? ` · Recurring #${(booking.occurrenceIndex ?? 0) + 1}` : ""}
+                              {booking.checkedInAt ? " · Checked in" : ""}
                             </p>
                           </td>
                           <td className="px-5 py-4 text-[var(--text-base)]">
@@ -361,6 +395,15 @@ export function AppointmentsView({
                             <div className="flex justify-end gap-2">
                               {canChange ? (
                                 <>
+                                  {!booking.checkedInAt ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onCheckInBooking(booking.id)}
+                                      className="h-9 rounded-xl border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--success-text)] hover:bg-[var(--success-bg)]"
+                                    >
+                                      Check in
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -378,6 +421,16 @@ export function AppointmentsView({
                                   >
                                     Cancel
                                   </button>
+                                  {booking.seriesId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onCancelSeries(booking.seriesId!, booking.occurrenceIndex ?? undefined)}
+                                      className="h-9 rounded-xl px-3 text-xs font-medium text-[var(--danger-text)] hover:bg-[var(--danger-bg)]"
+                                      title="Cancel this and future occurrences"
+                                    >
+                                      Cancel series
+                                    </button>
+                                  ) : null}
                                 </>
                               ) : null}
                             </div>
@@ -423,7 +476,23 @@ export function AppointmentsView({
                         {service.bufferBeforeMinutes + service.bufferAfterMinutes} min buffer
                       </span>
                     ) : null}
+                    <span className="rounded-full bg-[var(--surface-card)] px-2.5 py-1">
+                      {service.maxAttendees > 1 ? `Group · ${service.maxAttendees} seats` : "Private"}
+                    </span>
+                    {service.waitlistEnabled ? (
+                      <span className="rounded-full bg-[var(--surface-card)] px-2.5 py-1">Waitlist on</span>
+                    ) : null}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedService(service);
+                      setDialog("service_edit");
+                    }}
+                    className="mt-4 h-9 w-full rounded-xl border border-[var(--border-strong)] text-xs font-medium hover:bg-[var(--surface-card)]"
+                  >
+                    Edit service settings
+                  </button>
                 </div>
               ))}
             </div>
@@ -597,6 +666,19 @@ export function AppointmentsView({
             )}
           </div>
         ) : null}
+
+        {activeTab === "operations" ? (
+          <AppointmentOperations
+            policy={policy}
+            blackouts={blackouts}
+            waitlist={waitlist}
+            services={services}
+            staff={staff}
+            onUpdatePolicy={onUpdatePolicy}
+            onCreateBlackout={onCreateBlackout}
+            onDeleteBlackout={onDeleteBlackout}
+          />
+        ) : null}
       </Card>
 
       {dialog ? (
@@ -620,7 +702,59 @@ export function AppointmentsView({
                   <input name="bufferAfterMinutes" type="number" min="0" defaultValue="0" className="input" />
                 </Field>
               </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Maximum attendees">
+                  <input name="maxAttendees" type="number" min="1" max="100" defaultValue="1" className="input" required />
+                </Field>
+                <Field label="Cancel notice (min)">
+                  <input name="cancellationWindowMinutes" type="number" min="0" max="43200" className="input" placeholder="Organization default" />
+                </Field>
+                <Field label="Reschedule notice (min)">
+                  <input name="rescheduleWindowMinutes" type="number" min="0" max="43200" className="input" placeholder="Organization default" />
+                </Field>
+              </div>
+              <label className="flex items-center gap-3 text-sm text-[var(--text-base)]">
+                <input name="waitlistEnabled" type="checkbox" defaultChecked /> Enable waitlist when full
+              </label>
               <SubmitActions label="Create service" onClose={closeDialog} />
+            </form>
+          ) : null}
+
+          {dialog === "service_edit" && selectedService ? (
+            <form onSubmit={submitDialog(onUpdateService)} className="space-y-4">
+              <input type="hidden" name="serviceId" value={selectedService.id} />
+              <Field label="Service name">
+                <input name="name" className="input" defaultValue={selectedService.name} required />
+              </Field>
+              <Field label="Description">
+                <textarea name="description" rows={3} className="input resize-y" defaultValue={selectedService.description ?? ""} />
+              </Field>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Duration (min)">
+                  <input name="durationMinutes" type="number" min="5" max="1440" defaultValue={selectedService.durationMinutes} className="input" required />
+                </Field>
+                <Field label="Buffer before">
+                  <input name="bufferBeforeMinutes" type="number" min="0" max="240" defaultValue={selectedService.bufferBeforeMinutes} className="input" required />
+                </Field>
+                <Field label="Buffer after">
+                  <input name="bufferAfterMinutes" type="number" min="0" max="240" defaultValue={selectedService.bufferAfterMinutes} className="input" required />
+                </Field>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Field label="Maximum attendees">
+                  <input name="maxAttendees" type="number" min="1" max="100" defaultValue={selectedService.maxAttendees} className="input" required />
+                </Field>
+                <Field label="Cancel notice (min)">
+                  <input name="cancellationWindowMinutes" type="number" min="0" max="43200" defaultValue={selectedService.cancellationWindowMinutes ?? ""} className="input" placeholder="Organization default" />
+                </Field>
+                <Field label="Reschedule notice (min)">
+                  <input name="rescheduleWindowMinutes" type="number" min="0" max="43200" defaultValue={selectedService.rescheduleWindowMinutes ?? ""} className="input" placeholder="Organization default" />
+                </Field>
+              </div>
+              <label className="flex items-center gap-3 text-sm text-[var(--text-base)]">
+                <input name="waitlistEnabled" type="checkbox" defaultChecked={selectedService.waitlistEnabled} /> Enable waitlist when full
+              </label>
+              <SubmitActions label="Save service" onClose={closeDialog} />
             </form>
           ) : null}
 
@@ -754,6 +888,33 @@ export function AppointmentsView({
                   <input name="customerEmail" type="email" className="input" />
                 </Field>
               </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Customer phone">
+                  <input name="customerPhone" type="tel" className="input" />
+                </Field>
+                <Field label="Party size">
+                  <input name="partySize" type="number" min="1" max="100" defaultValue="1" className="input" required />
+                </Field>
+              </div>
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-4">
+                <p className="mb-3 text-sm font-medium text-[var(--text-strong)]">Recurring appointment (optional)</p>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <Field label="Frequency">
+                    <select name="recurrenceFrequency" className="input" defaultValue="">
+                      <option value="">Does not repeat</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </Field>
+                  <Field label="Every">
+                    <input name="recurrenceInterval" type="number" min="1" max="12" defaultValue="1" className="input" />
+                  </Field>
+                  <Field label="Occurrences">
+                    <input name="recurrenceCount" type="number" min="2" max="52" defaultValue="2" className="input" />
+                  </Field>
+                </div>
+              </div>
               <Field label="Notes">
                 <textarea name="notes" rows={3} className="input resize-y" />
               </Field>
@@ -776,6 +937,12 @@ export function AppointmentsView({
               <Field label="New start time">
                 <input name="startAt" type="datetime-local" className="input" required />
               </Field>
+              {selectedBooking.seriesId ? (
+                <label className="flex items-start gap-3 rounded-xl bg-[var(--surface-card-muted)] p-4 text-sm text-[var(--text-base)]">
+                  <input name="applyToFuture" type="checkbox" />
+                  <span><strong className="text-[var(--text-strong)]">Apply to future occurrences</strong><br />Move this appointment and every later occurrence by the same amount.</span>
+                </label>
+              ) : null}
               <SubmitActions label="Reschedule" onClose={closeDialog} />
             </form>
           ) : null}

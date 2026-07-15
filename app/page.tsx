@@ -1,9 +1,6 @@
 "use client";
 
-import axios, {
-  type AxiosRequestConfig,
-  type AxiosResponse,
-} from "axios";
+import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   BookOpenText,
@@ -42,11 +39,14 @@ import type {
   ApiState,
   AppointmentBooking,
   AppointmentBookingList,
+  AppointmentBlackout,
   AppointmentCalendarConnection,
+  AppointmentPolicy,
   AppointmentResource,
   AppointmentService,
   AppointmentSlot,
   AppointmentStaff,
+  AppointmentWaitlistEntry,
   AuditLog,
   AuthResponse,
   Conversation,
@@ -74,14 +74,18 @@ import type {
   TabId,
   User,
   VoiceCall,
+  VoiceCallFilters,
   VoiceCallList,
   VoiceConfig,
+  VoiceConfigInput,
   WidgetConfig,
   WidgetConfigList,
   WidgetPageInfo,
   WhatsAppConfig,
   WhatsAppConversation,
   WhatsAppConversationList,
+  WhatsAppMessage,
+  WhatsAppTemplate,
 } from "@/lib/types";
 
 const API_BASE_URL =
@@ -106,19 +110,70 @@ const navItems: Array<{ id: TabId; label: string }> = [
 
 const validTabIds = new Set<TabId>(navItems.map((item) => item.id));
 
-const navMeta: Record<TabId, { icon: LucideIcon; mark: string; description: string }> = {
-  dashboard: { icon: LayoutDashboard, mark: "DB", description: "Live platform overview" },
-  organizations: { icon: Building2, mark: "OR", description: "Tenants, plans and ownership" },
-  inbox: { icon: MessagesSquare, mark: "CH", description: "Customer conversations and handoff" },
-  knowledge: { icon: BookOpenText, mark: "KN", description: "Sources, ingestion and access levels" },
-  appointments: { icon: CalendarDays, mark: "AP", description: "Services, availability and bookings" },
-  whatsapp: { icon: MessageSquare, mark: "WA", description: "WhatsApp automation and support" },
-  voice: { icon: PhoneCall, mark: "VO", description: "Calls, routing and transcripts" },
-  widget: { icon: Waypoints, mark: "WG", description: "Website assistant configuration" },
-  users: { icon: Users2, mark: "US", description: "Roles, clearance and product access" },
-  products: { icon: Boxes, mark: "PR", description: "Organization product entitlements" },
-  ai: { icon: Bot, mark: "AI", description: "Models, providers and credentials" },
-  audit: { icon: ShieldCheck, mark: "AU", description: "Security and operations activity" },
+const navMeta: Record<
+  TabId,
+  { icon: LucideIcon; mark: string; description: string }
+> = {
+  dashboard: {
+    icon: LayoutDashboard,
+    mark: "DB",
+    description: "Live platform overview",
+  },
+  organizations: {
+    icon: Building2,
+    mark: "OR",
+    description: "Tenants, plans and ownership",
+  },
+  inbox: {
+    icon: MessagesSquare,
+    mark: "CH",
+    description: "Customer conversations and handoff",
+  },
+  knowledge: {
+    icon: BookOpenText,
+    mark: "KN",
+    description: "Sources, ingestion and access levels",
+  },
+  appointments: {
+    icon: CalendarDays,
+    mark: "AP",
+    description: "Services, availability and bookings",
+  },
+  whatsapp: {
+    icon: MessageSquare,
+    mark: "WA",
+    description: "WhatsApp automation and support",
+  },
+  voice: {
+    icon: PhoneCall,
+    mark: "VO",
+    description: "Calls, routing and transcripts",
+  },
+  widget: {
+    icon: Waypoints,
+    mark: "WG",
+    description: "Website assistant configuration",
+  },
+  users: {
+    icon: Users2,
+    mark: "US",
+    description: "Roles, clearance and product access",
+  },
+  products: {
+    icon: Boxes,
+    mark: "PR",
+    description: "Organization product entitlements",
+  },
+  ai: {
+    icon: Bot,
+    mark: "AI",
+    description: "Models, providers and credentials",
+  },
+  audit: {
+    icon: ShieldCheck,
+    mark: "AU",
+    description: "Security and operations activity",
+  },
 };
 
 export default function Home() {
@@ -133,7 +188,9 @@ export default function Home() {
     useState<ObservabilitySummary | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [selectedOrganizationId, setSelectedOrganizationId] = useState<string | null>(null);
+  const [selectedOrganizationId, setSelectedOrganizationId] = useState<
+    string | null
+  >(null);
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<ProductEntitlement[]>([]);
   const [aiProviders, setAIProviders] = useState<AIProvider[]>([]);
@@ -142,7 +199,9 @@ export default function Home() {
   const [knowledgeOcrProviders, setKnowledgeOcrProviders] = useState<
     KnowledgeOcrProvider[]
   >([]);
-  const [knowledgeSettingsError, setKnowledgeSettingsError] = useState<string | null>(null);
+  const [knowledgeSettingsError, setKnowledgeSettingsError] = useState<
+    string | null
+  >(null);
   const [conversations, setConversations] = useState<ConversationList | null>(
     null,
   );
@@ -164,14 +223,20 @@ export default function Home() {
   const [knowledgeSources, setKnowledgeSources] = useState<KnowledgeSource[]>(
     [],
   );
-  const [knowledgeCategories, setKnowledgeCategories] = useState<KnowledgeCategory[]>([]);
-  const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
-  const [knowledgePageInfo, setKnowledgePageInfo] = useState<KnowledgePageInfo>({
-    page: 1,
-    limit: 25,
-    total: 0,
-    totalPages: 1,
-  });
+  const [knowledgeCategories, setKnowledgeCategories] = useState<
+    KnowledgeCategory[]
+  >([]);
+  const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>(
+    [],
+  );
+  const [knowledgePageInfo, setKnowledgePageInfo] = useState<KnowledgePageInfo>(
+    {
+      page: 1,
+      limit: 25,
+      total: 0,
+      totalPages: 1,
+    },
+  );
   const [knowledgeQuery, setKnowledgeQuery] = useState<KnowledgeSourceQuery>({
     page: 1,
     limit: 25,
@@ -193,7 +258,21 @@ export default function Home() {
   >([]);
   const [appointmentCalendarConnections, setAppointmentCalendarConnections] =
     useState<AppointmentCalendarConnection[]>([]);
+  const [appointmentPolicy, setAppointmentPolicy] =
+    useState<AppointmentPolicy | null>(null);
+  const [appointmentBlackouts, setAppointmentBlackouts] = useState<
+    AppointmentBlackout[]
+  >([]);
+  const [appointmentWaitlist, setAppointmentWaitlist] = useState<
+    AppointmentWaitlistEntry[]
+  >([]);
   const [whatsAppConfigs, setWhatsAppConfigs] = useState<WhatsAppConfig[]>([]);
+  const [selectedWhatsAppConfigId, setSelectedWhatsAppConfigId] = useState<
+    string | null
+  >(null);
+  const [whatsAppTemplates, setWhatsAppTemplates] = useState<
+    WhatsAppTemplate[]
+  >([]);
   const [whatsAppConversations, setWhatsAppConversations] =
     useState<WhatsAppConversationList | null>(null);
   const [selectedWhatsAppConversation, setSelectedWhatsAppConversation] =
@@ -216,10 +295,14 @@ export default function Home() {
   const [whatsAppFilters, setWhatsAppFilters] = useState({
     status: "waiting_for_agent",
     search: "",
+    page: 1,
+    limit: 30,
   });
   const [voiceFilters, setVoiceFilters] = useState({
     status: "waiting_for_agent",
     search: "",
+    page: 1,
+    limit: 30,
   });
 
   const authHeaders = useMemo(
@@ -240,6 +323,41 @@ export default function Home() {
   const isSuperAdminPlatformContext = Boolean(
     user?.roles.includes("super_admin") && !selectedOrganizationId,
   );
+  const voiceAccess = useMemo(() => {
+    const roles = user?.roles ?? [];
+    const grants = [
+      ...(user?.productAccess ?? []),
+      ...(user?.customRoles ?? []).flatMap((role) => role.productAccess),
+    ].filter((grant) => grant.productKey === "voice_receptionist");
+    return {
+      canConfigure:
+        roles.includes("super_admin") ||
+        roles.includes("org_admin") ||
+        grants.some((grant) => grant.canConfigure),
+      canManageAgents:
+        roles.includes("super_admin") ||
+        roles.includes("org_admin") ||
+        grants.some((grant) => grant.canManageAgents),
+    };
+  }, [user]);
+  const whatsAppAccess = useMemo(() => {
+    const roles = user?.roles ?? [];
+    const grants = [
+      ...(user?.productAccess ?? []),
+      ...(user?.customRoles ?? []).flatMap((role) => role.productAccess),
+    ].filter((grant) => grant.productKey === "whatsapp_assistant");
+    return {
+      canConfigure:
+        roles.includes("super_admin") ||
+        roles.includes("org_admin") ||
+        roles.includes("product_admin") ||
+        grants.some((grant) => grant.canConfigure),
+      canManageAgents:
+        roles.includes("super_admin") ||
+        roles.includes("org_admin") ||
+        grants.some((grant) => grant.canManageAgents),
+    };
+  }, [user]);
   const usesPlatformTestWorkspace =
     isSuperAdminPlatformContext &&
     [
@@ -268,24 +386,36 @@ export default function Home() {
       products.some(
         (item) => item.product.key === productKey && item.status === "enabled",
       );
-    const canConfigureChat = isSuperAdmin || isOrgAdmin || grants.some((access) => access.productKey === "customer_chat" && access.canConfigure);
+    const canConfigureChat =
+      isSuperAdmin ||
+      isOrgAdmin ||
+      grants.some(
+        (access) =>
+          access.productKey === "customer_chat" && access.canConfigure,
+      );
     const canUse = (productKey: ProductKey) =>
       isEnabled(productKey) &&
       (isSuperAdmin ||
         isOrgAdmin ||
-        grants.some((access) => access.productKey === productKey && access.canUse));
+        grants.some(
+          (access) => access.productKey === productKey && access.canUse,
+        ));
     const canManageAgents = grants.some((access) => access.canManageAgents);
     const canManageKnowledge = grants.some(
       (access) => access.canManageKnowledge || access.canConfigure,
     );
     return navItems.filter((item) => {
       if (item.id === "organizations") return isSuperAdmin;
-      if (item.id === "users") return isSuperAdmin || isOrgAdmin || canManageAgents;
-      if (item.id === "knowledge") return isSuperAdmin || isOrgAdmin || canManageKnowledge;
-      if (["products", "ai", "audit"].includes(item.id)) return isSuperAdmin || isOrgAdmin;
+      if (item.id === "users")
+        return isSuperAdmin || isOrgAdmin || canManageAgents;
+      if (item.id === "knowledge")
+        return isSuperAdmin || isOrgAdmin || canManageKnowledge;
+      if (["products", "ai", "audit"].includes(item.id))
+        return isSuperAdmin || isOrgAdmin;
       if (item.id === "inbox")
         return canUse("customer_chat") && canHandleCustomerChat;
-      if (item.id === "widget") return canUse("customer_chat") && canConfigureChat;
+      if (item.id === "widget")
+        return canUse("customer_chat") && canConfigureChat;
       if (item.id === "appointments") return canUse("appointment_booking");
       if (item.id === "whatsapp") return canUse("whatsapp_assistant");
       if (item.id === "voice") return canUse("voice_receptionist");
@@ -332,7 +462,12 @@ export default function Home() {
   }, [token]);
 
   useEffect(() => {
-    if (!token || !selectedOrganizationId || !user?.roles.includes("super_admin")) return;
+    if (
+      !token ||
+      !selectedOrganizationId ||
+      !user?.roles.includes("super_admin")
+    )
+      return;
     void loadSelectedOrganizationData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedOrganizationId]);
@@ -381,6 +516,42 @@ export default function Home() {
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeTab, selectedOrganizationId, selectedConversation?.id]);
+
+  useEffect(() => {
+    if (!token || activeTab !== "voice") return;
+    const interval = window.setInterval(() => {
+      void loadVoiceCalls(undefined, true);
+      if (selectedVoiceCall?.id) {
+        void loadVoiceCall(selectedVoiceCall.id, true);
+      }
+    }, 10_000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    token,
+    activeTab,
+    selectedOrganizationId,
+    selectedVoiceCall?.id,
+    voiceFilters,
+  ]);
+
+  useEffect(() => {
+    if (!token || activeTab !== "whatsapp") return;
+    const interval = window.setInterval(() => {
+      void loadWhatsAppConversations(undefined, true);
+      if (selectedWhatsAppConversation?.id) {
+        void loadWhatsAppConversation(selectedWhatsAppConversation.id, true);
+      }
+    }, 10_000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    token,
+    activeTab,
+    selectedOrganizationId,
+    selectedWhatsAppConversation?.id,
+    whatsAppFilters,
+  ]);
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await axios.request<T>({
@@ -592,14 +763,17 @@ export default function Home() {
     const isEnabled = (productKey: ProductKey) =>
       Boolean(
         loadedProducts?.some(
-          (item) => item.product.key === productKey && item.status === "enabled",
+          (item) =>
+            item.product.key === productKey && item.status === "enabled",
         ),
       );
     const canUse = (productKey: ProductKey) =>
       isEnabled(productKey) &&
       (isSuperAdmin ||
         isOrgAdmin ||
-        grants.some((access) => access.productKey === productKey && access.canUse));
+        grants.some(
+          (access) => access.productKey === productKey && access.canUse,
+        ));
 
     const baseTasks: Array<Promise<unknown>> = [
       loadHealth(),
@@ -630,6 +804,7 @@ export default function Home() {
         loadAppointmentResources(),
         loadAppointmentBookings(),
         loadAppointmentCalendarConnections(),
+        loadAppointmentOperations(),
       );
     }
     if (canUse("whatsapp_assistant")) {
@@ -653,11 +828,17 @@ export default function Home() {
     setKnowledgeOcrProviders([]);
     setKnowledgeSettingsError(null);
     setAIProviders([]);
+    setWhatsAppConfigs([]);
+    setWhatsAppTemplates([]);
+    setSelectedWhatsAppConfigId(null);
+    setWhatsAppConversations(null);
+    setSelectedWhatsAppConversation(null);
     const loadedProducts = await loadProducts();
     const isEnabled = (productKey: ProductKey) =>
       Boolean(
         loadedProducts?.some(
-          (item) => item.product.key === productKey && item.status === "enabled",
+          (item) =>
+            item.product.key === productKey && item.status === "enabled",
         ),
       );
     const tasks: Array<Promise<unknown>> = [
@@ -677,7 +858,14 @@ export default function Home() {
         loadAppointmentResources(),
         loadAppointmentBookings(),
         loadAppointmentCalendarConnections(),
+        loadAppointmentOperations(),
       );
+    }
+    if (isEnabled("whatsapp_assistant")) {
+      tasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
+    }
+    if (isEnabled("voice_receptionist")) {
+      tasks.push(loadVoiceConfigs(), loadVoiceCalls());
     }
     await Promise.all(tasks);
   }
@@ -713,12 +901,11 @@ export default function Home() {
   }
 
   async function loadProducts() {
-    const path = user?.roles.includes("super_admin") && selectedOrganizationId
-      ? `/organizations/${selectedOrganizationId}/products`
-      : "/organizations/me/products";
-    const result = await run(() =>
-      api<ProductEntitlement[]>(path),
-    );
+    const path =
+      user?.roles.includes("super_admin") && selectedOrganizationId
+        ? `/organizations/${selectedOrganizationId}/products`
+        : "/organizations/me/products";
+    const result = await run(() => api<ProductEntitlement[]>(path));
     if (result) setProducts(result);
     return result;
   }
@@ -740,15 +927,21 @@ export default function Home() {
     setKnowledgeSettingsError(null);
     try {
       const result = await Promise.all([
-        api<KnowledgeExtractionSettings>(`/knowledge/settings/extraction${query}`),
-        api<KnowledgeOcrProvider[]>(`/knowledge/settings/ocr-providers${query}`),
+        api<KnowledgeExtractionSettings>(
+          `/knowledge/settings/extraction${query}`,
+        ),
+        api<KnowledgeOcrProvider[]>(
+          `/knowledge/settings/ocr-providers${query}`,
+        ),
       ]);
       setKnowledgeExtractionSettings(result[0]);
       setKnowledgeOcrProviders(result[1]);
       return true;
     } catch (error) {
       setKnowledgeSettingsError(
-        error instanceof Error ? error.message : "Unable to load processing settings",
+        error instanceof Error
+          ? error.message
+          : "Unable to load processing settings",
       );
       return false;
     }
@@ -788,7 +981,9 @@ export default function Home() {
     const params = new URLSearchParams({ page: String(page), limit: "10" });
     if (organizationId) params.set("organizationId", organizationId);
     const result = await run(() =>
-      api<WidgetConfigList>(`/customer-chat/widget-configs?${params.toString()}`),
+      api<WidgetConfigList>(
+        `/customer-chat/widget-configs?${params.toString()}`,
+      ),
     );
     if (result) {
       setWidgetConfigs(result.data);
@@ -800,7 +995,7 @@ export default function Home() {
       });
       setWidgetConfig((current) =>
         current
-          ? result.data.find((widget) => widget.id === current.id) ?? current
+          ? (result.data.find((widget) => widget.id === current.id) ?? current)
           : null,
       );
     }
@@ -818,15 +1013,22 @@ export default function Home() {
     if (nextQuery.status) sourceParams.set("status", nextQuery.status);
     if (nextQuery.type) sourceParams.set("type", nextQuery.type);
     if (nextQuery.folderId) sourceParams.set("folderId", nextQuery.folderId);
-    if (nextQuery.quarantined !== undefined) sourceParams.set("quarantined", String(nextQuery.quarantined));
+    if (nextQuery.quarantined !== undefined)
+      sourceParams.set("quarantined", String(nextQuery.quarantined));
     const taxonomyQuery = organizationId
       ? `?organizationId=${encodeURIComponent(organizationId)}`
       : "";
-    const result = await run(() => Promise.all([
-      api<KnowledgeSourceList>(`/knowledge/sources?${sourceParams.toString()}`),
-      api<KnowledgeCategory[]>(`/knowledge/taxonomy/categories${taxonomyQuery}`),
-      api<KnowledgeFolder[]>(`/knowledge/taxonomy/folders${taxonomyQuery}`),
-    ]));
+    const result = await run(() =>
+      Promise.all([
+        api<KnowledgeSourceList>(
+          `/knowledge/sources?${sourceParams.toString()}`,
+        ),
+        api<KnowledgeCategory[]>(
+          `/knowledge/taxonomy/categories${taxonomyQuery}`,
+        ),
+        api<KnowledgeFolder[]>(`/knowledge/taxonomy/folders${taxonomyQuery}`),
+      ]),
+    );
     if (result) {
       setKnowledgeSources(result[0].data);
       setKnowledgePageInfo(result[0].pageInfo);
@@ -841,11 +1043,15 @@ export default function Home() {
     if (organizationId) sourceParams.set("organizationId", organizationId);
     sourceParams.set("page", String(knowledgeQuery.page ?? 1));
     sourceParams.set("limit", String(knowledgeQuery.limit ?? 25));
-    if (knowledgeQuery.search) sourceParams.set("search", knowledgeQuery.search);
-    if (knowledgeQuery.status) sourceParams.set("status", knowledgeQuery.status);
+    if (knowledgeQuery.search)
+      sourceParams.set("search", knowledgeQuery.search);
+    if (knowledgeQuery.status)
+      sourceParams.set("status", knowledgeQuery.status);
     if (knowledgeQuery.type) sourceParams.set("type", knowledgeQuery.type);
-    if (knowledgeQuery.folderId) sourceParams.set("folderId", knowledgeQuery.folderId);
-    if (knowledgeQuery.quarantined !== undefined) sourceParams.set("quarantined", String(knowledgeQuery.quarantined));
+    if (knowledgeQuery.folderId)
+      sourceParams.set("folderId", knowledgeQuery.folderId);
+    if (knowledgeQuery.quarantined !== undefined)
+      sourceParams.set("quarantined", String(knowledgeQuery.quarantined));
     try {
       const result = await api<KnowledgeSourceList>(
         `/knowledge/sources?${sourceParams.toString()}`,
@@ -919,6 +1125,34 @@ export default function Home() {
     if (result) setAppointmentCalendarConnections(result);
   }
 
+  async function loadAppointmentOperations() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams();
+    if (organizationId) params.set("organizationId", organizationId);
+    const query = params.size ? `?${params}` : "";
+    const canConfigure = user?.roles.some((role) =>
+      ["super_admin", "org_admin", "product_admin"].includes(role),
+    );
+    const [policy, blackouts, waitlist] = await Promise.all([
+      canConfigure
+        ? run(() =>
+            api<AppointmentPolicy>(`/appointment-booking/policy${query}`),
+          )
+        : Promise.resolve(null),
+      run(() =>
+        api<AppointmentBlackout[]>(`/appointment-booking/blackouts${query}`),
+      ),
+      run(() =>
+        api<AppointmentWaitlistEntry[]>(
+          `/appointment-booking/waitlist${query}`,
+        ),
+      ),
+    ]);
+    if (policy) setAppointmentPolicy(policy);
+    if (blackouts) setAppointmentBlackouts(blackouts);
+    if (waitlist) setAppointmentWaitlist(waitlist);
+  }
+
   async function loadWhatsAppConfigs() {
     const organizationId = selectedOrganizationId ?? user?.orgId;
     const query = organizationId
@@ -927,38 +1161,85 @@ export default function Home() {
     const result = await run(() =>
       api<WhatsAppConfig[]>(`/whatsapp-assistant/configs${query}`),
     );
-    if (result) setWhatsAppConfigs(result);
-  }
-
-  async function loadWhatsAppConversations() {
-    const organizationId = selectedOrganizationId ?? user?.orgId;
-    const params = new URLSearchParams({
-      limit: "30",
-      ...(organizationId ? { organizationId } : {}),
-      ...(whatsAppFilters.status ? { status: whatsAppFilters.status } : {}),
-      ...(whatsAppFilters.search ? { search: whatsAppFilters.search } : {}),
-    });
-    const result = await run(() =>
-      api<WhatsAppConversationList>(
-        `/whatsapp-assistant/conversations?${params}`,
-      ),
-    );
-
     if (result) {
-      setWhatsAppConversations(result);
-      setSelectedWhatsAppConversation((current) =>
-        current
-          ? (result.data.find((item) => item.id === current.id) ?? current)
-          : (result.data[0] ?? null),
-      );
+      setWhatsAppConfigs(result);
+      const configId =
+        result.find((config) => config.id === selectedWhatsAppConfigId)?.id ??
+        result[0]?.id ??
+        null;
+      setSelectedWhatsAppConfigId(configId);
+      if (configId) await loadWhatsAppTemplates(configId, true);
+      else setWhatsAppTemplates([]);
     }
   }
 
-  async function loadWhatsAppConversation(id: string) {
-    const result = await run(() =>
-      api<WhatsAppConversation>(`/whatsapp-assistant/conversations/${id}`),
-    );
-    if (result) setSelectedWhatsAppConversation(result);
+  async function loadWhatsAppTemplates(configId: string, silent = false) {
+    const request = () =>
+      api<WhatsAppTemplate[]>(
+        `/whatsapp-assistant/configs/${configId}/templates`,
+      );
+    const result = silent
+      ? await request().catch(() => null)
+      : await run(request);
+    if (result) setWhatsAppTemplates(result);
+    return result;
+  }
+
+  async function selectWhatsAppConfig(configId: string) {
+    setSelectedWhatsAppConfigId(configId);
+    await loadWhatsAppTemplates(configId);
+  }
+
+  async function loadWhatsAppConversations(
+    overrides?: Partial<typeof whatsAppFilters>,
+    silent = false,
+  ) {
+    const nextFilters = { ...whatsAppFilters, ...overrides };
+    if (overrides) setWhatsAppFilters(nextFilters);
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams({
+      page: String(nextFilters.page),
+      limit: String(nextFilters.limit),
+      ...(organizationId ? { organizationId } : {}),
+      ...(nextFilters.status ? { status: nextFilters.status } : {}),
+      ...(nextFilters.search ? { search: nextFilters.search } : {}),
+    });
+    const request = () =>
+      api<WhatsAppConversationList>(
+        `/whatsapp-assistant/conversations?${params}`,
+      );
+    const result = silent
+      ? await request().catch(() => null)
+      : await run(request);
+
+    if (result) {
+      setWhatsAppConversations(result);
+      const nextSelected = selectedWhatsAppConversation
+        ? (result.data.find(
+            (item) => item.id === selectedWhatsAppConversation.id,
+          ) ?? selectedWhatsAppConversation)
+        : (result.data[0] ?? null);
+      setSelectedWhatsAppConversation(nextSelected);
+      if (nextSelected && nextSelected.configId !== selectedWhatsAppConfigId) {
+        setSelectedWhatsAppConfigId(nextSelected.configId);
+        await loadWhatsAppTemplates(nextSelected.configId, true);
+      }
+    }
+  }
+
+  async function loadWhatsAppConversation(id: string, silent = false) {
+    const request = () =>
+      api<WhatsAppConversation>(`/whatsapp-assistant/conversations/${id}`);
+    const result = silent
+      ? await request().catch(() => null)
+      : await run(request);
+    if (result) {
+      setSelectedWhatsAppConversation(result);
+      if (result.configId !== selectedWhatsAppConfigId) {
+        setSelectedWhatsAppConfigId(result.configId);
+        await loadWhatsAppTemplates(result.configId, true);
+      }
+    }
   }
 
   async function loadVoiceConfigs() {
@@ -972,17 +1253,32 @@ export default function Home() {
     if (result) setVoiceConfigs(result);
   }
 
-  async function loadVoiceCalls() {
+  async function loadVoiceCalls(
+    nextFilters?: VoiceCallFilters,
+    silent = false,
+  ) {
+    const effectiveFilters = nextFilters ?? voiceFilters;
+    if (nextFilters) setVoiceFilters(nextFilters);
     const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({
-      limit: "30",
+      page: String(effectiveFilters.page),
+      limit: String(effectiveFilters.limit),
       ...(organizationId ? { organizationId } : {}),
-      ...(voiceFilters.status ? { status: voiceFilters.status } : {}),
-      ...(voiceFilters.search ? { search: voiceFilters.search } : {}),
+      ...(effectiveFilters.status ? { status: effectiveFilters.status } : {}),
+      ...(effectiveFilters.search ? { search: effectiveFilters.search } : {}),
     });
-    const result = await run(() =>
-      api<VoiceCallList>(`/voice-receptionist/calls?${params}`),
-    );
+    const task = () =>
+      api<VoiceCallList>(`/voice-receptionist/calls?${params}`);
+    let result: VoiceCallList | null = null;
+    if (silent) {
+      try {
+        result = await task();
+      } catch {
+        return;
+      }
+    } else {
+      result = await run(task);
+    }
 
     if (result) {
       setVoiceCalls(result);
@@ -994,10 +1290,18 @@ export default function Home() {
     }
   }
 
-  async function loadVoiceCall(id: string) {
-    const result = await run(() =>
-      api<VoiceCall>(`/voice-receptionist/calls/${id}`),
-    );
+  async function loadVoiceCall(id: string, silent = false) {
+    const task = () => api<VoiceCall>(`/voice-receptionist/calls/${id}`);
+    let result: VoiceCall | null = null;
+    if (silent) {
+      try {
+        result = await task();
+      } catch {
+        return;
+      }
+    } else {
+      result = await run(task);
+    }
     if (result) setSelectedVoiceCall(result);
   }
 
@@ -1103,10 +1407,7 @@ export default function Home() {
     setRefreshToken(auth.refreshToken);
     setUser(auth.user);
     window.localStorage.setItem("agentcore_token", auth.accessToken);
-    window.localStorage.setItem(
-      "agentcore_refresh_token",
-      auth.refreshToken,
-    );
+    window.localStorage.setItem("agentcore_refresh_token", auth.refreshToken);
     window.localStorage.setItem("agentcore_user", JSON.stringify(auth.user));
   }
 
@@ -1203,7 +1504,9 @@ export default function Home() {
     }
   }
 
-  async function createWebsiteKnowledgeSource(event: FormEvent<HTMLFormElement>) {
+  async function createWebsiteKnowledgeSource(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
@@ -1220,7 +1523,9 @@ export default function Home() {
             productVisibility: form.getAll("productVisibility"),
             categories: parseCategories(form),
             folderId: String(form.get("folderId") || "") || undefined,
-            recrawlIntervalHours: Number(form.get("recrawlIntervalHours") || 24),
+            recrawlIntervalHours: Number(
+              form.get("recrawlIntervalHours") || 24,
+            ),
           }),
         }),
       "Website source created",
@@ -1236,12 +1541,19 @@ export default function Home() {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    if (selectedOrganizationId) form.set("organizationId", selectedOrganizationId);
+    if (selectedOrganizationId)
+      form.set("organizationId", selectedOrganizationId);
     if (!form.get("sensitivityLevel")) form.delete("sensitivityLevel");
     if (!form.get("folderId")) form.delete("folderId");
     if (!form.get("categories")) form.delete("categories");
+    const file = form.get("file");
+    const useDirectUpload =
+      file instanceof File && file.size > 20 * 1024 * 1024;
     const result = await run(
-      () => uploadApi<KnowledgeSource>("/knowledge/sources/upload", form),
+      () =>
+        useDirectUpload
+          ? uploadKnowledgeFileDirect(form, file)
+          : uploadApi<KnowledgeSource>("/knowledge/sources/upload", form),
       "File uploaded",
     );
 
@@ -1249,6 +1561,41 @@ export default function Home() {
       formElement.reset();
       await loadKnowledgeSources();
     }
+  }
+
+  async function uploadKnowledgeFileDirect(form: FormData, file: File) {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const upload = await api<{
+      uploadUrl: string;
+      key: string;
+      requiredHeaders: Record<string, string>;
+    }>("/knowledge/sources/uploads/presign", {
+      method: "POST",
+      body: JSON.stringify({
+        organizationId,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+      }),
+    });
+    await axios.put(upload.uploadUrl, file, {
+      headers: upload.requiredHeaders,
+      maxBodyLength: Infinity,
+      maxContentLength: Infinity,
+    });
+    return api<KnowledgeSource>("/knowledge/sources/uploads/complete", {
+      method: "POST",
+      body: JSON.stringify({
+        organizationId,
+        name: String(form.get("name") ?? ""),
+        key: upload.key,
+        fileName: file.name,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        folderId: String(form.get("folderId") ?? "") || undefined,
+        categories: parseCategories(form),
+      }),
+    });
   }
 
   function parseOptionalLevel(form: FormData) {
@@ -1268,13 +1615,14 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const result = await run(
-      () => api<KnowledgeCategory>("/knowledge/taxonomy/categories", {
-        method: "POST",
-        body: JSON.stringify({
-          name: String(form.get("name")),
-          organizationId: selectedOrganizationId ?? undefined,
+      () =>
+        api<KnowledgeCategory>("/knowledge/taxonomy/categories", {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            organizationId: selectedOrganizationId ?? undefined,
+          }),
         }),
-      }),
       "Category created",
     );
     if (result) {
@@ -1288,14 +1636,15 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const result = await run(
-      () => api<KnowledgeFolder>("/knowledge/taxonomy/folders", {
-        method: "POST",
-        body: JSON.stringify({
-          name: String(form.get("name")),
-          parentId: String(form.get("parentId") || "") || undefined,
-          organizationId: selectedOrganizationId ?? undefined,
+      () =>
+        api<KnowledgeFolder>("/knowledge/taxonomy/folders", {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            parentId: String(form.get("parentId") || "") || undefined,
+            organizationId: selectedOrganizationId ?? undefined,
+          }),
         }),
-      }),
       "Folder created",
     );
     if (result) {
@@ -1315,12 +1664,22 @@ export default function Home() {
     await loadKnowledgeSources();
   }
 
+  async function cancelKnowledgeIngestion(id: string) {
+    const result = await run(
+      () =>
+        api(`/knowledge/sources/${id}/ingestion/cancel`, { method: "POST" }),
+      "Ingestion cancellation requested",
+    );
+    if (result) await loadKnowledgeSources();
+  }
+
   async function releaseKnowledgeQuarantine(id: string) {
     await run(
-      () => api<KnowledgeSource>(`/knowledge/sources/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ isQuarantined: false }),
-      }),
+      () =>
+        api<KnowledgeSource>(`/knowledge/sources/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ isQuarantined: false }),
+        }),
       "Knowledge source approved",
     );
     await loadKnowledgeSources();
@@ -1328,9 +1687,10 @@ export default function Home() {
 
   async function deleteKnowledgeSource(id: string) {
     const result = await run(
-      () => api<{ deleted: boolean }>(`/knowledge/sources/${id}`, {
-        method: "DELETE",
-      }),
+      () =>
+        api<{ deleted: boolean }>(`/knowledge/sources/${id}`, {
+          method: "DELETE",
+        }),
       "Knowledge source deleted",
     );
     if (result) await loadKnowledgeSources();
@@ -1344,18 +1704,19 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const recrawlValue = String(form.get("recrawlIntervalHours") ?? "");
     const result = await run(
-      () => api<KnowledgeSource>(`/knowledge/sources/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: String(form.get("name")),
-          url: String(form.get("url") || "") || undefined,
-          sensitivityLevel: Number(form.get("sensitivityLevel") ?? 0),
-          productVisibility: form.getAll("productVisibility"),
-          categories: parseCategories(form),
-          folderId: String(form.get("folderId") || "") || null,
-          recrawlIntervalHours: recrawlValue ? Number(recrawlValue) : null,
+      () =>
+        api<KnowledgeSource>(`/knowledge/sources/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            url: String(form.get("url") || "") || undefined,
+            sensitivityLevel: Number(form.get("sensitivityLevel") ?? 0),
+            productVisibility: form.getAll("productVisibility"),
+            categories: parseCategories(form),
+            folderId: String(form.get("folderId") || "") || null,
+            recrawlIntervalHours: recrawlValue ? Number(recrawlValue) : null,
+          }),
         }),
-      }),
       "Knowledge source updated",
     );
     if (result) await loadKnowledgeSources();
@@ -1363,10 +1724,11 @@ export default function Home() {
 
   async function updateKnowledgeCategory(id: string, name: string) {
     const result = await run(
-      () => api<KnowledgeCategory>(`/knowledge/taxonomy/categories/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name }),
-      }),
+      () =>
+        api<KnowledgeCategory>(`/knowledge/taxonomy/categories/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        }),
       "Category updated",
     );
     if (result) await loadKnowledgeSources();
@@ -1374,7 +1736,10 @@ export default function Home() {
 
   async function deleteKnowledgeCategory(id: string) {
     const result = await run(
-      () => api<{ deleted: boolean }>(`/knowledge/taxonomy/categories/${id}`, { method: "DELETE" }),
+      () =>
+        api<{ deleted: boolean }>(`/knowledge/taxonomy/categories/${id}`, {
+          method: "DELETE",
+        }),
       "Category deleted",
     );
     if (result) await loadKnowledgeSources();
@@ -1382,10 +1747,11 @@ export default function Home() {
 
   async function updateKnowledgeFolder(id: string, name: string) {
     const result = await run(
-      () => api<KnowledgeFolder>(`/knowledge/taxonomy/folders/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ name }),
-      }),
+      () =>
+        api<KnowledgeFolder>(`/knowledge/taxonomy/folders/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        }),
       "Folder updated",
     );
     if (result) await loadKnowledgeSources();
@@ -1393,7 +1759,10 @@ export default function Home() {
 
   async function deleteKnowledgeFolder(id: string) {
     const result = await run(
-      () => api<{ deleted: boolean }>(`/knowledge/taxonomy/folders/${id}`, { method: "DELETE" }),
+      () =>
+        api<{ deleted: boolean }>(`/knowledge/taxonomy/folders/${id}`, {
+          method: "DELETE",
+        }),
       "Folder deleted",
     );
     if (result) await loadKnowledgeSources();
@@ -1512,9 +1881,12 @@ export default function Home() {
     const deletedId = configToDelete.id;
     const result = await run(
       () =>
-        api<{ deleted: boolean }>(`/customer-chat/widget-configs/${deletedId}`, {
-          method: "DELETE",
-        }),
+        api<{ deleted: boolean }>(
+          `/customer-chat/widget-configs/${deletedId}`,
+          {
+            method: "DELETE",
+          },
+        ),
       "Widget deleted",
     );
     if (result) {
@@ -1542,8 +1914,7 @@ export default function Home() {
 
   function widgetPayloadFromForm(form: FormData) {
     const knowledgeScope = String(form.get("knowledgeScope")) as
-      | "all"
-      | "folders";
+      "all" | "folders";
     return {
       name: String(form.get("name")),
       enabled: form.get("enabled") === "on",
@@ -1652,22 +2023,23 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const result = await run(
-      () => api<Organization>("/organizations", {
-        method: "POST",
-        body: JSON.stringify({
-          name: String(form.get("name")),
-          contactEmail: String(form.get("contactEmail")) || undefined,
-          contactPhone: String(form.get("contactPhone")) || undefined,
-          plan: String(form.get("plan")),
-          deploymentMode: String(form.get("deploymentMode")),
-          firstAdmin: {
-            name: String(form.get("adminName")),
-            email: String(form.get("adminEmail")),
-            password: String(form.get("adminPassword")),
-          },
-          enabledProducts: form.getAll("products"),
+      () =>
+        api<Organization>("/organizations", {
+          method: "POST",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            contactEmail: String(form.get("contactEmail")) || undefined,
+            contactPhone: String(form.get("contactPhone")) || undefined,
+            plan: String(form.get("plan")),
+            deploymentMode: String(form.get("deploymentMode")),
+            firstAdmin: {
+              name: String(form.get("adminName")),
+              email: String(form.get("adminEmail")),
+              password: String(form.get("adminPassword")),
+            },
+            enabledProducts: form.getAll("products"),
+          }),
         }),
-      }),
       "Organization and first admin created",
     );
     if (result) {
@@ -1756,19 +2128,20 @@ export default function Home() {
     clearanceLevel: number,
   ) {
     const result = await run(
-      () => api<User>(`/users/${target.id}/roles`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          roles: [role],
-          clearanceLevel,
-          productAccess: productKeys.map((productKey) => ({
-            productKey,
-            canUse: true,
-            canConfigure: role === "product_admin",
-            canManageAgents: role === "product_admin",
-          })),
+      () =>
+        api<User>(`/users/${target.id}/roles`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            roles: [role],
+            clearanceLevel,
+            productAccess: productKeys.map((productKey) => ({
+              productKey,
+              canUse: true,
+              canConfigure: role === "product_admin",
+              canManageAgents: role === "product_admin",
+            })),
+          }),
         }),
-      }),
       "User access updated",
     );
     if (result) await loadUsers();
@@ -1778,9 +2151,10 @@ export default function Home() {
     productKey: string,
     status: "enabled" | "disabled",
   ) {
-    const path = user?.roles.includes("super_admin") && selectedOrganizationId
-      ? `/organizations/${selectedOrganizationId}/products/${productKey}`
-      : `/organizations/me/products/${productKey}`;
+    const path =
+      user?.roles.includes("super_admin") && selectedOrganizationId
+        ? `/organizations/${selectedOrganizationId}/products/${productKey}`
+        : `/organizations/me/products/${productKey}`;
     await run(
       () =>
         api<ProductEntitlement>(path, {
@@ -1831,6 +2205,14 @@ export default function Home() {
             durationMinutes: Number(form.get("durationMinutes")),
             bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
             bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
+            maxAttendees: Number(form.get("maxAttendees") || 1),
+            cancellationWindowMinutes: form.get("cancellationWindowMinutes")
+              ? Number(form.get("cancellationWindowMinutes"))
+              : undefined,
+            rescheduleWindowMinutes: form.get("rescheduleWindowMinutes")
+              ? Number(form.get("rescheduleWindowMinutes"))
+              : undefined,
+            waitlistEnabled: form.get("waitlistEnabled") === "on",
           }),
         }),
       "Appointment service created",
@@ -1840,6 +2222,36 @@ export default function Home() {
       formElement.reset();
       await loadAppointmentServices();
     }
+  }
+
+  async function updateAppointmentService(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const serviceId = String(form.get("serviceId"));
+    const result = await run(
+      () =>
+        api<AppointmentService>(`/appointment-booking/services/${serviceId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            description: String(form.get("description")) || null,
+            durationMinutes: Number(form.get("durationMinutes")),
+            bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
+            bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
+            maxAttendees: Number(form.get("maxAttendees") || 1),
+            cancellationWindowMinutes: form.get("cancellationWindowMinutes")
+              ? Number(form.get("cancellationWindowMinutes"))
+              : null,
+            rescheduleWindowMinutes: form.get("rescheduleWindowMinutes")
+              ? Number(form.get("rescheduleWindowMinutes"))
+              : null,
+            waitlistEnabled: form.get("waitlistEnabled") === "on",
+          }),
+        }),
+      "Appointment service updated",
+    );
+    if (result) await loadAppointmentServices();
   }
 
   async function createAppointmentStaff(event: FormEvent<HTMLFormElement>) {
@@ -1968,6 +2380,7 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const staffId = String(form.get("staffId"));
+    const recurrenceFrequency = String(form.get("recurrenceFrequency") || "");
     const result = await run(
       () =>
         api<AppointmentBooking>("/appointment-booking/bookings", {
@@ -1978,8 +2391,17 @@ export default function Home() {
             staffId: staffId || undefined,
             customerName: String(form.get("customerName")),
             customerEmail: String(form.get("customerEmail")) || undefined,
+            customerPhone: String(form.get("customerPhone")) || undefined,
+            partySize: Number(form.get("partySize") || 1),
             startAt: toIsoDateTime(form.get("startAt")),
             notes: String(form.get("notes")) || undefined,
+            recurrence: recurrenceFrequency
+              ? {
+                  frequency: recurrenceFrequency,
+                  interval: Number(form.get("recurrenceInterval") || 1),
+                  count: Number(form.get("recurrenceCount") || 2),
+                }
+              : undefined,
           }),
         }),
       "Booking created",
@@ -1991,7 +2413,9 @@ export default function Home() {
     }
   }
 
-  async function rescheduleAppointmentBooking(event: FormEvent<HTMLFormElement>) {
+  async function rescheduleAppointmentBooking(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
@@ -2006,6 +2430,7 @@ export default function Home() {
             body: JSON.stringify({
               staffId: staffId || undefined,
               startAt: toIsoDateTime(form.get("startAt")),
+              applyToFuture: form.get("applyToFuture") === "on",
             }),
           },
         ),
@@ -2030,6 +2455,107 @@ export default function Home() {
     await loadAppointmentBookings();
   }
 
+  async function checkInAppointmentBooking(id: string) {
+    const result = await run(
+      () =>
+        api<AppointmentBooking>(
+          `/appointment-booking/bookings/${id}/check-in`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({}),
+          },
+        ),
+      "Customer checked in",
+    );
+    if (result) await loadAppointmentBookings();
+  }
+
+  async function cancelAppointmentSeries(
+    seriesId: string,
+    fromOccurrenceIndex?: number,
+  ) {
+    const result = await run(
+      () =>
+        api<{ cancelled: number }>(
+          `/appointment-booking/series/${seriesId}/cancel`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              fromOccurrenceIndex,
+              reason: "Cancelled from console",
+            }),
+          },
+        ),
+      "Recurring appointments cancelled",
+    );
+    if (result) await loadAppointmentBookings();
+  }
+
+  async function updateAppointmentPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams();
+    if (organizationId) params.set("organizationId", organizationId);
+    const result = await run(
+      () =>
+        api<AppointmentPolicy>(`/appointment-booking/policy?${params}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            cancellationWindowMinutes: Number(
+              form.get("cancellationWindowMinutes"),
+            ),
+            rescheduleWindowMinutes: Number(
+              form.get("rescheduleWindowMinutes"),
+            ),
+            noShowGraceMinutes: Number(form.get("noShowGraceMinutes")),
+            waitlistOfferMinutes: Number(form.get("waitlistOfferMinutes")),
+            quietHoursEnabled: form.get("quietHoursEnabled") === "on",
+            quietHoursStart: String(form.get("quietHoursStart")),
+            quietHoursEnd: String(form.get("quietHoursEnd")),
+            quietHoursTimezone: String(form.get("quietHoursTimezone")),
+          }),
+        }),
+      "Booking policy updated",
+    );
+    if (result) setAppointmentPolicy(result);
+  }
+
+  async function createAppointmentBlackout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () =>
+        api<AppointmentBlackout>("/appointment-booking/blackouts", {
+          method: "POST",
+          body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
+            name: String(form.get("name")),
+            startAt: toIsoDateTime(form.get("startAt")),
+            endAt: toIsoDateTime(form.get("endAt")),
+            annual: form.get("annual") === "on",
+          }),
+        }),
+      "Blackout added",
+    );
+    if (result) {
+      formElement.reset();
+      await loadAppointmentOperations();
+    }
+  }
+
+  async function deleteAppointmentBlackout(id: string) {
+    const result = await run(
+      () =>
+        api<{ deleted: boolean }>(`/appointment-booking/blackouts/${id}`, {
+          method: "DELETE",
+        }),
+      "Blackout removed",
+    );
+    if (result) await loadAppointmentOperations();
+  }
+
   async function connectAppointmentCalendar(
     provider: "google" | "microsoft",
     staffId: string,
@@ -2045,7 +2571,8 @@ export default function Home() {
         ),
       `Opening ${provider === "google" ? "Google" : "Microsoft"} authorization`,
     );
-    if (result?.authorizationUrl) window.location.assign(result.authorizationUrl);
+    if (result?.authorizationUrl)
+      window.location.assign(result.authorizationUrl);
   }
 
   async function disconnectAppointmentCalendar(id: string) {
@@ -2075,10 +2602,26 @@ export default function Home() {
             phoneNumberId: String(form.get("phoneNumberId")) || undefined,
             businessAccountId:
               String(form.get("businessAccountId")) || undefined,
-            accessToken: String(form.get("accessToken")) || undefined,
+            accessToken:
+              form.get("clearAccessToken") === "on"
+                ? null
+                : String(form.get("accessToken")) || undefined,
             webhookVerifyToken:
-              String(form.get("webhookVerifyToken")) || undefined,
+              form.get("clearWebhookVerifyToken") === "on"
+                ? null
+                : String(form.get("webhookVerifyToken")) || undefined,
+            appSecret:
+              form.get("clearAppSecret") === "on"
+                ? null
+                : String(form.get("appSecret")) || undefined,
             defaultLocale: String(form.get("defaultLocale")) || "en",
+            status: String(form.get("status") || "active"),
+            settings: {
+              handoffKeywords: String(form.get("handoffKeywords") || "")
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            },
           }),
         }),
       "WhatsApp config saved",
@@ -2088,6 +2631,61 @@ export default function Home() {
       formElement.reset();
       await loadWhatsAppConfigs();
     }
+  }
+
+  async function updateWhatsAppConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const configId = String(form.get("configId"));
+    const existing = whatsAppConfigs.find((config) => config.id === configId);
+    if (!existing) return;
+    const result = await run(
+      () =>
+        api<WhatsAppConfig>(`/whatsapp-assistant/configs/${configId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            provider: String(form.get("provider")),
+            status: String(form.get("status")),
+            phoneNumberId: String(form.get("phoneNumberId")) || null,
+            businessAccountId: String(form.get("businessAccountId")) || null,
+            accessToken:
+              form.get("clearAccessToken") === "on"
+                ? null
+                : String(form.get("accessToken")) || undefined,
+            webhookVerifyToken:
+              form.get("clearWebhookVerifyToken") === "on"
+                ? null
+                : String(form.get("webhookVerifyToken")) || undefined,
+            appSecret:
+              form.get("clearAppSecret") === "on"
+                ? null
+                : String(form.get("appSecret")) || undefined,
+            defaultLocale: String(form.get("defaultLocale")) || "en",
+            settings: {
+              ...existing.settings,
+              handoffKeywords: String(form.get("handoffKeywords") || "")
+                .split(",")
+                .map((value) => value.trim())
+                .filter(Boolean),
+            },
+          }),
+        }),
+      "WhatsApp config updated",
+    );
+    if (result) await loadWhatsAppConfigs();
+  }
+
+  async function syncWhatsAppTemplates(configId: string) {
+    const result = await run(
+      () =>
+        api<WhatsAppTemplate[]>(
+          `/whatsapp-assistant/configs/${configId}/templates/sync`,
+          { method: "POST" },
+        ),
+      "WhatsApp templates synchronized",
+    );
+    if (result) setWhatsAppTemplates(result);
   }
 
   async function sendWhatsAppReply(event: FormEvent<HTMLFormElement>) {
@@ -2113,6 +2711,194 @@ export default function Home() {
       setSelectedWhatsAppConversation(result.conversation);
       await loadWhatsAppConversations();
     }
+  }
+
+  async function sendWhatsAppTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWhatsAppConversation) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(() => {
+      const componentsText = String(form.get("components") || "").trim();
+      let components: Record<string, unknown>[] | undefined;
+      if (componentsText) {
+        const parsed: unknown = JSON.parse(componentsText);
+        if (!Array.isArray(parsed)) {
+          throw new Error("Template components must be a JSON array");
+        }
+        components = parsed as Record<string, unknown>[];
+      }
+      return api<{ conversation: WhatsAppConversation }>(
+        `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/template-messages`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            templateName: String(form.get("templateName")),
+            language: String(form.get("language")) || undefined,
+            components,
+          }),
+        },
+      );
+    }, "WhatsApp template sent");
+    if (result) {
+      formElement.reset();
+      setSelectedWhatsAppConversation(result.conversation);
+      await loadWhatsAppConversations(undefined, true);
+    }
+  }
+
+  async function sendWhatsAppMedia(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWhatsAppConversation) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const result = await run(
+      () =>
+        api<{ conversation: WhatsAppConversation }>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/media-messages`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              type: String(form.get("type")),
+              mediaId: String(form.get("mediaId")) || undefined,
+              link: String(form.get("link")) || undefined,
+              caption: String(form.get("caption")) || undefined,
+              filename: String(form.get("filename")) || undefined,
+            }),
+          },
+        ),
+      "WhatsApp media sent",
+    );
+    if (result) {
+      formElement.reset();
+      setSelectedWhatsAppConversation(result.conversation);
+      await loadWhatsAppConversations(undefined, true);
+    }
+  }
+
+  async function assignWhatsAppConversation(assignedAgentId: string | null) {
+    if (!selectedWhatsAppConversation) return;
+    const result = await run(
+      () =>
+        api<WhatsAppConversation>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/assignment`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ assignedAgentId }),
+          },
+        ),
+      assignedAgentId ? "WhatsApp conversation assigned" : "Assignment removed",
+    );
+    if (result) {
+      setSelectedWhatsAppConversation(result);
+      await loadWhatsAppConversations(undefined, true);
+    }
+  }
+
+  async function retryWhatsAppMessage(message: WhatsAppMessage) {
+    if (!selectedWhatsAppConversation) return;
+    const basePath = `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}`;
+    const metadata = message.metadata;
+    const request = (() => {
+      if (message.type === "template") {
+        return {
+          path: `${basePath}/template-messages`,
+          body: {
+            templateName:
+              typeof metadata.templateName === "string"
+                ? metadata.templateName
+                : message.content,
+            language:
+              typeof metadata.language === "string"
+                ? metadata.language
+                : undefined,
+            components: Array.isArray(metadata.components)
+              ? metadata.components
+              : undefined,
+          },
+        };
+      }
+      if (["image", "audio", "video", "document"].includes(message.type)) {
+        return {
+          path: `${basePath}/media-messages`,
+          body: {
+            type: message.type,
+            mediaId:
+              typeof metadata.providerMediaId === "string"
+                ? metadata.providerMediaId
+                : undefined,
+            link: message.mediaUrl ?? undefined,
+            caption: message.content ?? undefined,
+            filename:
+              typeof metadata.filename === "string"
+                ? metadata.filename
+                : undefined,
+          },
+        };
+      }
+      return {
+        path: `${basePath}/agent-messages`,
+        body: { content: message.content ?? "" },
+      };
+    })();
+    const result = await run(
+      () =>
+        api<{ conversation: WhatsAppConversation }>(request.path, {
+          method: "POST",
+          body: JSON.stringify(request.body),
+        }),
+      "WhatsApp message retried",
+    );
+    if (result) {
+      setSelectedWhatsAppConversation(result.conversation);
+      await loadWhatsAppConversations(undefined, true);
+    }
+  }
+
+  async function openWhatsAppMedia(
+    message: WhatsAppMessage,
+    disposition: "open" | "download",
+  ) {
+    const preview =
+      disposition === "open" ? window.open("about:blank", "_blank") : null;
+    await run(async () => {
+      const request = (accessToken: string | null) =>
+        axios.request<Blob>({
+          url: `${API_BASE_URL}/whatsapp-assistant/messages/${message.id}/media`,
+          method: "GET",
+          headers: accessToken
+            ? { Authorization: `Bearer ${accessToken}` }
+            : {},
+          responseType: "blob",
+          validateStatus: () => true,
+        });
+      let response = await request(token);
+      if (response.status === 401) {
+        const refreshed = await refreshSession();
+        if (refreshed) response = await request(refreshed.accessToken);
+      }
+      if (response.status < 200 || response.status >= 300) {
+        preview?.close();
+        throw new Error(
+          `Unable to retrieve WhatsApp media (${response.status})`,
+        );
+      }
+      const url = URL.createObjectURL(response.data);
+      if (disposition === "open") {
+        if (preview) preview.location.href = url;
+        else window.open(url, "_blank", "noopener,noreferrer");
+      } else {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download =
+          typeof message.metadata.mediaFilename === "string"
+            ? message.metadata.mediaFilename
+            : `whatsapp-${message.id}`;
+        anchor.click();
+      }
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return true;
+    });
   }
 
   async function requestWhatsAppHandoff() {
@@ -2154,37 +2940,35 @@ export default function Home() {
     }
   }
 
-  async function createVoiceConfig(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
+  async function saveVoiceConfig(
+    configId: string | null,
+    input: VoiceConfigInput,
+  ) {
     const result = await run(
       () =>
-        api<VoiceConfig>("/voice-receptionist/configs", {
-          method: "POST",
-          body: JSON.stringify({
-            organizationId: selectedOrganizationId ?? user?.orgId,
-            name: String(form.get("name")),
-            provider: String(form.get("provider")),
-            phoneNumber: String(form.get("phoneNumber")) || undefined,
-            sipDomain: String(form.get("sipDomain")) || undefined,
-            apiKey: String(form.get("apiKey")) || undefined,
-            webhookVerifyToken:
-              String(form.get("webhookVerifyToken")) || undefined,
-            sttProvider: String(form.get("sttProvider")) || undefined,
-            ttsVoice: String(form.get("ttsVoice")) || undefined,
-            transferPhoneNumber:
-              String(form.get("transferPhoneNumber")) || undefined,
-            voicemailEnabled: form.get("voicemailEnabled") === "on",
-          }),
-        }),
-      "Voice config saved",
+        api<VoiceConfig>(
+          configId
+            ? `/voice-receptionist/configs/${configId}`
+            : "/voice-receptionist/configs",
+          {
+            method: configId ? "PATCH" : "POST",
+            body: JSON.stringify({
+              ...input,
+              ...(!configId
+                ? {
+                    organizationId: selectedOrganizationId ?? user?.orgId,
+                  }
+                : {}),
+            }),
+          },
+        ),
+      configId ? "Voice config updated" : "Voice config created",
     );
 
     if (result) {
-      formElement.reset();
       await loadVoiceConfigs();
     }
+    return result;
   }
 
   async function sendVoiceMessage(event: FormEvent<HTMLFormElement>) {
@@ -2230,7 +3014,10 @@ export default function Home() {
     }
   }
 
-  async function routeVoiceCall(action: "transfer" | "voicemail" | "close") {
+  async function routeVoiceCall(
+    action: "transfer" | "voicemail" | "close",
+    options?: { transferTo?: string; reason?: string },
+  ) {
     if (!selectedVoiceCall) return;
 
     const result = await run(
@@ -2239,7 +3026,7 @@ export default function Home() {
           `/voice-receptionist/calls/${selectedVoiceCall.id}/route`,
           {
             method: "POST",
-            body: JSON.stringify({ action }),
+            body: JSON.stringify({ action, ...options }),
           },
         ),
       "Voice route queued",
@@ -2247,6 +3034,25 @@ export default function Home() {
 
     if (result) {
       setSelectedVoiceCall(result.call);
+      await loadVoiceCalls();
+    }
+  }
+
+  async function assignVoiceCall(assignedAgentId: string | null) {
+    if (!selectedVoiceCall) return;
+    const result = await run(
+      () =>
+        api<VoiceCall>(
+          `/voice-receptionist/calls/${selectedVoiceCall.id}/assignment`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ assignedAgentId }),
+          },
+        ),
+      assignedAgentId ? "Voice call assigned" : "Voice call unassigned",
+    );
+    if (result) {
+      setSelectedVoiceCall(result);
       await loadVoiceCalls();
     }
   }
@@ -2278,7 +3084,9 @@ export default function Home() {
 
   if (!isSessionReady) {
     return (
-      <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
+      <main
+        className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}
+      >
         <div className="flex min-h-screen items-center justify-center px-4">
           <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-5 py-4 text-sm text-[var(--text-muted)] shadow-sm">
             Restoring session...
@@ -2290,7 +3098,9 @@ export default function Home() {
 
   if (!user) {
     return (
-      <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
+      <main
+        className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}
+      >
         <div className="flex min-h-screen flex-col">
           <header className="flex min-h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-header)] px-4 md:px-7">
             <div className="flex items-center gap-3">
@@ -2321,17 +3131,27 @@ export default function Home() {
   }
 
   return (
-    <main className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}>
+    <main
+      className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}
+    >
       <div className="flex min-h-screen">
         <aside className="hidden h-screen w-[272px] shrink-0 border-r border-[var(--border-subtle)] bg-[var(--surface-sidebar)] text-[var(--text-strong)] lg:sticky lg:top-0 lg:flex lg:flex-col">
           <div className="flex h-20 items-center gap-3 border-b border-[var(--border-subtle)] px-5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-primary)] text-sm font-bold text-[var(--text-on-accent)] shadow-[var(--shadow-soft)]">AC</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[var(--accent-primary)] text-sm font-bold text-[var(--text-on-accent)] shadow-[var(--shadow-soft)]">
+              AC
+            </div>
             <div>
-              <div className="text-base font-semibold tracking-wide">AgentCore</div>
-              <div className="mt-0.5 text-[11px] uppercase text-[var(--text-soft)]">AI Business Suite</div>
+              <div className="text-base font-semibold tracking-wide">
+                AgentCore
+              </div>
+              <div className="mt-0.5 text-[11px] uppercase text-[var(--text-soft)]">
+                AI Business Suite
+              </div>
             </div>
           </div>
-          <div className="px-5 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-soft)]">Workspace</div>
+          <div className="px-5 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-soft)]">
+            Workspace
+          </div>
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-5">
             {visibleNavItems.map((item) => {
               const Icon = navMeta[item.id].icon;
@@ -2345,11 +3165,15 @@ export default function Home() {
                       : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                   }`}
                 >
-                  <span className={`flex h-7 w-7 items-center justify-center rounded-xl ${activeTab === item.id ? "bg-white/15 text-[var(--text-on-accent)]" : "bg-[var(--surface-tint)] text-[var(--accent-primary)]"}`}>
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-xl ${activeTab === item.id ? "bg-white/15 text-[var(--text-on-accent)]" : "bg-[var(--surface-tint)] text-[var(--accent-primary)]"}`}
+                  >
                     <Icon className="h-4 w-4" />
                   </span>
                   <span className="flex-1 text-left">{item.label}</span>
-                  {activeTab === item.id ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-cyan)]" /> : null}
+                  {activeTab === item.id ? (
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent-cyan)]" />
+                  ) : null}
                 </button>
               );
             })}
@@ -2361,7 +3185,9 @@ export default function Home() {
                   {(user.name ?? user.email).slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-medium text-[var(--text-strong)]">{user.name ?? user.email}</p>
+                  <p className="truncate text-xs font-medium text-[var(--text-strong)]">
+                    {user.name ?? user.email}
+                  </p>
                   <p className="mt-0.5 truncate text-[10px] text-[var(--text-soft)]">
                     {user.roles.includes("super_admin")
                       ? "super_admin"
@@ -2376,12 +3202,14 @@ export default function Home() {
         <section className="flex min-w-0 flex-1 flex-col">
           <header className="flex min-h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-header)] px-4 backdrop-blur md:px-7">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-tint)] text-[10px] font-bold text-[var(--accent-primary)] lg:hidden">AC</div>
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-tint)] text-[10px] font-bold text-[var(--accent-primary)] lg:hidden">
+                AC
+              </div>
               <div>
                 <p className="text-xs text-[var(--text-muted)]">
                   {isSuperAdminPlatformContext
                     ? "Platform administration"
-                    : workspaceOrganization?.name ?? "AgentCore workspace"}
+                    : (workspaceOrganization?.name ?? "AgentCore workspace")}
                 </p>
                 <h1 className="text-sm font-semibold text-[var(--text-strong)] md:text-base">
                   {isSuperAdminPlatformContext
@@ -2407,9 +3235,17 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
+                onClick={() =>
+                  setTheme((current) =>
+                    current === "light" ? "dark" : "light",
+                  )
+                }
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
-                title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+                title={
+                  theme === "light"
+                    ? "Switch to dark mode"
+                    : "Switch to light mode"
+                }
               >
                 {theme === "light" ? (
                   <MoonStar className="h-4 w-4" />
@@ -2448,200 +3284,238 @@ export default function Home() {
           </div>
 
           <div className="min-h-0 flex-1 p-4 md:p-5">
-              <section className="mx-auto min-w-0 max-w-[1640px]">
-                <div className="mb-3">
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-[var(--text-soft)]">Workspace / {navMeta[activeTab].mark}</p>
-                  <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
-                    <div>
-                      <h2 className="text-2xl font-semibold text-[var(--text-strong)]">{navItems.find((item) => item.id === activeTab)?.label}</h2>
-                      <p className="mt-0.5 text-sm text-[var(--text-muted)]">{navMeta[activeTab].description}</p>
-                    </div>
-                    {usesPlatformTestWorkspace ? (
-                      <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
-                        Platform Test Workspace
-                      </span>
-                    ) : null}
+            <section className="mx-auto min-w-0 max-w-[1640px]">
+              <div className="mb-3">
+                <p className="text-xs font-medium uppercase tracking-[0.14em] text-[var(--text-soft)]">
+                  Workspace / {navMeta[activeTab].mark}
+                </p>
+                <div className="mt-1 flex flex-wrap items-end justify-between gap-2">
+                  <div>
+                    <h2 className="text-2xl font-semibold text-[var(--text-strong)]">
+                      {navItems.find((item) => item.id === activeTab)?.label}
+                    </h2>
+                    <p className="mt-0.5 text-sm text-[var(--text-muted)]">
+                      {navMeta[activeTab].description}
+                    </p>
                   </div>
+                  {usesPlatformTestWorkspace ? (
+                    <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] shadow-[var(--shadow-soft)]">
+                      Platform Test Workspace
+                    </span>
+                  ) : null}
                 </div>
-                {activeTab === "dashboard" ? (
-                  <DashboardView
-                    health={health}
-                    observability={observability}
-                    organization={workspaceOrganization}
-                    users={users}
-                    products={products}
-                    aiProviders={aiProviders}
-                  />
-                ) : null}
-                {activeTab === "organizations" ? (
-                  <OrganizationsView
-                    organizations={organizations}
-                    selectedOrganizationId={selectedOrganizationId}
-                    onSelect={setSelectedOrganizationId}
-                    onCreate={createOrganization}
-                  />
-                ) : null}
-                {activeTab === "inbox" ? (
-                  <InboxView
-                    filters={filters}
-                    setFilters={setFilters}
-                    conversations={conversations}
-                    selectedConversation={selectedConversation}
-                    onLoadConversations={loadConversations}
-                    onSelectConversation={loadConversation}
-                    onSendReply={sendAgentReply}
-                    onUpdateStatus={updateConversationStatus}
-                  />
-                ) : null}
-                {activeTab === "knowledge" ? (
-                  <KnowledgeView
-                    sources={knowledgeSources}
-                    categories={knowledgeCategories}
-                    folders={knowledgeFolders}
-                    pageInfo={knowledgePageInfo}
-                    onQueryChange={loadKnowledgeSources}
-                    onRefresh={refreshKnowledgeSourcesSilently}
-                    onCreate={createKnowledgeSource}
-                    onCreateUrl={createWebsiteKnowledgeSource}
-                    onUploadFile={uploadKnowledgeFile}
-                    onIngest={ingestKnowledgeSource}
-                    onReleaseQuarantine={releaseKnowledgeQuarantine}
-                    onDelete={deleteKnowledgeSource}
-                    onUpdate={updateKnowledgeSource}
-                    onUpdateCategory={updateKnowledgeCategory}
-                    onDeleteCategory={deleteKnowledgeCategory}
-                    onUpdateFolder={updateKnowledgeFolder}
-                    onDeleteFolder={deleteKnowledgeFolder}
-                    onLoadVersions={loadKnowledgeVersions}
-                    onCreateCategory={createKnowledgeCategory}
-                    onCreateFolder={createKnowledgeFolder}
-                    canManageSettings={Boolean(
-                      user?.roles.some((role) =>
-                        ["super_admin", "org_admin"].includes(role),
-                      ),
-                    )}
-                    workspaceName={
-                      usesPlatformTestWorkspace
-                        ? "Platform Test Workspace"
-                        : workspaceOrganization?.name ?? "Current workspace"
-                    }
-                    extractionSettings={knowledgeExtractionSettings}
-                    settingsError={knowledgeSettingsError}
-                    ocrProviders={knowledgeOcrProviders}
-                    aiProviders={aiProviders}
-                    onSaveExtractionSettings={saveKnowledgeExtractionSettings}
-                    onLoadSettings={loadKnowledgeSettings}
-                    onSaveOcrProvider={saveKnowledgeOcrProvider}
-                    onDeleteOcrProvider={deleteKnowledgeOcrProvider}
-                  />
-                ) : null}
-                {activeTab === "appointments" ? (
-                  <AppointmentsView
-                    services={appointmentServices}
-                    staff={appointmentStaff}
-                    resources={appointmentResources}
-                    slots={appointmentSlots}
-                    bookings={appointmentBookings}
-                    calendarConnections={appointmentCalendarConnections}
-                    onCreateService={createAppointmentService}
-                    onCreateStaff={createAppointmentStaff}
-                    onCreateResource={createAppointmentResource}
-                    onCreateAvailability={createStaffAvailability}
-                    onCreateTimeOff={createStaffTimeOff}
-                    onSearchSlots={searchAppointmentSlots}
-                    onCreateBooking={createAppointmentBooking}
-                    onRescheduleBooking={rescheduleAppointmentBooking}
-                    onCancelBooking={cancelAppointmentBooking}
-                    onConnectCalendar={connectAppointmentCalendar}
-                    onDisconnectCalendar={disconnectAppointmentCalendar}
-                  />
-                ) : null}
-                {activeTab === "whatsapp" ? (
-                  <WhatsAppView
-                    configs={whatsAppConfigs}
-                    conversations={whatsAppConversations}
-                    selectedConversation={selectedWhatsAppConversation}
-                    filters={whatsAppFilters}
-                    setFilters={setWhatsAppFilters}
-                    onCreateConfig={createWhatsAppConfig}
-                    onLoadConversations={loadWhatsAppConversations}
-                    onSelectConversation={loadWhatsAppConversation}
-                    onSendReply={sendWhatsAppReply}
-                    onRequestHandoff={requestWhatsAppHandoff}
-                    onUpdateStatus={updateWhatsAppStatus}
-                  />
-                ) : null}
-                {activeTab === "voice" ? (
-                  <VoiceReceptionistView
-                    configs={voiceConfigs}
-                    calls={voiceCalls}
-                    selectedCall={selectedVoiceCall}
-                    filters={voiceFilters}
-                    setFilters={setVoiceFilters}
-                    onCreateConfig={createVoiceConfig}
-                    onLoadCalls={loadVoiceCalls}
-                    onSelectCall={loadVoiceCall}
-                    onSendMessage={sendVoiceMessage}
-                    onRequestHandoff={requestVoiceHandoff}
-                    onRouteCall={routeVoiceCall}
-                    onUpdateStatus={updateVoiceStatus}
-                  />
-                ) : null}
-                {activeTab === "widget" ? (
-                  <WidgetView
-                    configs={widgetConfigs}
-                    pageInfo={widgetPageInfo}
-                    config={widgetConfig}
-                    folders={knowledgeFolders}
-                    onSelect={(widget) => {
-                      setWidgetConfig(widget);
-                      setWidgetTestConversation(null);
-                      setWidgetVisitorToken(null);
-                    }}
-                    onBack={() => {
-                      setWidgetConfig(null);
-                      setWidgetTestConversation(null);
-                      setWidgetVisitorToken(null);
-                    }}
-                    onCreate={createWidgetConfig}
-                    onSubmit={updateWidgetConfig}
-                    onDelete={deleteWidgetConfig}
-                    onPageChange={loadWidgetConfig}
-                    testConversation={widgetTestConversation}
-                    onSendTestMessage={sendWidgetTestMessage}
-                    onResetTestChat={() => {
-                      setWidgetTestConversation(null);
-                      setWidgetVisitorToken(null);
-                    }}
-                    apiBaseUrl={API_BASE_URL}
-                  />
-                ) : null}
-                {activeTab === "users" ? (
-                  <UsersView
-                    users={users}
-                    organizations={organizations}
-                    selectedOrganizationId={selectedOrganizationId ?? user.orgId}
-                    isSuperAdmin={user.roles.includes("super_admin")}
-                    onCreate={createUser}
-                    onInvite={createInvite}
-                    onUpdateAccess={updateUserAccess}
-                    onToggleStatus={toggleUserStatus}
-                  />
-                ) : null}
-                {activeTab === "products" ? (
-                  <ProductsView
-                    products={products}
-                    onUpdateStatus={updateProductStatus}
-                  />
-                ) : null}
-                {activeTab === "ai" ? (
-                  <AIProvidersView
-                    providers={aiProviders}
-                    onCreate={createAIProvider}
-                  />
-                ) : null}
-                {activeTab === "audit" ? <AuditView logs={auditLogs} /> : null}
-              </section>
+              </div>
+              {activeTab === "dashboard" ? (
+                <DashboardView
+                  health={health}
+                  observability={observability}
+                  organization={workspaceOrganization}
+                  users={users}
+                  products={products}
+                  aiProviders={aiProviders}
+                />
+              ) : null}
+              {activeTab === "organizations" ? (
+                <OrganizationsView
+                  organizations={organizations}
+                  selectedOrganizationId={selectedOrganizationId}
+                  onSelect={setSelectedOrganizationId}
+                  onCreate={createOrganization}
+                />
+              ) : null}
+              {activeTab === "inbox" ? (
+                <InboxView
+                  filters={filters}
+                  setFilters={setFilters}
+                  conversations={conversations}
+                  selectedConversation={selectedConversation}
+                  onLoadConversations={loadConversations}
+                  onSelectConversation={loadConversation}
+                  onSendReply={sendAgentReply}
+                  onUpdateStatus={updateConversationStatus}
+                />
+              ) : null}
+              {activeTab === "knowledge" ? (
+                <KnowledgeView
+                  sources={knowledgeSources}
+                  categories={knowledgeCategories}
+                  folders={knowledgeFolders}
+                  pageInfo={knowledgePageInfo}
+                  onQueryChange={loadKnowledgeSources}
+                  onRefresh={refreshKnowledgeSourcesSilently}
+                  onCreate={createKnowledgeSource}
+                  onCreateUrl={createWebsiteKnowledgeSource}
+                  onUploadFile={uploadKnowledgeFile}
+                  onIngest={ingestKnowledgeSource}
+                  onCancelIngestion={cancelKnowledgeIngestion}
+                  onReleaseQuarantine={releaseKnowledgeQuarantine}
+                  onDelete={deleteKnowledgeSource}
+                  onUpdate={updateKnowledgeSource}
+                  onUpdateCategory={updateKnowledgeCategory}
+                  onDeleteCategory={deleteKnowledgeCategory}
+                  onUpdateFolder={updateKnowledgeFolder}
+                  onDeleteFolder={deleteKnowledgeFolder}
+                  onLoadVersions={loadKnowledgeVersions}
+                  onCreateCategory={createKnowledgeCategory}
+                  onCreateFolder={createKnowledgeFolder}
+                  canManageSettings={Boolean(
+                    user?.roles.some((role) =>
+                      ["super_admin", "org_admin"].includes(role),
+                    ),
+                  )}
+                  workspaceName={
+                    usesPlatformTestWorkspace
+                      ? "Platform Test Workspace"
+                      : (workspaceOrganization?.name ?? "Current workspace")
+                  }
+                  extractionSettings={knowledgeExtractionSettings}
+                  settingsError={knowledgeSettingsError}
+                  ocrProviders={knowledgeOcrProviders}
+                  aiProviders={aiProviders}
+                  onSaveExtractionSettings={saveKnowledgeExtractionSettings}
+                  onLoadSettings={loadKnowledgeSettings}
+                  onSaveOcrProvider={saveKnowledgeOcrProvider}
+                  onDeleteOcrProvider={deleteKnowledgeOcrProvider}
+                />
+              ) : null}
+              {activeTab === "appointments" ? (
+                <AppointmentsView
+                  services={appointmentServices}
+                  staff={appointmentStaff}
+                  resources={appointmentResources}
+                  slots={appointmentSlots}
+                  bookings={appointmentBookings}
+                  calendarConnections={appointmentCalendarConnections}
+                  policy={appointmentPolicy}
+                  blackouts={appointmentBlackouts}
+                  waitlist={appointmentWaitlist}
+                  onCreateService={createAppointmentService}
+                  onUpdateService={updateAppointmentService}
+                  onCreateStaff={createAppointmentStaff}
+                  onCreateResource={createAppointmentResource}
+                  onCreateAvailability={createStaffAvailability}
+                  onCreateTimeOff={createStaffTimeOff}
+                  onSearchSlots={searchAppointmentSlots}
+                  onCreateBooking={createAppointmentBooking}
+                  onRescheduleBooking={rescheduleAppointmentBooking}
+                  onCancelBooking={cancelAppointmentBooking}
+                  onCheckInBooking={checkInAppointmentBooking}
+                  onCancelSeries={cancelAppointmentSeries}
+                  onUpdatePolicy={updateAppointmentPolicy}
+                  onCreateBlackout={createAppointmentBlackout}
+                  onDeleteBlackout={deleteAppointmentBlackout}
+                  onConnectCalendar={connectAppointmentCalendar}
+                  onDisconnectCalendar={disconnectAppointmentCalendar}
+                />
+              ) : null}
+              {activeTab === "whatsapp" ? (
+                <WhatsAppView
+                  configs={whatsAppConfigs}
+                  selectedConfigId={selectedWhatsAppConfigId}
+                  templates={whatsAppTemplates}
+                  conversations={whatsAppConversations}
+                  selectedConversation={selectedWhatsAppConversation}
+                  users={users}
+                  currentUser={user}
+                  canConfigure={whatsAppAccess.canConfigure}
+                  canManageAgents={whatsAppAccess.canManageAgents}
+                  filters={whatsAppFilters}
+                  setFilters={setWhatsAppFilters}
+                  onCreateConfig={createWhatsAppConfig}
+                  onUpdateConfig={updateWhatsAppConfig}
+                  onSelectConfig={selectWhatsAppConfig}
+                  onSyncTemplates={syncWhatsAppTemplates}
+                  onLoadConversations={() =>
+                    loadWhatsAppConversations({ page: 1 })
+                  }
+                  onPageChange={(page) => loadWhatsAppConversations({ page })}
+                  onSelectConversation={loadWhatsAppConversation}
+                  onSendReply={sendWhatsAppReply}
+                  onSendTemplate={sendWhatsAppTemplate}
+                  onSendMedia={sendWhatsAppMedia}
+                  onOpenMedia={openWhatsAppMedia}
+                  onRetryMessage={retryWhatsAppMessage}
+                  onAssign={assignWhatsAppConversation}
+                  onRequestHandoff={requestWhatsAppHandoff}
+                  onUpdateStatus={updateWhatsAppStatus}
+                />
+              ) : null}
+              {activeTab === "voice" ? (
+                <VoiceReceptionistView
+                  configs={voiceConfigs}
+                  calls={voiceCalls}
+                  selectedCall={selectedVoiceCall}
+                  users={users}
+                  canConfigure={voiceAccess.canConfigure}
+                  canManageAgents={voiceAccess.canManageAgents}
+                  apiBaseUrl={API_BASE_URL}
+                  filters={voiceFilters}
+                  setFilters={setVoiceFilters}
+                  onSaveConfig={saveVoiceConfig}
+                  onLoadCalls={loadVoiceCalls}
+                  onSelectCall={loadVoiceCall}
+                  onSendMessage={sendVoiceMessage}
+                  onRequestHandoff={requestVoiceHandoff}
+                  onRouteCall={routeVoiceCall}
+                  onUpdateStatus={updateVoiceStatus}
+                  onAssignCall={assignVoiceCall}
+                />
+              ) : null}
+              {activeTab === "widget" ? (
+                <WidgetView
+                  configs={widgetConfigs}
+                  pageInfo={widgetPageInfo}
+                  config={widgetConfig}
+                  folders={knowledgeFolders}
+                  onSelect={(widget) => {
+                    setWidgetConfig(widget);
+                    setWidgetTestConversation(null);
+                    setWidgetVisitorToken(null);
+                  }}
+                  onBack={() => {
+                    setWidgetConfig(null);
+                    setWidgetTestConversation(null);
+                    setWidgetVisitorToken(null);
+                  }}
+                  onCreate={createWidgetConfig}
+                  onSubmit={updateWidgetConfig}
+                  onDelete={deleteWidgetConfig}
+                  onPageChange={loadWidgetConfig}
+                  testConversation={widgetTestConversation}
+                  onSendTestMessage={sendWidgetTestMessage}
+                  onResetTestChat={() => {
+                    setWidgetTestConversation(null);
+                    setWidgetVisitorToken(null);
+                  }}
+                  apiBaseUrl={API_BASE_URL}
+                />
+              ) : null}
+              {activeTab === "users" ? (
+                <UsersView
+                  users={users}
+                  organizations={organizations}
+                  selectedOrganizationId={selectedOrganizationId ?? user.orgId}
+                  isSuperAdmin={user.roles.includes("super_admin")}
+                  onCreate={createUser}
+                  onInvite={createInvite}
+                  onUpdateAccess={updateUserAccess}
+                  onToggleStatus={toggleUserStatus}
+                />
+              ) : null}
+              {activeTab === "products" ? (
+                <ProductsView
+                  products={products}
+                  onUpdateStatus={updateProductStatus}
+                />
+              ) : null}
+              {activeTab === "ai" ? (
+                <AIProvidersView
+                  providers={aiProviders}
+                  onCreate={createAIProvider}
+                />
+              ) : null}
+              {activeTab === "audit" ? <AuditView logs={auditLogs} /> : null}
+            </section>
           </div>
         </section>
       </div>

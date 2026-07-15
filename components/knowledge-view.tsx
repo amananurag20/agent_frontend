@@ -65,6 +65,7 @@ export function KnowledgeView({
   onCreateUrl,
   onUploadFile,
   onIngest,
+  onCancelIngestion,
   onReleaseQuarantine,
   onDelete,
   onUpdate,
@@ -96,6 +97,7 @@ export function KnowledgeView({
   onCreateUrl: FormHandler;
   onUploadFile: FormHandler;
   onIngest: (id: string) => void;
+  onCancelIngestion: (id: string) => void;
   onReleaseQuarantine: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, event: FormEvent<HTMLFormElement>) => void;
@@ -130,6 +132,10 @@ export function KnowledgeView({
   const [folderFilter, setFolderFilter] = useState("all");
   const queryCallbackRef = useRef(onQueryChange);
   const refreshRef = useRef(onRefresh);
+
+  const displayedSource = selectedSource
+    ? sources.find((source) => source.id === selectedSource.id) ?? selectedSource
+    : null;
 
   const buildQuery = useCallback((page: number): KnowledgeSourceQuery => ({
     page,
@@ -351,6 +357,7 @@ export function KnowledgeView({
                         folder={folders.find((folder) => folder.id === source.folderId)}
                         onOpen={() => setSelectedSource(source)}
                         onIngest={() => onIngest(source.id)}
+                        onCancel={() => onCancelIngestion(source.id)}
                         onApprove={() => onReleaseQuarantine(source.id)}
                       />
                     ))}
@@ -388,22 +395,26 @@ export function KnowledgeView({
         />
       ) : null}
 
-      {selectedSource ? (
+      {displayedSource ? (
         <SourceDetailsModal
-          source={selectedSource}
-          folder={folders.find((folder) => folder.id === selectedSource.folderId)}
+          source={displayedSource}
+          folder={folders.find((folder) => folder.id === displayedSource.folderId)}
           onClose={() => setSelectedSource(null)}
           onIngest={() => {
-            onIngest(selectedSource.id);
+            onIngest(displayedSource.id);
+            setSelectedSource(null);
+          }}
+          onCancel={() => {
+            onCancelIngestion(displayedSource.id);
             setSelectedSource(null);
           }}
           onApprove={() => {
-            onReleaseQuarantine(selectedSource.id);
+            onReleaseQuarantine(displayedSource.id);
             setSelectedSource(null);
           }}
-          onDelete={() => deleteSource(selectedSource)}
+          onDelete={() => deleteSource(displayedSource)}
           onUpdate={(event) => {
-            onUpdate(selectedSource.id, event);
+            onUpdate(displayedSource.id, event);
             setSelectedSource(null);
           }}
           folders={folders}
@@ -459,7 +470,7 @@ function TaxonomyActions({ label, onRename, onDelete, compact = false }: { label
   return <span className={`items-center ${compact ? "inline-flex" : "hidden group-hover:flex"}`}><button type="button" className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-soft)] hover:bg-[var(--surface-hover-strong)] hover:text-[var(--text-base)]" title={`Rename ${label}`} onClick={(event) => { event.stopPropagation(); const name = window.prompt("Rename", label)?.trim(); if (name && name !== label) onRename(name); }}><Pencil className="h-3 w-3" /></button><button type="button" className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-soft)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-text)]" title={`Delete ${label}`} onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete “${label}”? Sources will not be deleted.`)) onDelete(); }}><Trash2 className="h-3 w-3" /></button></span>;
 }
 
-function SourceRow({ source, folder, onOpen, onIngest, onApprove }: { source: KnowledgeSource; folder?: KnowledgeFolder; onOpen: () => void; onIngest: () => void; onApprove: () => void }) {
+function SourceRow({ source, folder, onOpen, onIngest, onCancel, onApprove }: { source: KnowledgeSource; folder?: KnowledgeFolder; onOpen: () => void; onIngest: () => void; onCancel: () => void; onApprove: () => void }) {
   const Icon = source.type === "website_url" ? Globe2 : source.type === "uploaded_file" ? FileSpreadsheet : FileText;
   const actionLabel = source.status === "ready" ? "Re-ingest" : source.status === "failed" ? "Retry" : "Ingest";
   return (
@@ -471,9 +482,9 @@ function SourceRow({ source, folder, onOpen, onIngest, onApprove }: { source: Kn
         </button>
       </td>
       <td className="px-4 py-4"><p className="text-xs text-[var(--text-base)]">Level {source.sensitivityLevel ?? 0} · {source.productVisibility?.length ?? 0} products</p><p className="mt-1 max-w-[210px] truncate text-xs text-[var(--text-soft)]">{folder?.name ?? "Unfiled"}{source.categories.length ? ` · ${source.categories.join(", ")}` : ""}</p></td>
-      <td className="px-4 py-4"><div className="flex flex-wrap items-center gap-1.5"><StatusPill status={source.status} />{source.isQuarantined ? <StatusPill status="quarantined" /> : null}</div><p className="mt-2 text-xs text-[var(--text-soft)]">{metadataNumber(source, "chunkCount")} chunks</p></td>
+      <td className="px-4 py-4"><div className="flex flex-wrap items-center gap-1.5"><StatusPill status={source.status} />{source.isQuarantined ? <StatusPill status="quarantined" /> : null}</div>{source.latestIngestionRun && ["queued", "processing", "failed"].includes(source.latestIngestionRun.status) ? <IngestionProgress source={source} /> : <p className="mt-2 text-xs text-[var(--text-soft)]">{metadataNumber(source, "chunkCount")} chunks</p>}</td>
       <td className="px-4 py-4 text-xs text-[var(--text-muted)]">{formatDate(source.updatedAt ?? source.createdAt)}</td>
-      <td className="px-5 py-4"><div className="flex items-center justify-end gap-2">{source.isQuarantined ? <button type="button" onClick={onApprove} className="h-8 rounded-md border border-[var(--warning-text)]/40 px-2.5 text-xs font-medium text-[var(--warning-text)] hover:bg-[var(--warning-bg)]">Approve</button> : null}<button type="button" onClick={onIngest} disabled={source.status === "processing"} className="h-8 rounded-md border border-[var(--border-strong)] px-2.5 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-card)] disabled:cursor-not-allowed disabled:opacity-50">{actionLabel}</button><button type="button" onClick={onOpen} className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-hover-strong)]" aria-label={`View ${source.name}`}><MoreHorizontal className="h-4 w-4" /></button></div></td>
+      <td className="px-5 py-4"><div className="flex items-center justify-end gap-2">{source.isQuarantined ? <button type="button" onClick={onApprove} className="h-8 rounded-md border border-[var(--warning-text)]/40 px-2.5 text-xs font-medium text-[var(--warning-text)] hover:bg-[var(--warning-bg)]">Approve</button> : null}{["pending", "processing"].includes(source.status) && source.latestIngestionRun ? <button type="button" onClick={onCancel} className="h-8 rounded-md border border-[var(--danger-text)]/30 px-2.5 text-xs font-medium text-[var(--danger-text)] hover:bg-[var(--danger-bg)]">Cancel</button> : <button type="button" onClick={onIngest} className="h-8 rounded-md border border-[var(--border-strong)] px-2.5 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-card)]">{actionLabel}</button>}<button type="button" onClick={onOpen} className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-hover-strong)]" aria-label={`View ${source.name}`}><MoreHorizontal className="h-4 w-4" /></button></div></td>
     </tr>
   );
 }
@@ -500,7 +511,7 @@ function SourceModal({ mode, onModeChange, categories, folders, onClose, onSubmi
   );
 }
 
-function SourceDetailsModal({ source, folder, folders, onClose, onIngest, onApprove, onDelete, onUpdate, onLoadVersions }: { source: KnowledgeSource; folder?: KnowledgeFolder; folders: KnowledgeFolder[]; onClose: () => void; onIngest: () => void; onApprove: () => void; onDelete: () => void; onUpdate: (event: FormEvent<HTMLFormElement>) => void; onLoadVersions: (id: string) => Promise<KnowledgeSourceVersion[]> }) {
+function SourceDetailsModal({ source, folder, folders, onClose, onIngest, onCancel, onApprove, onDelete, onUpdate, onLoadVersions }: { source: KnowledgeSource; folder?: KnowledgeFolder; folders: KnowledgeFolder[]; onClose: () => void; onIngest: () => void; onCancel: () => void; onApprove: () => void; onDelete: () => void; onUpdate: (event: FormEvent<HTMLFormElement>) => void; onLoadVersions: (id: string) => Promise<KnowledgeSourceVersion[]> }) {
   const classification = source.metadata?.classification as Record<string, unknown> | undefined;
   const [isEditing, setIsEditing] = useState(false);
   const [openedAt] = useState(Date.now);
@@ -529,6 +540,7 @@ function SourceDetailsModal({ source, folder, folders, onClose, onIngest, onAppr
           <button type="button" onClick={() => setIsEditing((value) => !value)} className="inline-flex h-8 items-center gap-2 rounded-md border border-[var(--border-strong)] px-2.5 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)]"><Pencil className="h-3.5 w-3.5" /> {isEditing ? "Cancel edit" : "Edit"}</button>
         </div>
         {source.errorMessage ? <div className="mt-4 rounded-lg border border-[var(--danger-text)]/20 bg-[var(--danger-bg)] p-3"><p className="text-xs font-medium text-[var(--danger-text)]">Ingestion error</p><p className="mt-1 text-sm text-[var(--danger-text)]">{source.errorMessage}</p></div> : null}
+        {source.latestIngestionRun ? <div className="mt-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-4"><IngestionProgress source={source} detailed /></div> : null}
         {isEditing ? (
           <form onSubmit={onUpdate} className="mt-5 space-y-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -562,9 +574,16 @@ function SourceDetailsModal({ source, folder, folders, onClose, onIngest, onAppr
         {typeof classification?.rationale === "string" ? <div className="mt-5 rounded-lg bg-[var(--surface-card-muted)] p-4"><div className="flex items-center gap-2 text-sm font-medium text-[var(--text-strong)]"><ShieldCheck className="h-4 w-4 text-[var(--accent-primary)]" /> Automatic classification</div><p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">{classification.rationale}</p></div> : null}
         <div className="mt-5 border-t border-[var(--border-subtle)] pt-5"><p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-soft)]">Version history</p>{versions.length ? <div className="mt-2 divide-y divide-[var(--border-subtle)] rounded-md border border-[var(--border-subtle)]">{versions.map((version) => <div key={version.id} className="flex items-center justify-between gap-3 px-3 py-2.5"><div><p className="text-sm font-medium text-[var(--text-strong)]">Version {version.version}</p><p className="mt-0.5 text-xs text-[var(--text-muted)]">{formatDate(version.createdAt)} · {version.documentCount} documents</p></div><span className="text-xs text-[var(--text-soft)]">{version.chunkCount} chunks</span></div>)}</div> : <p className="mt-2 text-sm text-[var(--text-muted)]">No captured versions yet.</p>}</div>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] px-6 py-4"><button type="button" onClick={onDelete} className="inline-flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-[var(--danger-text)] hover:bg-[var(--danger-bg)]"><Trash2 className="h-4 w-4" /> Delete source</button><div className="flex gap-2">{source.isQuarantined ? <button type="button" onClick={onApprove} className="h-9 rounded-md border border-[var(--warning-text)]/40 px-3 text-sm font-medium text-[var(--warning-text)] hover:bg-[var(--warning-bg)]">Approve for retrieval</button> : null}<button type="button" onClick={onIngest} disabled={source.status === "processing"} className="h-9 rounded-md bg-[var(--accent-primary)] px-3 text-sm font-medium text-[var(--text-on-accent)] disabled:opacity-50">{source.status === "ready" ? "Re-ingest" : source.status === "failed" ? "Retry ingestion" : "Ingest now"}</button></div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] px-6 py-4"><button type="button" onClick={onDelete} className="inline-flex h-9 items-center gap-2 rounded-md px-2 text-sm font-medium text-[var(--danger-text)] hover:bg-[var(--danger-bg)]"><Trash2 className="h-4 w-4" /> Delete source</button><div className="flex gap-2">{source.isQuarantined ? <button type="button" onClick={onApprove} className="h-9 rounded-md border border-[var(--warning-text)]/40 px-3 text-sm font-medium text-[var(--warning-text)] hover:bg-[var(--warning-bg)]">Approve for retrieval</button> : null}{["pending", "processing"].includes(source.status) && source.latestIngestionRun ? <button type="button" onClick={onCancel} className="h-9 rounded-md border border-[var(--danger-text)]/30 px-3 text-sm font-medium text-[var(--danger-text)]">Cancel ingestion</button> : <button type="button" onClick={onIngest} className="h-9 rounded-md bg-[var(--accent-primary)] px-3 text-sm font-medium text-[var(--text-on-accent)]">{source.status === "ready" ? "Re-ingest" : source.status === "failed" ? "Retry ingestion" : "Ingest now"}</button>}</div></div>
     </ModalShell>
   );
+}
+
+function IngestionProgress({ source, detailed = false }: { source: KnowledgeSource; detailed?: boolean }) {
+  const run = source.latestIngestionRun;
+  if (!run) return null;
+  const label = run.stage.replaceAll("_", " ");
+  return <div className={detailed ? "" : "mt-2 min-w-40"}><div className="flex items-center justify-between gap-3 text-xs"><span className="capitalize text-[var(--text-muted)]">{label}</span><span className="font-medium text-[var(--text-base)]">{run.progressPercent}%</span></div><div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--surface-hover-strong)]"><div className="h-full rounded-full bg-[var(--accent-primary)] transition-all" style={{ width: `${run.progressPercent}%` }} /></div>{detailed ? <p className="mt-2 text-xs text-[var(--text-muted)]">{run.totalItems ? `${run.processedItems} of ${run.totalItems} items · ` : ""}Attempt {Math.max(1, run.attempt)} of {run.maxAttempts}{run.cancellationRequestedAt ? " · Cancellation requested" : ""}</p> : null}</div>;
 }
 
 function ModalShell({ title, description, onClose, compact = false, children }: { title: string; description: string; onClose: () => void; compact?: boolean; children: ReactNode }) {

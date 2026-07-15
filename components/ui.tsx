@@ -21,7 +21,9 @@ export function StateMessage({ state }: { state: ApiState }) {
   }
 
   if (state.message) {
-    return <p className="text-sm text-[var(--success-text)]">{state.message}</p>;
+    return (
+      <p className="text-sm text-[var(--success-text)]">{state.message}</p>
+    );
   }
 
   return null;
@@ -34,15 +36,20 @@ export function StatusPill({ status }: { status: string }) {
     status === "enabled" ||
     status === "active" ||
     status === "ready" ||
-    status === "completed"
+    status === "completed" ||
+    status === "sent" ||
+    status === "delivered" ||
+    status === "read" ||
+    status === "token" ||
+    status === "verify" ||
+    status === "secret"
       ? "bg-[var(--success-bg)] text-[var(--success-text)]"
-      : status === "closed" ||
-          status === "disabled" ||
-          status === "inactive"
+      : status === "closed" || status === "disabled" || status === "inactive"
         ? "bg-[var(--neutral-bg)] text-[var(--neutral-text)]"
         : status === "degraded" ||
             status === "waiting_for_agent" ||
             status === "pending" ||
+            status === "queued" ||
             status === "processing" ||
             status === "quarantined" ||
             status === "stale"
@@ -72,7 +79,8 @@ export function Toolbar({
   state: ApiState;
   onRefresh: () => void;
 }) {
-  const hasMessage = state.loading || Boolean(state.error) || Boolean(state.message);
+  const hasMessage =
+    state.loading || Boolean(state.error) || Boolean(state.message);
 
   return (
     <div
@@ -116,8 +124,12 @@ export function UserPanel({
   return (
     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-card)]">
       <h2 className="font-semibold text-[var(--text-strong)]">Session</h2>
-      <p className="mt-3 truncate text-sm text-[var(--text-strong)]">{user.email}</p>
-      <p className="mt-1 text-xs text-[var(--text-muted)]">{user.roles.join(", ")}</p>
+      <p className="mt-3 truncate text-sm text-[var(--text-strong)]">
+        {user.email}
+      </p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">
+        {user.roles.join(", ")}
+      </p>
       {onLogoutAll ? (
         <button
           onClick={onLogoutAll}
@@ -136,10 +148,16 @@ export function EmptyState({ children }: ChildrenProps) {
 
 export function Card({ children }: ChildrenProps) {
   return (
-    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]">{children}</div>
+    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]">
+      {children}
+    </div>
   );
 }
 
 export function CardHeader({ children }: ChildrenProps) {
-  return <div className="border-b border-[var(--border-subtle)] px-5 py-4">{children}</div>;
+  return (
+    <div className="border-b border-[var(--border-subtle)] px-5 py-4">
+      {children}
+    </div>
+  );
 }

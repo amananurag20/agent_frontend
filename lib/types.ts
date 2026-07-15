@@ -308,6 +308,28 @@ export type KnowledgeSource = {
   staleAfterAt?: string | null;
   createdAt: string;
   updatedAt?: string;
+  latestIngestionRun?: KnowledgeIngestionRun | null;
+};
+
+export type KnowledgeIngestionRun = {
+  id: string;
+  status:
+    | "queued"
+    | "processing"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "dead_letter";
+  stage: string;
+  progressPercent: number;
+  processedItems: number;
+  totalItems: number;
+  attempt: number;
+  maxAttempts: number;
+  cancellationRequestedAt?: string | null;
+  errorMessage?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
 };
 
 export type KnowledgePageInfo = {
@@ -377,6 +399,10 @@ export type AppointmentService = {
   bufferAfterMinutes: number;
   priceCents?: number | null;
   currency: string;
+  maxAttendees: number;
+  cancellationWindowMinutes?: number | null;
+  rescheduleWindowMinutes?: number | null;
+  waitlistEnabled: boolean;
   status: "active" | "inactive";
   metadata: Record<string, unknown>;
 };
@@ -410,6 +436,7 @@ export type AppointmentSlot = {
   startAt: string;
   endAt: string;
   timezone: string;
+  seatsRemaining: number;
 };
 
 export type AppointmentBooking = {
@@ -421,12 +448,63 @@ export type AppointmentBooking = {
   customerName: string;
   customerEmail?: string | null;
   customerPhone?: string | null;
+  partySize: number;
+  isGroupBooking: boolean;
+  checkedInAt?: string | null;
+  seriesId?: string | null;
+  occurrenceIndex?: number | null;
   startAt: string;
   endAt: string;
   timezone: string;
   notes?: string | null;
   cancellationReason?: string | null;
   metadata: Record<string, unknown>;
+  manageToken?: string;
+};
+
+export type AppointmentPolicy = {
+  organizationId: string;
+  cancellationWindowMinutes: number;
+  rescheduleWindowMinutes: number;
+  noShowGraceMinutes: number;
+  waitlistOfferMinutes: number;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  quietHoursTimezone: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AppointmentBlackout = {
+  id: string;
+  organizationId: string;
+  name: string;
+  startAt: string;
+  endAt: string;
+  annual: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AppointmentWaitlistEntry = {
+  id: string;
+  organizationId: string;
+  serviceId: string;
+  staffId: string;
+  startAt: string;
+  endAt: string;
+  timezone: string;
+  customerName: string;
+  customerEmail?: string | null;
+  customerPhone?: string | null;
+  partySize: number;
+  status: "waiting" | "offered" | "claimed" | "expired" | "cancelled";
+  position: number;
+  offerExpiresAt?: string | null;
+  claimedBookingId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type AppointmentBookingList = {
@@ -473,6 +551,7 @@ export type WhatsAppMessage = {
   role: "contact" | "assistant" | "agent" | "system";
   type:
     | "text"
+    | "template"
     | "image"
     | "audio"
     | "video"
@@ -484,8 +563,23 @@ export type WhatsAppMessage = {
   content?: string | null;
   mediaUrl?: string | null;
   mediaMimeType?: string | null;
+  deliveryStatus?: string | null;
+  deliveryError?: string | null;
+  deliveryAttempts: number;
+  deliveredAt?: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
+};
+
+export type WhatsAppTemplate = {
+  id: string;
+  configId: string;
+  name: string;
+  language: string;
+  status: string;
+  category?: string | null;
+  components: unknown[];
+  syncedAt: string;
 };
 
 export type WhatsAppConversation = {
@@ -574,10 +668,40 @@ export type VoiceCall = {
   assignedAgentId?: string | null;
   startedAt: string;
   endedAt?: string | null;
+  durationSeconds?: number | null;
+  recordingSid?: string | null;
+  recordingUrl?: string | null;
+  recordingDurationSeconds?: number | null;
   lastEventAt: string;
   summary?: string | null;
   metadata: Record<string, unknown>;
   events: VoiceCallEvent[];
+};
+
+export type VoiceConfigInput = {
+  organizationId?: string;
+  name: string;
+  provider: VoiceConfig["provider"];
+  status: VoiceConfig["status"];
+  phoneNumber?: string | null;
+  sipDomain?: string | null;
+  webhookVerifyToken?: string | null;
+  apiKey?: string | null;
+  sttProvider?: string | null;
+  sttModel?: string | null;
+  ttsProvider?: string | null;
+  ttsVoice?: string | null;
+  defaultLocale: string;
+  transferPhoneNumber?: string | null;
+  voicemailEnabled: boolean;
+  settings: Record<string, unknown>;
+};
+
+export type VoiceCallFilters = {
+  status: string;
+  search: string;
+  page: number;
+  limit: number;
 };
 
 export type VoiceCallList = {
