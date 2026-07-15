@@ -12,6 +12,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Settings2,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -23,12 +24,18 @@ import type {
   FormHandler,
   KnowledgeCategory,
   KnowledgeFolder,
+  KnowledgeExtractionSettings,
+  KnowledgeExtractionSettingsInput,
+  KnowledgeOcrProvider,
+  KnowledgeOcrProviderInput,
   KnowledgePageInfo,
   KnowledgeSource,
   KnowledgeSourceQuery,
   KnowledgeSourceVersion,
+  AIProvider,
 } from "@/lib/types";
 import { Card, Field, StatusPill } from "./ui";
+import { KnowledgeSettingsModal } from "./knowledge-settings-modal";
 
 type SourceMode = "text" | "uploaded_file" | "website_url";
 
@@ -71,6 +78,16 @@ export function KnowledgeView({
   onLoadVersions,
   onCreateCategory,
   onCreateFolder,
+  canManageSettings,
+  workspaceName,
+  extractionSettings,
+  settingsError,
+  ocrProviders,
+  aiProviders,
+  onSaveExtractionSettings,
+  onLoadSettings,
+  onSaveOcrProvider,
+  onDeleteOcrProvider,
 }: {
   sources: KnowledgeSource[];
   categories: KnowledgeCategory[];
@@ -92,8 +109,19 @@ export function KnowledgeView({
   onLoadVersions: (id: string) => Promise<KnowledgeSourceVersion[]>;
   onCreateCategory: FormHandler;
   onCreateFolder: FormHandler;
+  canManageSettings: boolean;
+  workspaceName: string;
+  extractionSettings: KnowledgeExtractionSettings | null;
+  settingsError: string | null;
+  ocrProviders: KnowledgeOcrProvider[];
+  aiProviders: AIProvider[];
+  onSaveExtractionSettings: (input: KnowledgeExtractionSettingsInput) => Promise<boolean>;
+  onLoadSettings: () => Promise<boolean>;
+  onSaveOcrProvider: (input: KnowledgeOcrProviderInput, id?: string) => Promise<boolean>;
+  onDeleteOcrProvider: (id: string) => Promise<boolean>;
 }) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [sourceMode, setSourceMode] = useState<SourceMode>("text");
   const [selectedSource, setSelectedSource] = useState<KnowledgeSource | null>(null);
   const [search, setSearch] = useState("");
@@ -258,13 +286,27 @@ export function KnowledgeView({
                 <h2 className="font-semibold text-[var(--text-strong)]">Knowledge sources</h2>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">Content available to your assistants and customer channels.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => openCreate()}
-                className="inline-flex h-10 items-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)]"
-              >
-                <Plus className="h-4 w-4" /> Add source
-              </button>
+              <div className="flex items-center gap-2">
+                {canManageSettings ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSettingsOpen(true);
+                      void onLoadSettings();
+                    }}
+                    className="inline-flex h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] px-3 text-sm font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)]"
+                  >
+                    <Settings2 className="h-4 w-4" /> Processing
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => openCreate()}
+                  className="inline-flex h-10 items-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)]"
+                >
+                  <Plus className="h-4 w-4" /> Add source
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-2 border-b border-[var(--border-subtle)] p-3 md:grid-cols-[minmax(220px,1fr)_160px_170px]">
@@ -366,6 +408,21 @@ export function KnowledgeView({
           }}
           folders={folders}
           onLoadVersions={onLoadVersions}
+        />
+      ) : null}
+
+      {isSettingsOpen ? (
+        <KnowledgeSettingsModal
+          workspaceName={workspaceName}
+          settings={extractionSettings}
+          error={settingsError}
+          ocrProviders={ocrProviders}
+          aiProviders={aiProviders}
+          onClose={() => setIsSettingsOpen(false)}
+          onRetry={() => void onLoadSettings()}
+          onSaveSettings={onSaveExtractionSettings}
+          onSaveProvider={onSaveOcrProvider}
+          onDeleteProvider={onDeleteOcrProvider}
         />
       ) : null}
     </>

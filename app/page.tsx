@@ -57,6 +57,10 @@ import type {
   KnowledgeSource,
   KnowledgeCategory,
   KnowledgeFolder,
+  KnowledgeExtractionSettings,
+  KnowledgeExtractionSettingsInput,
+  KnowledgeOcrProvider,
+  KnowledgeOcrProviderInput,
   KnowledgePageInfo,
   KnowledgeSourceList,
   KnowledgeSourceQuery,
@@ -133,6 +137,12 @@ export default function Home() {
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<ProductEntitlement[]>([]);
   const [aiProviders, setAIProviders] = useState<AIProvider[]>([]);
+  const [knowledgeExtractionSettings, setKnowledgeExtractionSettings] =
+    useState<KnowledgeExtractionSettings | null>(null);
+  const [knowledgeOcrProviders, setKnowledgeOcrProviders] = useState<
+    KnowledgeOcrProvider[]
+  >([]);
+  const [knowledgeSettingsError, setKnowledgeSettingsError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConversationList | null>(
     null,
   );
@@ -600,6 +610,7 @@ export default function Home() {
       baseTasks.push(
         loadObservability(),
         loadAIProviders(),
+        loadKnowledgeSettings(),
         loadAuditLogs(),
       );
     }
@@ -638,6 +649,10 @@ export default function Home() {
     setWidgetConfig(null);
     setWidgetTestConversation(null);
     setWidgetVisitorToken(null);
+    setKnowledgeExtractionSettings(null);
+    setKnowledgeOcrProviders([]);
+    setKnowledgeSettingsError(null);
+    setAIProviders([]);
     const loadedProducts = await loadProducts();
     const isEnabled = (productKey: ProductKey) =>
       Boolean(
@@ -648,6 +663,8 @@ export default function Home() {
     const tasks: Array<Promise<unknown>> = [
       loadUsers(),
       loadKnowledgeSources(),
+      loadAIProviders(),
+      loadKnowledgeSettings(),
     ];
 
     if (isEnabled("customer_chat")) {
@@ -713,6 +730,28 @@ export default function Home() {
       : "";
     const result = await run(() => api<AIProvider[]>(`/ai/providers${query}`));
     if (result) setAIProviders(result);
+  }
+
+  async function loadKnowledgeSettings() {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
+    setKnowledgeSettingsError(null);
+    try {
+      const result = await Promise.all([
+        api<KnowledgeExtractionSettings>(`/knowledge/settings/extraction${query}`),
+        api<KnowledgeOcrProvider[]>(`/knowledge/settings/ocr-providers${query}`),
+      ]);
+      setKnowledgeExtractionSettings(result[0]);
+      setKnowledgeOcrProviders(result[1]);
+      return true;
+    } catch (error) {
+      setKnowledgeSettingsError(
+        error instanceof Error ? error.message : "Unable to load processing settings",
+      );
+      return false;
+    }
   }
 
   async function loadConversations() {
@@ -1366,6 +1405,64 @@ export default function Home() {
         api<KnowledgeSourceVersion[]>(`/knowledge/sources/${id}/versions`),
       )) ?? []
     );
+  }
+
+  async function saveKnowledgeExtractionSettings(
+    input: KnowledgeExtractionSettingsInput,
+  ) {
+    const result = await run(
+      () =>
+        api<KnowledgeExtractionSettings>("/knowledge/settings/extraction", {
+          method: "PATCH",
+          body: JSON.stringify({
+            ...input,
+            organizationId: selectedOrganizationId ?? user?.orgId,
+          }),
+        }),
+      "Knowledge processing policy saved",
+    );
+    if (!result) return false;
+    setKnowledgeExtractionSettings(result);
+    await loadKnowledgeSources();
+    return true;
+  }
+
+  async function saveKnowledgeOcrProvider(
+    input: KnowledgeOcrProviderInput,
+    id?: string,
+  ) {
+    const result = await run(
+      () =>
+        api<KnowledgeOcrProvider>(
+          id
+            ? `/knowledge/settings/ocr-providers/${id}`
+            : "/knowledge/settings/ocr-providers",
+          {
+            method: id ? "PATCH" : "POST",
+            body: JSON.stringify({
+              ...input,
+              organizationId: selectedOrganizationId ?? user?.orgId,
+            }),
+          },
+        ),
+      id ? "OCR provider updated" : "OCR provider created",
+    );
+    if (!result) return false;
+    await loadKnowledgeSettings();
+    return true;
+  }
+
+  async function deleteKnowledgeOcrProvider(id: string) {
+    const result = await run(
+      () =>
+        api<{ deleted: boolean }>(`/knowledge/settings/ocr-providers/${id}`, {
+          method: "DELETE",
+        }),
+      "OCR provider deleted",
+    );
+    if (!result) return false;
+    await loadKnowledgeSettings();
+    return true;
   }
 
   async function updateWidgetConfig(event: FormEvent<HTMLFormElement>) {
@@ -2418,6 +2515,24 @@ export default function Home() {
                     onLoadVersions={loadKnowledgeVersions}
                     onCreateCategory={createKnowledgeCategory}
                     onCreateFolder={createKnowledgeFolder}
+                    canManageSettings={Boolean(
+                      user?.roles.some((role) =>
+                        ["super_admin", "org_admin"].includes(role),
+                      ),
+                    )}
+                    workspaceName={
+                      usesPlatformTestWorkspace
+                        ? "Platform Test Workspace"
+                        : workspaceOrganization?.name ?? "Current workspace"
+                    }
+                    extractionSettings={knowledgeExtractionSettings}
+                    settingsError={knowledgeSettingsError}
+                    ocrProviders={knowledgeOcrProviders}
+                    aiProviders={aiProviders}
+                    onSaveExtractionSettings={saveKnowledgeExtractionSettings}
+                    onLoadSettings={loadKnowledgeSettings}
+                    onSaveOcrProvider={saveKnowledgeOcrProvider}
+                    onDeleteOcrProvider={deleteKnowledgeOcrProvider}
                   />
                 ) : null}
                 {activeTab === "appointments" ? (

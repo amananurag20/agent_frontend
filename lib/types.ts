@@ -147,6 +147,73 @@ export type AIProvider = {
   settings: Record<string, unknown>;
 };
 
+export type KnowledgeOcrProvider = {
+  id: string;
+  organizationId: string;
+  name: string;
+  provider:
+    | "local_tesseract"
+    | "aws_textract"
+    | "google_document_ai"
+    | "azure_document_intelligence"
+    | "custom";
+  status: "active" | "inactive";
+  endpoint: string;
+  hasApiKey: boolean;
+  settings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type KnowledgeExtractionSettings = {
+  id: string | null;
+  organizationId: string;
+  configured: boolean;
+  ocrMode: "disabled" | "fallback" | "always";
+  primaryOcrProviderId: string | null;
+  fallbackOcrProviderId: string | null;
+  embeddingProviderId: string | null;
+  nativeTextMinCharacters: number;
+  nativeTextMinAlphanumericRatio: number;
+  ocrMinConfidence: number;
+  ocrTimeoutMs: number;
+  ocrMaxRetries: number;
+  ocrPageConcurrency: number;
+  ocrRenderWidth: number;
+  maxPdfPages: number;
+  maxExtractedCharacters: number;
+  settings: Record<string, unknown>;
+  createdAt: string | null;
+  updatedAt: string | null;
+  deploymentLimits: {
+    maxPdfPages: number;
+    maxExtractedCharacters: number;
+    maxOcrPageConcurrency: number;
+    maxOcrRenderWidth: number;
+    maxOcrTimeoutMs: number;
+    maxOcrRetries: number;
+  };
+};
+
+export type KnowledgeExtractionSettingsInput = Omit<
+  KnowledgeExtractionSettings,
+  | "id"
+  | "organizationId"
+  | "configured"
+  | "createdAt"
+  | "updatedAt"
+  | "deploymentLimits"
+>;
+
+export type KnowledgeOcrProviderInput = {
+  name: string;
+  provider: KnowledgeOcrProvider["provider"];
+  status: KnowledgeOcrProvider["status"];
+  endpoint: string;
+  apiKey?: string;
+  settings?: Record<string, unknown>;
+};
+
 export type Message = {
   id: string;
   role: "visitor" | "assistant" | "agent" | "system";
