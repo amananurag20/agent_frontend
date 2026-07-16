@@ -2036,6 +2036,14 @@ export default function Home() {
         primaryColor: String(form.get("primaryColor")),
         launcherLabel: String(form.get("launcherLabel")),
         position: String(form.get("position")),
+        memoryEnabled: form.get("memoryEnabled") === "on",
+        recentMessageLimit: Number(form.get("recentMessageLimit") || 8),
+        lowConfidenceAction: String(
+          form.get("lowConfidenceAction") || "clarify",
+        ),
+        maxClarificationAttempts: Number(
+          form.get("maxClarificationAttempts") || 2,
+        ),
       },
     };
   }
@@ -2053,6 +2061,13 @@ export default function Home() {
     const result = await run(async () => {
       let conversation = widgetTestConversation;
       let visitorToken = widgetVisitorToken;
+
+      if (conversation?.status !== "open") {
+        conversation = null;
+        visitorToken = null;
+        setWidgetTestConversation(null);
+        setWidgetVisitorToken(null);
+      }
 
       if (!conversation || !visitorToken) {
         const created = await publicApi<PublicWidgetConversationCreated>(

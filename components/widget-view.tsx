@@ -2,6 +2,7 @@
 
 import {
   ArrowLeft,
+  BrainCircuit,
   Check,
   CheckCircle2,
   ChevronLeft,
@@ -40,6 +41,13 @@ type WidgetAppearance = {
   primaryColor: string;
   launcherLabel: string;
   position: WidgetPosition;
+};
+
+type WidgetMemoryPolicy = {
+  enabled: boolean;
+  recentMessageLimit: number;
+  lowConfidenceAction: 'clarify' | 'handoff';
+  maxClarificationAttempts: number;
 };
 
 export function WidgetView({
@@ -140,6 +148,11 @@ function WidgetEditor({
     config.knowledgeScope,
   );
   const appearance = useMemo(() => readAppearance(config.settings), [config]);
+  const memoryPolicy = useMemo(
+    () => readMemoryPolicy(config.settings),
+    [config],
+  );
+  const [memoryEnabled, setMemoryEnabled] = useState(memoryPolicy.enabled);
   const frontendOrigin = useSyncExternalStore(
     subscribeToOrigin,
     readBrowserOrigin,
@@ -359,6 +372,65 @@ function WidgetEditor({
                 selectedFolderIds={config.folderIds}
                 onScopeChange={setKnowledgeScope}
               />
+            </div>
+
+            <div className="border-t border-[var(--border-subtle)] p-5">
+              <SectionHeading
+                icon={BrainCircuit}
+                title="Conversation memory"
+                description="Keep follow-up answers coherent while bounding model context and cost."
+              />
+              <div className="mt-4 grid gap-4 xl:grid-cols-3">
+                <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-sm font-medium text-[var(--text-base)]">
+                  <input
+                    name="memoryEnabled"
+                    type="checkbox"
+                    checked={memoryEnabled}
+                    onChange={(event) => setMemoryEnabled(event.target.checked)}
+                  />
+                  Remember recent messages
+                </label>
+                <Field label="Messages sent to AI">
+                  <select
+                    name="recentMessageLimit"
+                    defaultValue={memoryPolicy.recentMessageLimit}
+                    disabled={!memoryEnabled}
+                    className="input disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {[4, 6, 8, 10, 12, 16, 20].map((limit) => (
+                      <option key={limit} value={limit}>
+                        Last {limit} messages{limit === 8 ? ' (recommended)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="When knowledge confidence is low">
+                  <select
+                    name="lowConfidenceAction"
+                    defaultValue={memoryPolicy.lowConfidenceAction}
+                    className="input"
+                  >
+                    <option value="clarify">Ask for clarification</option>
+                    <option value="handoff">Request a human immediately</option>
+                  </select>
+                </Field>
+                <div className="xl:col-start-3">
+                  <Field label="Clarification attempts before handoff">
+                    <select
+                      name="maxClarificationAttempts"
+                      defaultValue={memoryPolicy.maxClarificationAttempts}
+                      className="input"
+                    >
+                      <option value={1}>1 attempt</option>
+                      <option value={2}>2 attempts (recommended)</option>
+                      <option value={3}>3 attempts</option>
+                    </select>
+                  </Field>
+                </div>
+              </div>
+              <p className="mt-3 text-xs text-[var(--text-soft)]">
+                Full history stays in the Inbox. Only this bounded window and the active grounded topic are sent to the AI provider.
+              </p>
             </div>
 
             <div className="border-t border-[var(--border-subtle)] p-5">
@@ -631,6 +703,7 @@ function CreateWidgetModal({
   onSubmit: FormHandler;
 }) {
   const [scope, setScope] = useState<"all" | "folders">("all");
+  const [memoryEnabled, setMemoryEnabled] = useState(true);
 
   return (
     <div
@@ -709,6 +782,60 @@ function CreateWidgetModal({
               selectedFolderIds={[]}
               onScopeChange={setScope}
             />
+          </div>
+
+          <div className="border-t border-[var(--border-subtle)] pt-5">
+            <SectionHeading
+              icon={BrainCircuit}
+              title="Conversation memory"
+              description="Use a bounded context window for grounded follow-up questions."
+            />
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-sm font-medium text-[var(--text-base)]">
+                <input
+                  name="memoryEnabled"
+                  type="checkbox"
+                  checked={memoryEnabled}
+                  onChange={(event) => setMemoryEnabled(event.target.checked)}
+                />
+                Remember recent messages
+              </label>
+              <Field label="Messages sent to AI">
+                <select
+                  name="recentMessageLimit"
+                  defaultValue={8}
+                  disabled={!memoryEnabled}
+                  className="input disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {[4, 6, 8, 10, 12, 16, 20].map((limit) => (
+                    <option key={limit} value={limit}>
+                      Last {limit} messages{limit === 8 ? ' (recommended)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Low-confidence response">
+                <select
+                  name="lowConfidenceAction"
+                  defaultValue="clarify"
+                  className="input"
+                >
+                  <option value="clarify">Ask for clarification</option>
+                  <option value="handoff">Request a human immediately</option>
+                </select>
+              </Field>
+              <Field label="Attempts before handoff">
+                <select
+                  name="maxClarificationAttempts"
+                  defaultValue={2}
+                  className="input"
+                >
+                  <option value={1}>1 attempt</option>
+                  <option value={2}>2 attempts (recommended)</option>
+                  <option value={3}>3 attempts</option>
+                </select>
+              </Field>
+            </div>
           </div>
 
           <div className="grid gap-4 border-t border-[var(--border-subtle)] pt-5 sm:grid-cols-2">
@@ -1150,7 +1277,7 @@ function TestChat({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="font-semibold text-[var(--text-strong)]">Test chat</h2>
-            {conversation ? <StatusPill status="active" /> : null}
+            {conversation ? <StatusPill status={conversation.status} /> : null}
           </div>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
             Uses the public API and creates a real Inbox conversation.
@@ -1305,9 +1432,19 @@ function InstallCheck({ label, value }: { label: string; value: boolean }) {
 }
 
 function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
-  const usedFallback = metadata.usedFallback === true;
-  const provider =
-    typeof metadata.provider === "string" ? metadata.provider : "local";
+  const responseType =
+    typeof metadata.responseType === "string"
+      ? metadata.responseType
+      : metadata.usedFallback === true
+        ? "fallback"
+        : "generated";
+  const usedFallback = responseType === "fallback";
+  const label =
+    responseType === "automated"
+      ? "Automated reply"
+      : usedFallback
+        ? "Fallback response"
+        : "AI response";
 
   return (
     <p
@@ -1317,7 +1454,7 @@ function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
           : "bg-[var(--success-bg)] text-[var(--success-text)]"
       }`}
     >
-      {usedFallback ? "Fallback response" : `AI ${provider}`}
+      {label}
     </p>
   );
 }
@@ -1329,6 +1466,30 @@ function readAppearance(settings?: Record<string, unknown>): WidgetAppearance {
     launcherLabel: readString(settings, "launcherLabel", "Chat with us"),
     position:
       settings?.position === "bottom-left" ? "bottom-left" : "bottom-right",
+  };
+}
+
+function readMemoryPolicy(
+  settings?: Record<string, unknown>,
+): WidgetMemoryPolicy {
+  const recentMessageLimit = Number(settings?.recentMessageLimit);
+  const maxClarificationAttempts = Number(settings?.maxClarificationAttempts);
+  return {
+    enabled: settings?.memoryEnabled !== false,
+    recentMessageLimit:
+      Number.isInteger(recentMessageLimit) &&
+      recentMessageLimit >= 4 &&
+      recentMessageLimit <= 20
+        ? recentMessageLimit
+        : 8,
+    lowConfidenceAction:
+      settings?.lowConfidenceAction === 'handoff' ? 'handoff' : 'clarify',
+    maxClarificationAttempts:
+      Number.isInteger(maxClarificationAttempts) &&
+      maxClarificationAttempts >= 1 &&
+      maxClarificationAttempts <= 3
+        ? maxClarificationAttempts
+        : 2,
   };
 }
 
