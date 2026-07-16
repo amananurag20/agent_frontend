@@ -145,10 +145,21 @@ export default function PublicBookingPage() {
     });
     const staffId = String(form.get("staffId") || "");
     if (staffId) params.set("staffId", staffId);
-    const loaded = await run(() => publicApi<AppointmentSlot[]>(`/appointment-booking/public/availability?${params}`), "Available times updated");
+    const loaded = await run(
+      () =>
+        Promise.all([
+          publicApi<AppointmentSlot[]>(`/appointment-booking/public/availability?${params}`),
+          publicApi<AppointmentSlot[]>(`/appointment-booking/public/waitlist-sessions?${params}`),
+        ]),
+      "Available times updated",
+    );
     if (loaded) {
       setSelectedServiceId(serviceId);
-      setSlots(loaded);
+      const sessions = new Map<string, AppointmentSlot>();
+      for (const slot of [...loaded[1], ...loaded[0]]) {
+        sessions.set(`${slot.staffId}:${slot.startAt}`, slot);
+      }
+      setSlots([...sessions.values()].sort((left, right) => left.startAt.localeCompare(right.startAt)));
       setSelectedSlot(null);
     }
   }
@@ -202,29 +213,6 @@ export default function PublicBookingPage() {
           customerEmail: payload.customerEmail,
           customerPhone: payload.customerPhone,
           partySize: payload.partySize,
-        }),
-      }),
-    );
-    if (joined) setMessage(`You are #${joined.position} on the waitlist. We’ll contact you when enough seats open.`);
-  }
-
-  async function joinWaitlistAtTime(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!details.email && !details.phone) return setError("Add your email address or phone number above");
-    const form = new FormData(event.currentTarget);
-    const joined = await run(
-      () => publicApi<{ id: string; position: number }>("/appointment-booking/public/waitlist", {
-        method: "POST",
-        body: JSON.stringify({
-          organizationId,
-          serviceId: String(form.get("serviceId")),
-          staffId: String(form.get("staffId")),
-          startAt: new Date(String(form.get("startAt"))).toISOString(),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-          customerName: details.name,
-          customerEmail: details.email || undefined,
-          customerPhone: details.phone || undefined,
-          partySize: details.partySize,
         }),
       }),
     );
@@ -403,19 +391,6 @@ export default function PublicBookingPage() {
                 )}
               </form>
 
-              <form onSubmit={joinWaitlistAtTime} className={panelClass}>
-                <h2 className="font-semibold">Join a full-session waitlist</h2>
-                <p className="mt-1 text-sm text-[#64748b]">For a time that no longer appears above, use the staff and time from your invitation or previous search.</p>
-                <div className="mt-4 space-y-3">
-                  <select name="serviceId" className={inputClass} required defaultValue="">
-                    <option value="">Select waitlist-enabled service</option>
-                    {services.filter((service) => service.waitlistEnabled).map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-                  </select>
-                  <input name="staffId" placeholder="Staff ID" className={inputClass} required />
-                  <input name="startAt" type="datetime-local" className={inputClass} required />
-                </div>
-                <button disabled={busy || !details.name} className="mt-4 h-10 w-full rounded-xl border border-[#b26a00] px-4 text-sm font-semibold text-[#8a5200] disabled:opacity-50">Join waitlist</button>
-              </form>
             </div>
 
             <section className="overflow-hidden rounded-2xl border border-[#d8e2f0] bg-white shadow-sm">
@@ -431,7 +406,7 @@ export default function PublicBookingPage() {
                       <button key={`${slot.staffId}-${slot.startAt}`} type="button" onClick={() => setSelectedSlot(slot)} className={`rounded-xl border p-4 text-left transition ${selected ? "border-[#2563eb] bg-[#edf4ff] ring-2 ring-[#2563eb]/15" : "border-[#d8e2f0] hover:border-[#2563eb] hover:bg-[#f7faff]"}`}>
                         <p className="text-sm font-semibold">{formatDateTime(slot.startAt)}</p>
                         <p className="mt-1 text-xs text-[#64748b]">{slot.staffName}</p>
-                        <span className="mt-3 inline-block rounded-full bg-white px-2.5 py-1 text-xs font-medium text-[#314158]">{slot.seatsRemaining} seat{slot.seatsRemaining === 1 ? "" : "s"} left</span>
+                        <span className={`mt-3 inline-block rounded-full bg-white px-2.5 py-1 text-xs font-medium ${slot.seatsRemaining ? "text-[#314158]" : "text-[#b26a00]"}`}>{slot.seatsRemaining ? `${slot.seatsRemaining} seat${slot.seatsRemaining === 1 ? "" : "s"} left` : "Full · waitlist available"}</span>
                       </button>
                     );
                   })}

@@ -1,12 +1,15 @@
 import { FormEvent, useMemo, useState } from "react";
 import type {
   User,
+  VoiceAnalytics,
   VoiceCall,
   VoiceCallEvent,
   VoiceCallFilters,
   VoiceCallList,
   VoiceConfig,
+  VoiceConfigDiagnostic,
   VoiceConfigInput,
+  VoiceRuntimeHealth,
 } from "@/lib/types";
 import { Card, EmptyState, Field, StatusPill } from "./ui";
 
@@ -315,6 +318,9 @@ function buildConfigInput(
 export function VoiceReceptionistView({
   configs,
   calls,
+  analytics,
+  runtimeHealth,
+  diagnostic,
   selectedCall,
   users,
   canConfigure,
@@ -323,6 +329,8 @@ export function VoiceReceptionistView({
   filters,
   setFilters,
   onSaveConfig,
+  onDeleteConfig,
+  onTestConfig,
   onLoadCalls,
   onSelectCall,
   onSendMessage,
@@ -330,9 +338,13 @@ export function VoiceReceptionistView({
   onRouteCall,
   onUpdateStatus,
   onAssignCall,
+  onOpenRecording,
 }: {
   configs: VoiceConfig[];
   calls: VoiceCallList | null;
+  analytics: VoiceAnalytics | null;
+  runtimeHealth: VoiceRuntimeHealth | null;
+  diagnostic: VoiceConfigDiagnostic | null;
   selectedCall: VoiceCall | null;
   users: User[];
   canConfigure: boolean;
@@ -344,6 +356,8 @@ export function VoiceReceptionistView({
     configId: string | null,
     input: VoiceConfigInput,
   ) => Promise<VoiceConfig | null | undefined>;
+  onDeleteConfig: (configId: string) => void;
+  onTestConfig: (configId: string) => void;
   onLoadCalls: (filters?: VoiceCallFilters) => void;
   onSelectCall: (id: string) => void;
   onSendMessage: (event: FormEvent<HTMLFormElement>) => void;
@@ -354,6 +368,7 @@ export function VoiceReceptionistView({
   ) => void;
   onUpdateStatus: (status: VoiceCall["status"]) => void;
   onAssignCall: (assignedAgentId: string | null) => void;
+  onOpenRecording: (callId: string) => void;
 }) {
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(
     configs[0]?.id ?? null,
@@ -434,6 +449,16 @@ export function VoiceReceptionistView({
 
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+        <CallMetric label="30-day calls" value={String(analytics?.totalCalls ?? 0)} />
+        <CallMetric label="Active" value={String(analytics?.inProgress ?? 0)} />
+        <CallMetric label="Containment" value={`${analytics?.containmentRate ?? 0}%`} />
+        <CallMetric label="Transfer rate" value={`${analytics?.transferRate ?? 0}%`} />
+        <CallMetric label="Voicemails" value={String(analytics?.voicemail ?? 0)} />
+        <CallMetric label="Failures" value={String(analytics?.failed ?? 0)} />
+        <CallMetric label="Avg duration" value={formatDuration(analytics?.averageDurationSeconds)} />
+        <CallMetric label="Live streams" value={String(runtimeHealth?.activeSessions ?? 0)} />
+      </div>
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[470px_minmax(0,1fr)]">
         <div className="space-y-4">
           <Card>
@@ -656,6 +681,19 @@ export function VoiceReceptionistView({
                 </details>
 
                 {canConfigure ? <button className="h-10 w-full rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">{selectedConfig ? "Update configuration" : "Create configuration"}</button> : <p className="text-sm text-[var(--text-muted)]">You have read-only Voice access.</p>}
+                {canConfigure && selectedConfig ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => onTestConfig(selectedConfig.id)} className="h-9 rounded-md border border-[var(--border-strong)] text-sm">Test provider</button>
+                    <button type="button" onClick={() => window.confirm(`Delete ${selectedConfig.name}? Historical calls will also be deleted.`) && onDeleteConfig(selectedConfig.id)} className="h-9 rounded-md bg-[var(--danger-bg)] text-sm text-[var(--danger-text)]">Delete config</button>
+                  </div>
+                ) : null}
+                {diagnostic && diagnostic.configId === selectedConfig?.id ? (
+                  <div className="rounded-md bg-[var(--surface-tint)] p-3 text-xs">
+                    <div className="flex items-center justify-between"><span className="font-semibold">Provider diagnostic</span><StatusPill status={diagnostic.ready ? "ready" : "not ready"} /></div>
+                    <div className="mt-2 grid grid-cols-2 gap-1">{Object.entries(diagnostic.checks).map(([key, value]) => <span key={key}>{key}: {value ? "yes" : "no"}</span>)}</div>
+                    {diagnostic.providerTest.message ? <p className="mt-2 text-[var(--danger-text)]">{diagnostic.providerTest.message}</p> : null}
+                  </div>
+                ) : null}
               </fieldset>
             </Card>
           </form>
@@ -681,7 +719,7 @@ export function VoiceReceptionistView({
         <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[370px_minmax(0,1fr)]">
           <Card>
             <div className="border-b border-[var(--border-subtle)] p-4">
-              <div className="flex items-center justify-between"><h2 className="font-semibold">Voice calls</h2><span className="text-xs text-[var(--text-muted)]">Auto-refresh 10s</span></div>
+              <div className="flex items-center justify-between"><h2 className="font-semibold">Voice calls</h2><span className="text-xs text-[var(--text-muted)]">Live event stream</span></div>
               <div className="mt-3 grid grid-cols-[1fr_140px] gap-2">
                 <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value, page: 1 })} placeholder="Caller, number, or call ID" className="input" />
                 <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, page: 1 })} className="input">
@@ -757,8 +795,7 @@ export function VoiceReceptionistView({
 
                 {selectedCall.recordingUrl ? (
                   <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-tint)] p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Voicemail recording</p><p className="text-xs text-[var(--text-muted)]">{formatDuration(selectedCall.recordingDurationSeconds)} · {selectedCall.recordingSid}</p></div><a href={selectedCall.recordingUrl} target="_blank" rel="noreferrer" className="text-sm text-[var(--accent-primary)] underline">Open recording</a></div>
-                    <audio controls preload="none" className="mt-3 w-full" src={selectedCall.recordingUrl}>Your browser does not support audio playback.</audio>
+                    <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Voicemail recording</p><p className="text-xs text-[var(--text-muted)]">{formatDuration(selectedCall.recordingDurationSeconds)} · {selectedCall.recordingSid}</p></div><button type="button" onClick={() => onOpenRecording(selectedCall.id)} className="text-sm text-[var(--accent-primary)] underline">Open securely</button></div>
                   </div>
                 ) : null}
 

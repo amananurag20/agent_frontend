@@ -17,6 +17,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type {
   AppointmentBooking,
   AppointmentBlackout,
+  AppointmentDeadLetters,
   AppointmentCalendarConnection,
   AppointmentPolicy,
   AppointmentResource,
@@ -139,6 +140,7 @@ export function AppointmentsView({
   policy,
   blackouts,
   waitlist,
+  deadLetters,
   onCreateService,
   onUpdateService,
   onCreateStaff,
@@ -154,6 +156,7 @@ export function AppointmentsView({
   onUpdatePolicy,
   onCreateBlackout,
   onDeleteBlackout,
+  onRetryDeadLetter,
   onConnectCalendar,
   onDisconnectCalendar,
 }: {
@@ -166,6 +169,7 @@ export function AppointmentsView({
   policy: AppointmentPolicy | null;
   blackouts: AppointmentBlackout[];
   waitlist: AppointmentWaitlistEntry[];
+  deadLetters: AppointmentDeadLetters;
   onCreateService: FormHandler;
   onUpdateService: FormHandler;
   onCreateStaff: FormHandler;
@@ -181,6 +185,7 @@ export function AppointmentsView({
   onUpdatePolicy: FormHandler;
   onCreateBlackout: FormHandler;
   onDeleteBlackout: (id: string) => void;
+  onRetryDeadLetter: (kind: "reminders" | "calendars", id: string) => void;
   onConnectCalendar: (
     provider: "google" | "microsoft",
     staffId: string,
@@ -672,11 +677,13 @@ export function AppointmentsView({
             policy={policy}
             blackouts={blackouts}
             waitlist={waitlist}
+            deadLetters={deadLetters}
             services={services}
             staff={staff}
             onUpdatePolicy={onUpdatePolicy}
             onCreateBlackout={onCreateBlackout}
             onDeleteBlackout={onDeleteBlackout}
+            onRetryDeadLetter={onRetryDeadLetter}
           />
         ) : null}
       </Card>
@@ -716,6 +723,16 @@ export function AppointmentsView({
               <label className="flex items-center gap-3 text-sm text-[var(--text-base)]">
                 <input name="waitlistEnabled" type="checkbox" defaultChecked /> Enable waitlist when full
               </label>
+              <div className="rounded-xl bg-[var(--surface-card-muted)] p-4">
+                <p className="mb-3 text-sm font-medium text-[var(--text-strong)]">Service reminder override (optional)</p>
+                <Field label="Offsets in minutes, comma separated">
+                  <input name="reminderOffsetsMinutes" className="input" placeholder="Leave blank to use organization schedule" />
+                </Field>
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Confirmation template"><textarea name="confirmationTemplate" rows={3} className="input resize-y" /></Field>
+                  <Field label="Reminder template"><textarea name="reminderTemplate" rows={3} className="input resize-y" /></Field>
+                </div>
+              </div>
               <SubmitActions label="Create service" onClose={closeDialog} />
             </form>
           ) : null}
@@ -754,6 +771,16 @@ export function AppointmentsView({
               <label className="flex items-center gap-3 text-sm text-[var(--text-base)]">
                 <input name="waitlistEnabled" type="checkbox" defaultChecked={selectedService.waitlistEnabled} /> Enable waitlist when full
               </label>
+              <div className="rounded-xl bg-[var(--surface-card-muted)] p-4">
+                <p className="mb-3 text-sm font-medium text-[var(--text-strong)]">Service reminder override</p>
+                <Field label="Offsets in minutes, comma separated">
+                  <input name="reminderOffsetsMinutes" className="input" defaultValue={selectedService.reminderOffsetsMinutes.join(", ")} placeholder="Leave blank to inherit" />
+                </Field>
+                <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Field label="Confirmation template"><textarea name="confirmationTemplate" rows={3} className="input resize-y" defaultValue={selectedService.reminderTemplates.confirmation ?? ""} /></Field>
+                  <Field label="Reminder template"><textarea name="reminderTemplate" rows={3} className="input resize-y" defaultValue={selectedService.reminderTemplates.reminder ?? ""} /></Field>
+                </div>
+              </div>
               <SubmitActions label="Save service" onClose={closeDialog} />
             </form>
           ) : null}

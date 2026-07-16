@@ -403,6 +403,8 @@ export type AppointmentService = {
   cancellationWindowMinutes?: number | null;
   rescheduleWindowMinutes?: number | null;
   waitlistEnabled: boolean;
+  reminderOffsetsMinutes: number[];
+  reminderTemplates: Record<string, string>;
   status: "active" | "inactive";
   metadata: Record<string, unknown>;
 };
@@ -472,6 +474,8 @@ export type AppointmentPolicy = {
   quietHoursStart: string;
   quietHoursEnd: string;
   quietHoursTimezone: string;
+  reminderOffsetsMinutes: number[];
+  reminderTemplates: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -505,6 +509,44 @@ export type AppointmentWaitlistEntry = {
   claimedBookingId?: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AppointmentDeadLetterBooking = {
+  id: string;
+  customerName: string;
+  startAt: string;
+  service: { id: string; name: string };
+};
+
+export type AppointmentReminderDeadLetter = {
+  id: string;
+  bookingId: string;
+  reminderType: string;
+  dueAt: string;
+  attempts: number;
+  lastError?: string | null;
+  updatedAt: string;
+  booking: AppointmentDeadLetterBooking;
+};
+
+export type AppointmentCalendarDeadLetter = {
+  id: string;
+  bookingId: string;
+  operation: string;
+  attempts: number;
+  lastError?: string | null;
+  updatedAt: string;
+  booking: AppointmentDeadLetterBooking;
+  connection: {
+    id: string;
+    provider: "google" | "microsoft";
+    accountEmail?: string | null;
+  };
+};
+
+export type AppointmentDeadLetters = {
+  reminders: AppointmentReminderDeadLetter[];
+  calendarEvents: AppointmentCalendarDeadLetter[];
 };
 
 export type AppointmentBookingList = {
@@ -702,6 +744,52 @@ export type VoiceCallFilters = {
   search: string;
   page: number;
   limit: number;
+};
+
+export type VoiceAnalytics = {
+  periodDays: number;
+  totalCalls: number;
+  inProgress: number;
+  completed: number;
+  transferred: number;
+  voicemail: number;
+  failed: number;
+  waitingForAgent: number;
+  averageDurationSeconds: number;
+  containmentRate: number;
+  transferRate: number;
+  bargeIns: number;
+  assistantResponses: number;
+  generatedAt: string;
+};
+
+export type VoiceRuntimeHealth = {
+  status: string;
+  transport: string;
+  activeSessions: number;
+  sessions: Array<{
+    configId: string;
+    providerCallId: string;
+    connectedAt: string;
+    lastEventAt: string;
+    ageSeconds: number;
+  }>;
+  checkedAt: string;
+};
+
+export type VoiceConfigDiagnostic = {
+  configId: string;
+  ready: boolean;
+  checks: Record<string, boolean>;
+  providerTest: {
+    provider: string;
+    reachable: boolean;
+    liveControlSupported: boolean;
+    message?: string;
+    accountSid?: string;
+    accountStatus?: string;
+  };
+  checkedAt: string;
 };
 
 export type VoiceCallList = {

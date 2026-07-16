@@ -438,14 +438,10 @@ function ConfigurationPanel({
             </div>
             <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-tint)] p-3 text-xs">
               <p className="font-medium text-[var(--text-strong)]">
-                Meta webhook URLs
+                Meta callback URL (GET verification + POST events)
               </p>
               <code className="mt-2 block break-all text-[var(--text-muted)]">
-                GET /api/v1/whatsapp-assistant/webhook/{activeConfig.id}
-              </code>
-              <code className="mt-1 block break-all text-[var(--text-muted)]">
-                POST /api/v1/whatsapp-assistant/webhook/{activeConfig.id}
-                /inbound
+                /api/v1/whatsapp-assistant/webhook/{activeConfig.id}
               </code>
             </div>
           </>

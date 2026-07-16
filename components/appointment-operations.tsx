@@ -1,8 +1,9 @@
 "use client";
 
-import { BellRing, CalendarOff, Clock, Trash2, UsersRound } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarOff, Clock, RotateCcw, Trash2, UsersRound } from "lucide-react";
 import type {
   AppointmentBlackout,
+  AppointmentDeadLetters,
   AppointmentPolicy,
   AppointmentService,
   AppointmentStaff,
@@ -29,20 +30,24 @@ export function AppointmentOperations({
   policy,
   blackouts,
   waitlist,
+  deadLetters,
   services,
   staff,
   onUpdatePolicy,
   onCreateBlackout,
   onDeleteBlackout,
+  onRetryDeadLetter,
 }: {
   policy: AppointmentPolicy | null;
   blackouts: AppointmentBlackout[];
   waitlist: AppointmentWaitlistEntry[];
+  deadLetters: AppointmentDeadLetters;
   services: AppointmentService[];
   staff: AppointmentStaff[];
   onUpdatePolicy: FormHandler;
   onCreateBlackout: FormHandler;
   onDeleteBlackout: (id: string) => void;
+  onRetryDeadLetter: (kind: "reminders" | "calendars", id: string) => void;
 }) {
   return (
     <div className="space-y-6 p-5">
@@ -95,6 +100,28 @@ export function AppointmentOperations({
                 </Field>
               </div>
             </div>
+            <div className="mt-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-4">
+              <h4 className="text-sm font-medium text-[var(--text-strong)]">Reminder schedule & templates</h4>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">Offsets are minutes before the appointment. Confirmation is always sent immediately.</p>
+              <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <Field label="Offsets (comma separated)">
+                  <input name="reminderOffsetsMinutes" defaultValue={policy.reminderOffsetsMinutes.join(", ")} className="input" placeholder="10080, 1440, 60" required />
+                </Field>
+                <Field label="Email subject">
+                  <input name="emailSubjectTemplate" defaultValue={policy.reminderTemplates.emailSubject ?? "Appointment: {{serviceName}}"} className="input" />
+                </Field>
+                <Field label="Confirmation message">
+                  <textarea name="confirmationTemplate" rows={3} defaultValue={policy.reminderTemplates.confirmation ?? ""} className="input resize-y" placeholder="Your {{serviceName}} appointment is confirmed for {{startTime}}." />
+                </Field>
+                <Field label="Reminder message">
+                  <textarea name="reminderTemplate" rows={3} defaultValue={policy.reminderTemplates.reminder ?? ""} className="input resize-y" placeholder="Reminder: {{serviceName}} with {{staffName}} at {{startTime}}." />
+                </Field>
+                <Field label="Meta WhatsApp template name">
+                  <input name="whatsappTemplateName" defaultValue={policy.reminderTemplates.whatsappTemplateName ?? ""} className="input" placeholder="appointment_reminder" />
+                </Field>
+              </div>
+              <p className="mt-3 text-xs text-[var(--text-soft)]">Variables: {"{{customerName}}"}, {"{{serviceName}}"}, {"{{staffName}}"}, {"{{startTime}}"}, {"{{partySize}}"}, {"{{preferencesUrl}}"}.</p>
+            </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-[var(--text-muted)]">
                 Cancel: {minutesLabel(policy.cancellationWindowMinutes)} · Reschedule: {minutesLabel(policy.rescheduleWindowMinutes)}
@@ -106,6 +133,42 @@ export function AppointmentOperations({
           </form>
         ) : (
           <EmptyState>Policy is loading or unavailable for this organization.</EmptyState>
+        )}
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
+        <div className="flex items-start gap-3 border-b border-[var(--border-subtle)] bg-[var(--surface-card-muted)] px-4 py-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 text-[var(--danger-text)]" />
+          <div>
+            <h3 className="font-semibold text-[var(--text-strong)]">Delivery dead letters</h3>
+            <p className="text-sm text-[var(--text-muted)]">Permanently failed reminders and calendar syncs requiring operator attention.</p>
+          </div>
+        </div>
+        {!deadLetters.reminders.length && !deadLetters.calendarEvents.length ? (
+          <EmptyState>No dead letters. Delivery systems are healthy.</EmptyState>
+        ) : (
+          <div className="divide-y divide-[var(--border-subtle)]">
+            {deadLetters.reminders.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-4 px-4 py-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--text-strong)]">Reminder · {item.booking.customerName} · {item.booking.service.name}</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">{item.reminderType} · {item.attempts} attempts · {formatDateTime(item.booking.startAt)}</p>
+                  <p className="mt-2 max-w-3xl truncate text-xs text-[var(--danger-text)]" title={item.lastError ?? undefined}>{item.lastError ?? "No error details"}</p>
+                </div>
+                <button type="button" onClick={() => onRetryDeadLetter("reminders", item.id)} className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--border-strong)] px-3 text-xs font-medium hover:bg-[var(--surface-hover)]"><RotateCcw className="h-4 w-4" /> Retry</button>
+              </div>
+            ))}
+            {deadLetters.calendarEvents.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-4 px-4 py-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[var(--text-strong)]">{item.connection.provider === "google" ? "Google" : "Microsoft"} calendar · {item.booking.customerName}</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">{item.operation} · {item.attempts} attempts · {item.connection.accountEmail ?? "Connected account"}</p>
+                  <p className="mt-2 max-w-3xl truncate text-xs text-[var(--danger-text)]" title={item.lastError ?? undefined}>{item.lastError ?? "No error details"}</p>
+                </div>
+                <button type="button" onClick={() => onRetryDeadLetter("calendars", item.id)} className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--border-strong)] px-3 text-xs font-medium hover:bg-[var(--surface-hover)]"><RotateCcw className="h-4 w-4" /> Retry</button>
+              </div>
+            ))}
+          </div>
         )}
       </section>
 

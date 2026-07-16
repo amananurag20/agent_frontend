@@ -40,6 +40,7 @@ import type {
   AppointmentBooking,
   AppointmentBookingList,
   AppointmentBlackout,
+  AppointmentDeadLetters,
   AppointmentCalendarConnection,
   AppointmentPolicy,
   AppointmentResource,
@@ -73,11 +74,14 @@ import type {
   PublicWidgetConversationCreated,
   TabId,
   User,
+  VoiceAnalytics,
   VoiceCall,
   VoiceCallFilters,
   VoiceCallList,
   VoiceConfig,
+  VoiceConfigDiagnostic,
   VoiceConfigInput,
+  VoiceRuntimeHealth,
   WidgetConfig,
   WidgetConfigList,
   WidgetPageInfo,
@@ -109,6 +113,22 @@ const navItems: Array<{ id: TabId; label: string }> = [
 ];
 
 const validTabIds = new Set<TabId>(navItems.map((item) => item.id));
+
+function parseMinuteOffsets(value: FormDataEntryValue | null): number[] {
+  return [...new Set(String(value ?? "").split(",").map((item) => Number(item.trim())).filter((item) => Number.isInteger(item) && item > 0))];
+}
+
+function reminderTemplatesFromForm(form: FormData): Record<string, string> {
+  return Object.fromEntries(
+    [
+      ["confirmation", form.get("confirmationTemplate")],
+      ["reminder", form.get("reminderTemplate")],
+      ["emailSubject", form.get("emailSubjectTemplate")],
+      ["whatsappTemplateName", form.get("whatsappTemplateName")],
+    ].filter((entry): entry is [string, FormDataEntryValue] => Boolean(entry[1] && String(entry[1]).trim()))
+      .map(([key, value]) => [key, String(value).trim()]),
+  );
+}
 
 const navMeta: Record<
   TabId,
@@ -266,6 +286,8 @@ export default function Home() {
   const [appointmentWaitlist, setAppointmentWaitlist] = useState<
     AppointmentWaitlistEntry[]
   >([]);
+  const [appointmentDeadLetters, setAppointmentDeadLetters] =
+    useState<AppointmentDeadLetters>({ reminders: [], calendarEvents: [] });
   const [whatsAppConfigs, setWhatsAppConfigs] = useState<WhatsAppConfig[]>([]);
   const [selectedWhatsAppConfigId, setSelectedWhatsAppConfigId] = useState<
     string | null
@@ -279,6 +301,13 @@ export default function Home() {
     useState<WhatsAppConversation | null>(null);
   const [voiceConfigs, setVoiceConfigs] = useState<VoiceConfig[]>([]);
   const [voiceCalls, setVoiceCalls] = useState<VoiceCallList | null>(null);
+  const [voiceAnalytics, setVoiceAnalytics] = useState<VoiceAnalytics | null>(
+    null,
+  );
+  const [voiceRuntimeHealth, setVoiceRuntimeHealth] =
+    useState<VoiceRuntimeHealth | null>(null);
+  const [voiceDiagnostic, setVoiceDiagnostic] =
+    useState<VoiceConfigDiagnostic | null>(null);
   const [selectedVoiceCall, setSelectedVoiceCall] = useState<VoiceCall | null>(
     null,
   );
@@ -519,20 +548,53 @@ export default function Home() {
 
   useEffect(() => {
     if (!token || activeTab !== "voice") return;
-    const interval = window.setInterval(() => {
-      void loadVoiceCalls(undefined, true);
-      if (selectedVoiceCall?.id) {
-        void loadVoiceCall(selectedVoiceCall.id, true);
+    const controller = new AbortController();
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    async function connect() {
+      try {
+        const query = organizationId
+          ? `?organizationId=${encodeURIComponent(organizationId)}`
+          : "";
+        const response = await fetch(
+          `${API_BASE_URL}/voice-receptionist/events${query}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok || !response.body) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const result = await reader.read();
+          if (result.done) break;
+          buffer += decoder.decode(result.value, { stream: true });
+          const blocks = buffer.split("\n\n");
+          buffer = blocks.pop() ?? "";
+          if (blocks.some((block) => !block.includes("event: heartbeat"))) {
+            await loadVoiceCalls(undefined, true);
+            await loadVoiceOperations(true);
+            if (selectedVoiceCall?.id) {
+              await loadVoiceCall(selectedVoiceCall.id, true);
+            }
+          }
+        }
+      } catch {
+        // Expected during navigation, reconnect, or sign-out.
       }
-    }, 10_000);
-    return () => window.clearInterval(interval);
+      if (!controller.signal.aborted) {
+        window.setTimeout(() => void connect(), 3000);
+      }
+    }
+    void connect();
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     token,
     activeTab,
     selectedOrganizationId,
     selectedVoiceCall?.id,
-    voiceFilters,
   ]);
 
   useEffect(() => {
@@ -811,7 +873,7 @@ export default function Home() {
       baseTasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
     }
     if (canUse("voice_receptionist")) {
-      baseTasks.push(loadVoiceConfigs(), loadVoiceCalls());
+      baseTasks.push(loadVoiceConfigs(), loadVoiceCalls(), loadVoiceOperations());
     }
     await Promise.all(baseTasks);
   }
@@ -865,7 +927,7 @@ export default function Home() {
       tasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
     }
     if (isEnabled("voice_receptionist")) {
-      tasks.push(loadVoiceConfigs(), loadVoiceCalls());
+      tasks.push(loadVoiceConfigs(), loadVoiceCalls(), loadVoiceOperations());
     }
     await Promise.all(tasks);
   }
@@ -1133,7 +1195,7 @@ export default function Home() {
     const canConfigure = user?.roles.some((role) =>
       ["super_admin", "org_admin", "product_admin"].includes(role),
     );
-    const [policy, blackouts, waitlist] = await Promise.all([
+    const [policy, blackouts, waitlist, deadLetters] = await Promise.all([
       canConfigure
         ? run(() =>
             api<AppointmentPolicy>(`/appointment-booking/policy${query}`),
@@ -1147,10 +1209,18 @@ export default function Home() {
           `/appointment-booking/waitlist${query}`,
         ),
       ),
+      canConfigure
+        ? run(() =>
+            api<AppointmentDeadLetters>(
+              `/appointment-booking/operations/dead-letters${query}`,
+            ),
+          )
+        : Promise.resolve(null),
     ]);
     if (policy) setAppointmentPolicy(policy);
     if (blackouts) setAppointmentBlackouts(blackouts);
     if (waitlist) setAppointmentWaitlist(waitlist);
+    if (deadLetters) setAppointmentDeadLetters(deadLetters);
   }
 
   async function loadWhatsAppConfigs() {
@@ -1251,6 +1321,25 @@ export default function Home() {
       api<VoiceConfig[]>(`/voice-receptionist/configs${query}`),
     );
     if (result) setVoiceConfigs(result);
+  }
+
+  async function loadVoiceOperations(silent = false) {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const query = organizationId
+      ? `?organizationId=${encodeURIComponent(organizationId)}`
+      : "";
+    const request = () =>
+      Promise.all([
+        api<VoiceAnalytics>(`/voice-receptionist/analytics${query}`),
+        api<VoiceRuntimeHealth>(`/voice-receptionist/runtime-health${query}`),
+      ]);
+    const result = silent
+      ? await request().catch(() => null)
+      : await run(request);
+    if (result) {
+      setVoiceAnalytics(result[0]);
+      setVoiceRuntimeHealth(result[1]);
+    }
   }
 
   async function loadVoiceCalls(
@@ -2213,6 +2302,10 @@ export default function Home() {
               ? Number(form.get("rescheduleWindowMinutes"))
               : undefined,
             waitlistEnabled: form.get("waitlistEnabled") === "on",
+            reminderOffsetsMinutes: parseMinuteOffsets(
+              form.get("reminderOffsetsMinutes"),
+            ),
+            reminderTemplates: reminderTemplatesFromForm(form),
           }),
         }),
       "Appointment service created",
@@ -2247,6 +2340,10 @@ export default function Home() {
               ? Number(form.get("rescheduleWindowMinutes"))
               : null,
             waitlistEnabled: form.get("waitlistEnabled") === "on",
+            reminderOffsetsMinutes: parseMinuteOffsets(
+              form.get("reminderOffsetsMinutes"),
+            ),
+            reminderTemplates: reminderTemplatesFromForm(form),
           }),
         }),
       "Appointment service updated",
@@ -2514,6 +2611,10 @@ export default function Home() {
             quietHoursStart: String(form.get("quietHoursStart")),
             quietHoursEnd: String(form.get("quietHoursEnd")),
             quietHoursTimezone: String(form.get("quietHoursTimezone")),
+            reminderOffsetsMinutes: parseMinuteOffsets(
+              form.get("reminderOffsetsMinutes"),
+            ),
+            reminderTemplates: reminderTemplatesFromForm(form),
           }),
         }),
       "Booking policy updated",
@@ -2552,6 +2653,23 @@ export default function Home() {
           method: "DELETE",
         }),
       "Blackout removed",
+    );
+    if (result) await loadAppointmentOperations();
+  }
+
+  async function retryAppointmentDeadLetter(
+    kind: "reminders" | "calendars",
+    id: string,
+  ) {
+    const result = await run(
+      () =>
+        api<{ retried: boolean }>(
+          `/appointment-booking/operations/${kind}/${id}/retry`,
+          { method: "POST" },
+        ),
+      kind === "reminders"
+        ? "Reminder queued for retry"
+        : "Calendar sync queued for retry",
     );
     if (result) await loadAppointmentOperations();
   }
@@ -2967,8 +3085,48 @@ export default function Home() {
 
     if (result) {
       await loadVoiceConfigs();
+      await loadVoiceOperations(true);
     }
     return result;
+  }
+
+  async function deleteVoiceConfig(configId: string) {
+    const result = await run(
+      () =>
+        api<{ deleted: boolean }>(`/voice-receptionist/configs/${configId}`, {
+          method: "DELETE",
+        }),
+      "Voice configuration deleted",
+    );
+    if (result) {
+      setVoiceDiagnostic(null);
+      await loadVoiceConfigs();
+    }
+  }
+
+  async function testVoiceConfig(configId: string) {
+    const result = await run(
+      () =>
+        api<VoiceConfigDiagnostic>(
+          `/voice-receptionist/configs/${configId}/test`,
+          { method: "POST" },
+        ),
+      "Voice configuration tested",
+    );
+    if (result) setVoiceDiagnostic(result);
+  }
+
+  async function openVoiceRecording(callId: string) {
+    await run(async () => {
+      const response = await axios.get<Blob>(
+        `${API_BASE_URL}/voice-receptionist/calls/${callId}/recording`,
+        { headers: authHeaders, responseType: "blob" },
+      );
+      const url = URL.createObjectURL(response.data);
+      window.open(url, "_blank", "noopener,noreferrer");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return true;
+    }, "Recording opened");
   }
 
   async function sendVoiceMessage(event: FormEvent<HTMLFormElement>) {
@@ -3389,6 +3547,7 @@ export default function Home() {
                   policy={appointmentPolicy}
                   blackouts={appointmentBlackouts}
                   waitlist={appointmentWaitlist}
+                  deadLetters={appointmentDeadLetters}
                   onCreateService={createAppointmentService}
                   onUpdateService={updateAppointmentService}
                   onCreateStaff={createAppointmentStaff}
@@ -3404,6 +3563,7 @@ export default function Home() {
                   onUpdatePolicy={updateAppointmentPolicy}
                   onCreateBlackout={createAppointmentBlackout}
                   onDeleteBlackout={deleteAppointmentBlackout}
+                  onRetryDeadLetter={retryAppointmentDeadLetter}
                   onConnectCalendar={connectAppointmentCalendar}
                   onDisconnectCalendar={disconnectAppointmentCalendar}
                 />
@@ -3444,6 +3604,9 @@ export default function Home() {
                 <VoiceReceptionistView
                   configs={voiceConfigs}
                   calls={voiceCalls}
+                  analytics={voiceAnalytics}
+                  runtimeHealth={voiceRuntimeHealth}
+                  diagnostic={voiceDiagnostic}
                   selectedCall={selectedVoiceCall}
                   users={users}
                   canConfigure={voiceAccess.canConfigure}
@@ -3452,6 +3615,8 @@ export default function Home() {
                   filters={voiceFilters}
                   setFilters={setVoiceFilters}
                   onSaveConfig={saveVoiceConfig}
+                  onDeleteConfig={deleteVoiceConfig}
+                  onTestConfig={testVoiceConfig}
                   onLoadCalls={loadVoiceCalls}
                   onSelectCall={loadVoiceCall}
                   onSendMessage={sendVoiceMessage}
@@ -3459,6 +3624,7 @@ export default function Home() {
                   onRouteCall={routeVoiceCall}
                   onUpdateStatus={updateVoiceStatus}
                   onAssignCall={assignVoiceCall}
+                  onOpenRecording={openVoiceRecording}
                 />
               ) : null}
               {activeTab === "widget" ? (
