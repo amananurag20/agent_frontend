@@ -96,6 +96,31 @@ import type {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
 
+function whatsAppSettingsFromForm(
+  form: FormData,
+  existing: Record<string, unknown> = {},
+) {
+  const knowledgeScope = String(form.get("knowledgeScope") || "all");
+  return {
+    ...existing,
+    handoffKeywords: String(form.get("handoffKeywords") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    knowledgeScope,
+    folderIds:
+      knowledgeScope === "folders" ? form.getAll("folderIds").map(String) : [],
+    memoryEnabled: form.get("memoryEnabled") === "on",
+    recentMessageLimit: Number(form.get("recentMessageLimit") || 8),
+    lowConfidenceAction: String(
+      form.get("lowConfidenceAction") || "clarify",
+    ),
+    maxClarificationAttempts: Number(
+      form.get("maxClarificationAttempts") || 2,
+    ),
+  };
+}
+
 function streamPublicWidgetMessage(input: {
   conversation: Conversation;
   visitorToken: string;
@@ -377,6 +402,8 @@ export default function Home() {
   const [widgetConfig, setWidgetConfig] = useState<WidgetConfig | null>(null);
   const [widgetTestConversation, setWidgetTestConversation] =
     useState<Conversation | null>(null);
+  const [widgetTestMessageSending, setWidgetTestMessageSending] =
+    useState(false);
   const [widgetVisitorToken, setWidgetVisitorToken] = useState<string | null>(
     null,
   );
@@ -2180,7 +2207,7 @@ export default function Home() {
 
   async function sendWidgetTestMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!widgetConfig?.widgetKey) return;
+    if (!widgetConfig?.widgetKey || widgetTestMessageSending) return;
 
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
@@ -2188,81 +2215,86 @@ export default function Home() {
 
     if (!content) return;
 
-    const result = await run(async () => {
-      let conversation = widgetTestConversation;
-      let visitorToken = widgetVisitorToken;
+    formElement.reset();
+    setWidgetTestMessageSending(true);
+    try {
+      const result = await run(async () => {
+        let conversation = widgetTestConversation;
+        let visitorToken = widgetVisitorToken;
 
-      if (conversation?.status !== "open") {
-        conversation = null;
-        visitorToken = null;
-        setWidgetTestConversation(null);
-        setWidgetVisitorToken(null);
-      }
-
-      if (!conversation || !visitorToken) {
-        const created = await publicApi<PublicWidgetConversationCreated>(
-          `/customer-chat/widget/${widgetConfig.widgetKey}/conversations`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              visitorName: "Test Visitor",
-              visitorId: "console-test-visitor",
-              metadata: { source: "console_widget_test" },
-            }),
-          },
-        );
-
-        conversation = created.conversation;
-        visitorToken = created.visitorToken;
-        setWidgetVisitorToken(visitorToken);
-      }
-
-      try {
-        return await streamPublicWidgetMessage({
-          conversation,
-          visitorToken,
-          content,
-          onProgress: setWidgetTestConversation,
-        });
-      } catch (error) {
-        if ((error as { messageSent?: boolean }).messageSent) {
-          await new Promise((resolve) => window.setTimeout(resolve, 750));
-          return publicApi<Conversation>(
-            `/customer-chat/widget/conversations/${conversation.id}`,
-            { headers: { "x-visitor-token": visitorToken } },
-          );
+        if (conversation?.status !== "open") {
+          conversation = null;
+          visitorToken = null;
+          setWidgetTestConversation(null);
+          setWidgetVisitorToken(null);
         }
-        const sent = await publicApi<CustomerChatSendMessageResponse>(
-          `/customer-chat/widget/conversations/${conversation.id}/messages`,
-          {
-            method: "POST",
-            headers: { "x-visitor-token": visitorToken },
-            body: JSON.stringify({ content, clientMessageId: crypto.randomUUID() }),
-          },
-        );
-        return sent.conversation;
+
+        if (!conversation || !visitorToken) {
+          const created = await publicApi<PublicWidgetConversationCreated>(
+            `/customer-chat/widget/${widgetConfig.widgetKey}/conversations`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                visitorName: "Test Visitor",
+                visitorId: "console-test-visitor",
+                metadata: { source: "console_widget_test" },
+              }),
+            },
+          );
+
+          conversation = created.conversation;
+          visitorToken = created.visitorToken;
+          setWidgetVisitorToken(visitorToken);
+        }
+
+        try {
+          return await streamPublicWidgetMessage({
+            conversation,
+            visitorToken,
+            content,
+            onProgress: setWidgetTestConversation,
+          });
+        } catch (error) {
+          if ((error as { messageSent?: boolean }).messageSent) {
+            await new Promise((resolve) => window.setTimeout(resolve, 750));
+            return publicApi<Conversation>(
+              `/customer-chat/widget/conversations/${conversation.id}`,
+              { headers: { "x-visitor-token": visitorToken } },
+            );
+          }
+          const sent = await publicApi<CustomerChatSendMessageResponse>(
+            `/customer-chat/widget/conversations/${conversation.id}/messages`,
+            {
+              method: "POST",
+              headers: { "x-visitor-token": visitorToken },
+              body: JSON.stringify({ content, clientMessageId: crypto.randomUUID() }),
+            },
+          );
+          return sent.conversation;
+        }
+      }, "Widget test message sent");
+
+      if (result) {
+        setWidgetTestConversation(result);
+        setSelectedConversation(result);
+        setConversations((current) => {
+          const existing = current?.data ?? [];
+          const data = [
+            result,
+            ...existing.filter((conversation) => conversation.id !== result.id),
+          ];
+
+          return {
+            data,
+            total: Math.max(current?.total ?? 0, data.length),
+            page: current?.page ?? 1,
+            limit: current?.limit ?? 30,
+          };
+        });
+        setFilters({ status: "", search: "" });
       }
-    }, "Widget test message sent");
-
-    if (result) {
-      formElement.reset();
-      setWidgetTestConversation(result);
-      setSelectedConversation(result);
-      setConversations((current) => {
-        const existing = current?.data ?? [];
-        const data = [
-          result,
-          ...existing.filter((conversation) => conversation.id !== result.id),
-        ];
-
-        return {
-          data,
-          total: Math.max(current?.total ?? 0, data.length),
-          page: current?.page ?? 1,
-          limit: current?.limit ?? 30,
-        };
-      });
-      setFilters({ status: "", search: "" });
+    } finally {
+      setWidgetTestMessageSending(false);
     }
   }
 
@@ -3083,12 +3115,7 @@ export default function Home() {
                 : String(form.get("appSecret")) || undefined,
             defaultLocale: String(form.get("defaultLocale")) || "en",
             status: String(form.get("status") || "active"),
-            settings: {
-              handoffKeywords: String(form.get("handoffKeywords") || "")
-                .split(",")
-                .map((value) => value.trim())
-                .filter(Boolean),
-            },
+            settings: whatsAppSettingsFromForm(form),
           }),
         }),
       "WhatsApp config saved",
@@ -3129,13 +3156,7 @@ export default function Home() {
                 ? null
                 : String(form.get("appSecret")) || undefined,
             defaultLocale: String(form.get("defaultLocale")) || "en",
-            settings: {
-              ...existing.settings,
-              handoffKeywords: String(form.get("handoffKeywords") || "")
-                .split(",")
-                .map((value) => value.trim())
-                .filter(Boolean),
-            },
+            settings: whatsAppSettingsFromForm(form, existing.settings),
           }),
         }),
       "WhatsApp config updated",
@@ -3928,6 +3949,7 @@ export default function Home() {
                   currentUser={user}
                   canConfigure={whatsAppAccess.canConfigure}
                   canManageAgents={whatsAppAccess.canManageAgents}
+                  folders={knowledgeFolders}
                   filters={whatsAppFilters}
                   setFilters={setWhatsAppFilters}
                   onCreateConfig={createWhatsAppConfig}
@@ -3997,10 +4019,12 @@ export default function Home() {
                   onDelete={deleteWidgetConfig}
                   onPageChange={loadWidgetConfig}
                   testConversation={widgetTestConversation}
+                  isTestMessageSending={widgetTestMessageSending}
                   onSendTestMessage={sendWidgetTestMessage}
                   onResetTestChat={() => {
                     setWidgetTestConversation(null);
                     setWidgetVisitorToken(null);
+                    setWidgetTestMessageSending(false);
                   }}
                   apiBaseUrl={API_BASE_URL}
                 />

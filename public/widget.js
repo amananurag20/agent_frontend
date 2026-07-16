@@ -69,7 +69,8 @@
     ".ac-row-assistant .ac-bubble{border:1px solid #e1e7f0;border-top-left-radius:4px;background:#fff;color:#334155;box-shadow:0 2px 7px rgba(15,23,42,.04)}",
     ".ac-row-user .ac-bubble{border-top-right-radius:4px;background:var(--ac-color);color:#fff}",
     ".ac-citations{margin-top:7px;color:#64748b;font-size:10px;font-weight:600}",
-    ".ac-typing{display:flex;align-items:center;gap:4px;width:52px}",
+    ".ac-typing{display:flex;align-items:center;gap:5px;width:auto;color:#64748b}",
+    ".ac-thinking-label{margin-right:2px;font-size:11px;font-weight:600}",
     ".ac-typing i{width:6px;height:6px;border-radius:50%;background:#94a3b8;animation:ac-dot 1.2s infinite ease-in-out}",
     ".ac-typing i:nth-child(2){animation-delay:.15s}.ac-typing i:nth-child(3){animation-delay:.3s}",
     "@keyframes ac-dot{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}",
@@ -486,8 +487,8 @@
     row.className = "ac-row ac-row-assistant";
     var bubble = document.createElement("div");
     bubble.className = "ac-bubble ac-typing";
-    bubble.setAttribute("aria-label", "Assistant is typing");
-    bubble.innerHTML = "<i></i><i></i><i></i>";
+    bubble.setAttribute("aria-label", "Assistant is thinking");
+    bubble.innerHTML = '<span class="ac-thinking-label">Thinking</span><i></i><i></i><i></i>';
     row.appendChild(bubble);
     messages.appendChild(row);
   }

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type {
   FormHandler,
+  KnowledgeFolder,
   User,
   WhatsAppConfig,
   WhatsAppConversation,
@@ -38,6 +39,7 @@ type Props = {
   currentUser: User | null;
   canConfigure: boolean;
   canManageAgents: boolean;
+  folders: KnowledgeFolder[];
   filters: WhatsAppFilters;
   setFilters: (filters: WhatsAppFilters) => void;
   onCreateConfig: FormHandler;
@@ -76,6 +78,42 @@ function readKeywords(config?: WhatsAppConfig) {
     : "";
 }
 
+function readStringSetting(
+  config: WhatsAppConfig | undefined,
+  key: string,
+  fallback: string,
+) {
+  const value = config?.settings[key];
+  return typeof value === "string" ? value : fallback;
+}
+
+function readNumberSetting(
+  config: WhatsAppConfig | undefined,
+  key: string,
+  fallback: number,
+) {
+  const value = config?.settings[key];
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : fallback;
+}
+
+function readBooleanSetting(
+  config: WhatsAppConfig | undefined,
+  key: string,
+  fallback: boolean,
+) {
+  const value = config?.settings[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function readFolderIds(config?: WhatsAppConfig) {
+  const value = config?.settings.folderIds;
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 function remainingSession(expiresAt: string | null | undefined, now: number) {
   if (!expiresAt) return { open: false, label: "Window unavailable" };
   const remaining = new Date(expiresAt).getTime() - now;
@@ -100,6 +138,7 @@ export function WhatsAppView(props: Props) {
     currentUser,
     canConfigure,
     canManageAgents,
+    folders,
     filters,
     setFilters,
     onCreateConfig,
@@ -208,6 +247,7 @@ export function WhatsAppView(props: Props) {
             configs={configs}
             activeConfig={activeConfig}
             canConfigure={canConfigure}
+            folders={folders}
             onSelectConfig={onSelectConfig}
             onCreateConfig={onCreateConfig}
             onUpdateConfig={onUpdateConfig}
@@ -390,6 +430,7 @@ function ConfigurationPanel({
   configs,
   activeConfig,
   canConfigure,
+  folders,
   onSelectConfig,
   onCreateConfig,
   onUpdateConfig,
@@ -397,6 +438,7 @@ function ConfigurationPanel({
   configs: WhatsAppConfig[];
   activeConfig?: WhatsAppConfig;
   canConfigure: boolean;
+  folders: KnowledgeFolder[];
   onSelectConfig: (id: string) => void;
   onCreateConfig: FormHandler;
   onUpdateConfig: FormHandler;
@@ -457,6 +499,7 @@ function ConfigurationPanel({
               className="mt-4"
               onSubmit={onCreateConfig}
               submitLabel="Create config"
+              folders={folders}
             />
           </details>
         ) : null}
@@ -473,7 +516,7 @@ function ConfigurationPanel({
             <Settings className="h-4 w-4" />
             <h3 className="font-medium">Edit configuration</h3>
           </div>
-          <ConfigFields config={activeConfig} />
+          <ConfigFields config={activeConfig} folders={folders} />
           <button className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
             Save changes
           </button>
@@ -492,15 +535,17 @@ function ConfigurationPanel({
 function ConfigForm({
   onSubmit,
   submitLabel,
+  folders,
   className = "",
 }: {
   onSubmit: FormHandler;
   submitLabel: string;
+  folders: KnowledgeFolder[];
   className?: string;
 }) {
   return (
     <form onSubmit={onSubmit} className={`space-y-4 ${className}`}>
-      <ConfigFields />
+      <ConfigFields folders={folders} />
       <button className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
         {submitLabel}
       </button>
@@ -508,7 +553,20 @@ function ConfigForm({
   );
 }
 
-function ConfigFields({ config }: { config?: WhatsAppConfig }) {
+function ConfigFields({
+  config,
+  folders,
+}: {
+  config?: WhatsAppConfig;
+  folders: KnowledgeFolder[];
+}) {
+  const initialKnowledgeScope = readStringSetting(
+    config,
+    "knowledgeScope",
+    "all",
+  );
+  const [knowledgeScope, setKnowledgeScope] = useState(initialKnowledgeScope);
+  const selectedFolderIds = readFolderIds(config);
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -622,6 +680,103 @@ function ConfigFields({ config }: { config?: WhatsAppConfig }) {
             defaultValue={readKeywords(config)}
           />
         </Field>
+      </div>
+      <div className="rounded-xl border border-[var(--border-subtle)] p-4">
+        <h4 className="text-sm font-medium text-[var(--text-strong)]">
+          Knowledge and conversation memory
+        </h4>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          Ground answers in approved knowledge, retain recent context and
+          escalate when retrieval confidence stays low.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Knowledge scope">
+            <select
+              name="knowledgeScope"
+              className="input"
+              value={knowledgeScope}
+              onChange={(event) => setKnowledgeScope(event.target.value)}
+            >
+              <option value="all">All WhatsApp-visible knowledge</option>
+              <option value="folders">Selected folders</option>
+            </select>
+          </Field>
+          <Field label="Low-confidence action">
+            <select
+              name="lowConfidenceAction"
+              className="input"
+              defaultValue={readStringSetting(
+                config,
+                "lowConfidenceAction",
+                "clarify",
+              )}
+            >
+              <option value="clarify">Clarify, then hand off</option>
+              <option value="handoff">Hand off immediately</option>
+            </select>
+          </Field>
+        </div>
+        {knowledgeScope === "folders" ? (
+          <div className="mt-3 rounded-xl bg-[var(--surface-tint)] p-3">
+            <p className="text-xs font-medium">Allowed knowledge folders</p>
+            {folders.length ? (
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {folders.map((folder) => (
+                  <label
+                    key={folder.id}
+                    className="flex items-center gap-2 text-xs"
+                  >
+                    <input
+                      type="checkbox"
+                      name="folderIds"
+                      value={folder.id}
+                      defaultChecked={selectedFolderIds.includes(folder.id)}
+                    />
+                    {folder.name}
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-[var(--text-muted)]">
+                No knowledge folders are available for this organization.
+              </p>
+            )}
+          </div>
+        ) : null}
+        <label className="mt-4 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            name="memoryEnabled"
+            defaultChecked={readBooleanSetting(config, "memoryEnabled", true)}
+          />
+          Use recent messages for contextual follow-ups
+        </label>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <Field label="Recent message limit (4–20)">
+            <input
+              name="recentMessageLimit"
+              type="number"
+              min={4}
+              max={20}
+              className="input"
+              defaultValue={readNumberSetting(config, "recentMessageLimit", 8)}
+            />
+          </Field>
+          <Field label="Clarifications before handoff (1–3)">
+            <input
+              name="maxClarificationAttempts"
+              type="number"
+              min={1}
+              max={3}
+              className="input"
+              defaultValue={readNumberSetting(
+                config,
+                "maxClarificationAttempts",
+                2,
+              )}
+            />
+          </Field>
+        </div>
       </div>
     </>
   );

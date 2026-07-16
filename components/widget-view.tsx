@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FolderOpen,
   Globe2,
+  LoaderCircle,
   MessageCircle,
   MoreHorizontal,
   Palette,
@@ -63,6 +64,7 @@ export function WidgetView({
   onDelete,
   onPageChange,
   testConversation,
+  isTestMessageSending,
   onSendTestMessage,
   onResetTestChat,
   apiBaseUrl,
@@ -78,6 +80,7 @@ export function WidgetView({
   onDelete: (config: WidgetConfig) => void;
   onPageChange: (page: number) => void;
   testConversation: Conversation | null;
+  isTestMessageSending: boolean;
   onSendTestMessage: FormHandler;
   onResetTestChat: () => void;
   apiBaseUrl: string;
@@ -116,6 +119,7 @@ export function WidgetView({
       onSubmit={onSubmit}
       onDelete={() => onDelete(config)}
       testConversation={testConversation}
+      isTestMessageSending={isTestMessageSending}
       onSendTestMessage={onSendTestMessage}
       onResetTestChat={onResetTestChat}
       apiBaseUrl={apiBaseUrl}
@@ -130,6 +134,7 @@ function WidgetEditor({
   onSubmit,
   onDelete,
   testConversation,
+  isTestMessageSending,
   onSendTestMessage,
   onResetTestChat,
   apiBaseUrl,
@@ -140,6 +145,7 @@ function WidgetEditor({
   onSubmit: FormHandler;
   onDelete: () => void;
   testConversation: Conversation | null;
+  isTestMessageSending: boolean;
   onSendTestMessage: FormHandler;
   onResetTestChat: () => void;
   apiBaseUrl: string;
@@ -478,6 +484,7 @@ function WidgetEditor({
             config={config}
             appearance={appearance}
             conversation={testConversation}
+            isSending={isTestMessageSending}
             onSubmit={onSendTestMessage}
             onReset={onResetTestChat}
           />
@@ -1260,18 +1267,31 @@ function TestChat({
   config,
   appearance,
   conversation,
+  isSending,
   onSubmit,
   onReset,
 }: {
   config: WidgetConfig | null;
   appearance: WidgetAppearance;
   conversation: Conversation | null;
+  isSending: boolean;
   onSubmit: FormHandler;
   onReset: () => void;
 }) {
+  const lastMessage = conversation?.messages.at(-1);
+  const hasVisibleStreamingReply = Boolean(
+    lastMessage?.role === "assistant" &&
+      lastMessage.metadata?.streaming &&
+      lastMessage.content,
+  );
+  const showThinking = isSending && !hasVisibleStreamingReply;
+
   return (
     <form
-      onSubmit={onSubmit}
+      onSubmit={(event) => {
+        onSubmit(event);
+        event.currentTarget.reset();
+      }}
       className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]"
     >
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-5 py-4">
@@ -1341,6 +1361,20 @@ function TestChat({
             </p>
           </div>
         )}
+        {showThinking ? (
+          <div
+            className="flex w-fit items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-3 text-sm text-[var(--text-muted)]"
+            role="status"
+            aria-live="polite"
+          >
+            <span>Thinking</span>
+            <span className="flex items-center gap-1" aria-hidden="true">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
+            </span>
+          </div>
+        ) : null}
       </div>
 
       <div className="flex gap-2 border-t border-[var(--border-subtle)] p-4">
@@ -1350,13 +1384,21 @@ function TestChat({
           maxLength={2000}
           placeholder="Ask a customer question..."
           className="input min-w-0 flex-1"
-          disabled={!config?.enabled || !config?.widgetKey}
+          disabled={!config?.enabled || !config?.widgetKey || isSending}
         />
         <button
           className="flex h-10 items-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] hover:bg-[var(--accent-primary-strong)] disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={!config?.enabled || !config?.widgetKey}
+          disabled={!config?.enabled || !config?.widgetKey || isSending}
         >
-          <Send size={15} /> Send
+          {isSending ? (
+            <>
+              <LoaderCircle className="animate-spin" size={15} /> Thinking
+            </>
+          ) : (
+            <>
+              <Send size={15} /> Send
+            </>
+          )}
         </button>
       </div>
     </form>
