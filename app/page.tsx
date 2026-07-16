@@ -115,7 +115,14 @@ const navItems: Array<{ id: TabId; label: string }> = [
 const validTabIds = new Set<TabId>(navItems.map((item) => item.id));
 
 function parseMinuteOffsets(value: FormDataEntryValue | null): number[] {
-  return [...new Set(String(value ?? "").split(",").map((item) => Number(item.trim())).filter((item) => Number.isInteger(item) && item > 0))];
+  return [
+    ...new Set(
+      String(value ?? "")
+        .split(",")
+        .map((item) => Number(item.trim()))
+        .filter((item) => Number.isInteger(item) && item > 0),
+    ),
+  ];
 }
 
 function reminderTemplatesFromForm(form: FormData): Record<string, string> {
@@ -125,7 +132,10 @@ function reminderTemplatesFromForm(form: FormData): Record<string, string> {
       ["reminder", form.get("reminderTemplate")],
       ["emailSubject", form.get("emailSubjectTemplate")],
       ["whatsappTemplateName", form.get("whatsappTemplateName")],
-    ].filter((entry): entry is [string, FormDataEntryValue] => Boolean(entry[1] && String(entry[1]).trim()))
+    ]
+      .filter((entry): entry is [string, FormDataEntryValue] =>
+        Boolean(entry[1] && String(entry[1]).trim()),
+      )
       .map(([key, value]) => [key, String(value).trim()]),
   );
 }
@@ -590,12 +600,7 @@ export default function Home() {
     void connect();
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    token,
-    activeTab,
-    selectedOrganizationId,
-    selectedVoiceCall?.id,
-  ]);
+  }, [token, activeTab, selectedOrganizationId, selectedVoiceCall?.id]);
 
   useEffect(() => {
     if (!token || activeTab !== "whatsapp") return;
@@ -873,7 +878,11 @@ export default function Home() {
       baseTasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
     }
     if (canUse("voice_receptionist")) {
-      baseTasks.push(loadVoiceConfigs(), loadVoiceCalls(), loadVoiceOperations());
+      baseTasks.push(
+        loadVoiceConfigs(),
+        loadVoiceCalls(),
+        loadVoiceOperations(),
+      );
     }
     await Promise.all(baseTasks);
   }
@@ -2259,7 +2268,14 @@ export default function Home() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const adapter = String(form.get("adapter") || "");
-    await run(
+    const chatModel = String(form.get("chatModel")) || undefined;
+    const embeddingModel = String(form.get("embeddingModel")) || undefined;
+    const pricingOverrideEnabled = form.get("pricingOverrideEnabled") === "on";
+    const numberOrUndefined = (name: string) => {
+      const value = String(form.get(name) ?? "").trim();
+      return value ? Number(value) : undefined;
+    };
+    const result = await run(
       () =>
         api<AIProvider>("/ai/providers", {
           method: "POST",
@@ -2269,12 +2285,185 @@ export default function Home() {
             name: String(form.get("name")),
             baseUrl: String(form.get("baseUrl")) || undefined,
             apiKey: String(form.get("apiKey")) || undefined,
-            chatModel: String(form.get("chatModel")) || undefined,
-            embeddingModel: String(form.get("embeddingModel")) || undefined,
-            settings: adapter ? { adapter } : undefined,
+            chatModel,
+            embeddingModel,
+            settings: {
+              adapter,
+              pricingOverrideEnabled,
+              budgetMode: String(form.get("budgetMode") || "tracking"),
+              monthlyBudgetUsd: numberOrUndefined("monthlyBudgetUsd"),
+              ...(pricingOverrideEnabled
+                ? {
+                    pricing: {
+                      chatInputPerMillionUsd:
+                        numberOrUndefined("chatInputRate"),
+                      chatOutputPerMillionUsd:
+                        numberOrUndefined("chatOutputRate"),
+                      embeddingInputPerMillionUsd:
+                        numberOrUndefined("embeddingInputRate"),
+                    },
+                    modelPricing: {
+                      ...(chatModel
+                        ? {
+                            [chatModel]: {
+                              inputPerMillionUsd:
+                                numberOrUndefined("chatInputRate"),
+                              outputPerMillionUsd:
+                                numberOrUndefined("chatOutputRate"),
+                            },
+                          }
+                        : {}),
+                      ...(embeddingModel
+                        ? {
+                            [embeddingModel]: {
+                              inputPerMillionUsd:
+                                numberOrUndefined("embeddingInputRate"),
+                              outputPerMillionUsd: 0,
+                            },
+                          }
+                        : {}),
+                    },
+                  }
+                : {}),
+            },
           }),
         }),
       "AI provider saved",
+    );
+    if (result) await loadAIProviders();
+    return Boolean(result);
+  }
+
+  async function testAIProvider(id: string) {
+    await run(
+      () => api<AIProvider>(`/ai/providers/${id}/test`, { method: "POST" }),
+      "Provider validation completed",
+    );
+    await loadAIProviders();
+  }
+
+  async function setAIProviderStatus(
+    id: string,
+    status: "active" | "inactive",
+  ) {
+    await run(
+      () =>
+        api<AIProvider>(`/ai/providers/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status }),
+        }),
+      status === "active" ? "Provider activated" : "Provider disabled",
+    );
+    await loadAIProviders();
+  }
+
+  async function setPrimaryAIProvider(id: string) {
+    await run(
+      () => api<AIProvider>(`/ai/providers/${id}/primary`, { method: "POST" }),
+      "Primary provider updated",
+    );
+    await loadAIProviders();
+  }
+
+  async function deleteAIProvider(id: string) {
+    const result = await run(
+      () =>
+        api<{ deleted: boolean }>(`/ai/providers/${id}`, { method: "DELETE" }),
+      "Provider deleted",
+    );
+    if (result) await loadAIProviders();
+    return Boolean(result);
+  }
+
+  async function updateAIProvider(
+    id: string,
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    const provider = aiProviders.find((item) => item.id === id);
+    if (!provider) return false;
+    const form = new FormData(event.currentTarget);
+    const apiKey = String(form.get("apiKey") ?? "").trim();
+    const baseUrl = String(form.get("baseUrl") ?? "").trim();
+    const result = await run(
+      () =>
+        api<AIProvider>(`/ai/providers/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: String(form.get("name")),
+            provider: String(form.get("provider")),
+            baseUrl: baseUrl || null,
+            ...(apiKey ? { apiKey } : {}),
+            chatModel: String(form.get("chatModel")) || undefined,
+            embeddingModel: String(form.get("embeddingModel")) || undefined,
+            settings: {
+              ...provider.settings,
+              adapter: String(form.get("adapter")),
+            },
+          }),
+        }),
+      "AI provider updated; validate it before production traffic",
+    );
+    if (result) await loadAIProviders();
+    return Boolean(result);
+  }
+
+  async function updateAIProviderCostSettings(
+    id: string,
+    event: FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    const provider = aiProviders.find((item) => item.id === id);
+    if (!provider) return;
+    const form = new FormData(event.currentTarget);
+    const pricingOverrideEnabled = form.get("pricingOverrideEnabled") === "on";
+    const read = (name: string) => {
+      const value = String(form.get(name) ?? "").trim();
+      return value ? Number(value) : undefined;
+    };
+    await run(
+      () =>
+        api<AIProvider>(`/ai/providers/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            settings: {
+              ...provider.settings,
+              pricingOverrideEnabled,
+              budgetMode: String(form.get("budgetMode") || "tracking"),
+              monthlyBudgetUsd: read("monthlyBudgetUsd"),
+              ...(pricingOverrideEnabled
+                ? {
+                    pricing: {
+                      chatInputPerMillionUsd: read("chatInputRate"),
+                      chatOutputPerMillionUsd: read("chatOutputRate"),
+                      embeddingInputPerMillionUsd: read("embeddingInputRate"),
+                    },
+                    modelPricing: {
+                      ...((provider.settings.modelPricing as
+                        Record<string, unknown> | undefined) ?? {}),
+                      ...(provider.chatModel
+                        ? {
+                            [provider.chatModel]: {
+                              inputPerMillionUsd: read("chatInputRate"),
+                              outputPerMillionUsd: read("chatOutputRate"),
+                            },
+                          }
+                        : {}),
+                      ...(provider.embeddingModel
+                        ? {
+                            [provider.embeddingModel]: {
+                              inputPerMillionUsd: read("embeddingInputRate"),
+                              outputPerMillionUsd: 0,
+                            },
+                          }
+                        : {}),
+                    },
+                  }
+                : {}),
+            },
+          }),
+        }),
+      "Usage budget and pricing saved",
     );
     await loadAIProviders();
   }
@@ -3678,6 +3867,12 @@ export default function Home() {
                 <AIProvidersView
                   providers={aiProviders}
                   onCreate={createAIProvider}
+                  onTest={testAIProvider}
+                  onSetStatus={setAIProviderStatus}
+                  onSetPrimary={setPrimaryAIProvider}
+                  onUpdate={updateAIProvider}
+                  onDelete={deleteAIProvider}
+                  onUpdateCostSettings={updateAIProviderCostSettings}
                 />
               ) : null}
               {activeTab === "audit" ? <AuditView logs={auditLogs} /> : null}

@@ -139,12 +139,65 @@ export type AIProvider = {
   organizationId: string;
   provider: string;
   status: string;
+  priority: number;
   name: string;
   baseUrl?: string | null;
   hasApiKey: boolean;
   chatModel?: string | null;
   embeddingModel?: string | null;
   settings: Record<string, unknown>;
+  validationStatus: "untested" | "verified" | "failed" | string;
+  lastValidatedAt?: string | null;
+  validationLatency?: number | null;
+  validationError?: string | null;
+  validatedModels: string[];
+  usage?: {
+    periodStart: string;
+    periodEnd: string;
+    requests: number;
+    successes: number;
+    failures: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    averageLatencyMs: number;
+    estimatedCostUsd: number;
+    monthlyBudgetUsd: number | null;
+    budgetMode: "tracking" | "warn" | "block";
+    budgetExceeded: boolean;
+    remainingBudgetUsd: number | null;
+    budgetUsedPercent: number | null;
+    pricingConfigured: boolean;
+    modelPricing: Array<{
+      model: string;
+      capability: string;
+      inputPerMillionUsd: number | null;
+      outputPerMillionUsd: number | null;
+      source:
+        | "provider_catalog"
+        | "workspace_override"
+        | "workspace_default"
+        | "not_configured";
+      catalogUpdatedAt: string | null;
+      catalogVersion: string | null;
+      catalogSourceUrl: string | null;
+    }>;
+    vendorBalance: {
+      status: string;
+      remainingUsd: number | null;
+      reason: string;
+    };
+    breakdown: Array<{
+      date: string;
+      capability: string;
+      model: string;
+      requests: number;
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      estimatedCostUsd: number;
+    }>;
+  };
 };
 
 export type KnowledgeOcrProvider = {
