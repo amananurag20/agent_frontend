@@ -2,6 +2,7 @@
 
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { io } from "socket.io-client";
 import {
   BookOpenText,
   Bot,
@@ -94,6 +95,135 @@ import type {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
+
+function streamPublicWidgetMessage(input: {
+  conversation: Conversation;
+  visitorToken: string;
+  content: string;
+  onProgress: (conversation: Conversation) => void;
+}): Promise<Conversation> {
+  const clientMessageId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const visitorMessage = {
+    id: `optimistic-${clientMessageId}`,
+    role: "visitor" as const,
+    content: input.content,
+    metadata: {},
+    createdAt: now,
+    citations: [],
+  };
+  let streamed = "";
+  const baseMessages = [...input.conversation.messages, visitorMessage];
+  input.onProgress({ ...input.conversation, messages: baseMessages });
+
+  return new Promise((resolve, reject) => {
+    const apiUrl = new URL(API_BASE_URL);
+    const socket = io(apiUrl.origin, {
+      path: `${apiUrl.pathname.replace(/\/+$/, "")}/customer-chat/widget/socket.io`,
+      auth: {
+        conversationId: input.conversation.id,
+        visitorToken: input.visitorToken,
+      },
+      transports: ["websocket"],
+      reconnection: false,
+      timeout: 5000,
+      forceNew: true,
+    });
+    let settled = false;
+    let messageSent = false;
+    const connectionError = (message: string) =>
+      Object.assign(new Error(message), { messageSent });
+    const connectionTimer = window.setTimeout(() => {
+      settled = true;
+      cleanup();
+      reject(connectionError("Realtime connection timed out"));
+    }, 5000);
+    const generationTimer = window.setTimeout(() => {
+      settled = true;
+      cleanup();
+      reject(connectionError("AI response timed out"));
+    }, 180000);
+
+    function cleanup() {
+      window.clearTimeout(connectionTimer);
+      window.clearTimeout(generationTimer);
+      socket.disconnect();
+    }
+    socket.on("ready", () => {
+      window.clearTimeout(connectionTimer);
+      messageSent = true;
+      socket.emit("message.send", {
+        clientMessageId,
+        content: input.content,
+      });
+    });
+    socket.on("message.delta", (frame: { clientMessageId?: string; delta?: string }) => {
+      if (frame.clientMessageId !== clientMessageId) return;
+      streamed += frame.delta ?? "";
+      updateStreamingMessage();
+    });
+    socket.on(
+      "message.replace",
+      (frame: { clientMessageId?: string; content?: string }) => {
+        if (frame.clientMessageId !== clientMessageId) return;
+        streamed = frame.content ?? "";
+        updateStreamingMessage();
+      },
+    );
+    socket.on(
+      "message.completed",
+      (frame: {
+        clientMessageId?: string;
+        result?: CustomerChatSendMessageResponse;
+      }) => {
+        if (frame.clientMessageId !== clientMessageId || !frame.result) return;
+        settled = true;
+        cleanup();
+        resolve(frame.result.conversation);
+      },
+    );
+    socket.on(
+      "message.error",
+      (frame: { clientMessageId?: string; message?: string }) => {
+        if (frame.clientMessageId && frame.clientMessageId !== clientMessageId) return;
+        settled = true;
+        cleanup();
+        reject(connectionError(frame.message ?? "Realtime generation failed"));
+      },
+    );
+    socket.on("disconnect", () => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        reject(connectionError("Realtime connection closed"));
+      }
+    });
+    socket.on("connect_error", (error) => {
+      if (!settled) {
+        settled = true;
+        cleanup();
+        reject(connectionError(error.message || "Realtime connection failed"));
+      }
+    });
+
+    function updateStreamingMessage() {
+      input.onProgress({
+        ...input.conversation,
+        messages: [
+          ...baseMessages,
+          {
+            id: `streaming-${clientMessageId}`,
+            role: "assistant",
+            content: streamed,
+            metadata: { streaming: true },
+            createdAt: now,
+            citations: [],
+          },
+        ],
+      });
+    }
+  });
+}
 
 type ThemeMode = "light" | "dark";
 
@@ -2087,16 +2217,31 @@ export default function Home() {
         setWidgetVisitorToken(visitorToken);
       }
 
-      const sent = await publicApi<CustomerChatSendMessageResponse>(
-        `/customer-chat/widget/conversations/${conversation.id}/messages`,
-        {
-          method: "POST",
-          headers: { "x-visitor-token": visitorToken },
-          body: JSON.stringify({ content }),
-        },
-      );
-
-      return sent.conversation;
+      try {
+        return await streamPublicWidgetMessage({
+          conversation,
+          visitorToken,
+          content,
+          onProgress: setWidgetTestConversation,
+        });
+      } catch (error) {
+        if ((error as { messageSent?: boolean }).messageSent) {
+          await new Promise((resolve) => window.setTimeout(resolve, 750));
+          return publicApi<Conversation>(
+            `/customer-chat/widget/conversations/${conversation.id}`,
+            { headers: { "x-visitor-token": visitorToken } },
+          );
+        }
+        const sent = await publicApi<CustomerChatSendMessageResponse>(
+          `/customer-chat/widget/conversations/${conversation.id}/messages`,
+          {
+            method: "POST",
+            headers: { "x-visitor-token": visitorToken },
+            body: JSON.stringify({ content, clientMessageId: crypto.randomUUID() }),
+          },
+        );
+        return sent.conversation;
+      }
     }, "Widget test message sent");
 
     if (result) {

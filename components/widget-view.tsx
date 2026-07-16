@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
 import type {
   Conversation,
   FormHandler,
@@ -1309,7 +1310,11 @@ function TestChat({
                 }`}
                 style={isVisitor ? { backgroundColor: appearance.primaryColor } : undefined}
               >
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                {isVisitor ? (
+                  <p className="whitespace-pre-wrap">{message.content}</p>
+                ) : (
+                  <MarkdownMessage content={message.content} />
+                )}
                 {message.role === "assistant" ? (
                   <AiStatus metadata={message.metadata} />
                 ) : null}
@@ -1356,6 +1361,111 @@ function TestChat({
       </div>
     </form>
   );
+}
+
+type MarkdownBlock =
+  | { type: "code"; content: string }
+  | { type: "heading"; level: number; content: string }
+  | { type: "list"; ordered: boolean; items: string[] }
+  | { type: "paragraph"; content: string };
+
+function MarkdownMessage({ content }: { content: string }) {
+  const blocks = useMemo(() => parseMarkdown(content), [content]);
+  return (
+    <div className="space-y-2 whitespace-normal break-words">
+      {blocks.map((block, index) => {
+        if (block.type === "code") {
+          return (
+            <pre
+              key={index}
+              className="overflow-x-auto rounded-md bg-slate-950 p-3 text-xs leading-5 text-slate-100"
+            >
+              <code>{block.content}</code>
+            </pre>
+          );
+        }
+        if (block.type === "heading") {
+          return (
+            <p key={index} className="font-semibold text-[var(--text-strong)]">
+              {renderInlineMarkdown(block.content)}
+            </p>
+          );
+        }
+        if (block.type === "list") {
+          const List = block.ordered ? "ol" : "ul";
+          return (
+            <List
+              key={index}
+              className={`space-y-1 pl-5 ${block.ordered ? "list-decimal" : "list-disc"}`}
+            >
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+              ))}
+            </List>
+          );
+        }
+        return <p key={index}>{renderInlineMarkdown(block.content)}</p>;
+      })}
+    </div>
+  );
+}
+
+function parseMarkdown(content: string): MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  const lines = content.split("\n");
+  let codeLines: string[] | null = null;
+  let list: Extract<MarkdownBlock, { type: "list" }> | null = null;
+  for (const line of lines) {
+    if (line.trim().startsWith("```")) {
+      list = null;
+      if (codeLines) {
+        blocks.push({ type: "code", content: codeLines.join("\n") });
+        codeLines = null;
+      } else {
+        codeLines = [];
+      }
+      continue;
+    }
+    if (codeLines) {
+      codeLines.push(line);
+      continue;
+    }
+    const listMatch = line.match(/^\s*([-*]|\d+\.)\s+(.+)$/);
+    if (listMatch) {
+      const ordered = listMatch[1].endsWith(".");
+      if (!list || list.ordered !== ordered) {
+        list = { type: "list", ordered, items: [] };
+        blocks.push(list);
+      }
+      list.items.push(listMatch[2]);
+      continue;
+    }
+    list = null;
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      blocks.push({ type: "heading", level: heading[1].length, content: heading[2] });
+    } else if (line.trim()) {
+      blocks.push({ type: "paragraph", content: line });
+    }
+  }
+  if (codeLines) blocks.push({ type: "code", content: codeLines.join("\n") });
+  return blocks;
+}
+
+function renderInlineMarkdown(value: string): ReactNode[] {
+  return value.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code key={index} className="rounded bg-[var(--surface-hover-strong)] px-1 py-0.5 text-xs">
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return part;
+  });
 }
 
 function InstallPanel({

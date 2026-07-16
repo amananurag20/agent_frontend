@@ -28,7 +28,11 @@
     open: false,
     sending: false,
     refreshing: false,
-    streamAbort: null,
+    socket: null,
+    socketReady: false,
+    socketClientPromise: null,
+    activeClientMessageId: null,
+    streamingContent: "",
     error: "",
   };
 
@@ -61,6 +65,7 @@
     ".ac-row{display:flex;margin:0 0 12px}",
     ".ac-row-user{justify-content:flex-end}",
     ".ac-bubble{max-width:84%;border-radius:14px;padding:10px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word}",
+    ".ac-markdown{white-space:normal}.ac-markdown p{margin:0 0 8px}.ac-markdown p:last-child{margin-bottom:0}.ac-markdown h1,.ac-markdown h2,.ac-markdown h3{margin:8px 0 5px;font-size:1em;font-weight:700}.ac-markdown ul,.ac-markdown ol{margin:5px 0 8px;padding-left:20px}.ac-markdown pre{overflow:auto;margin:7px 0;border-radius:7px;background:#0f172a;padding:9px;color:#e2e8f0;font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}.ac-markdown code{border-radius:4px;background:#e9eef6;padding:1px 4px;font:11px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}.ac-markdown pre code{background:transparent;padding:0;color:inherit}",
     ".ac-row-assistant .ac-bubble{border:1px solid #e1e7f0;border-top-left-radius:4px;background:#fff;color:#334155;box-shadow:0 2px 7px rgba(15,23,42,.04)}",
     ".ac-row-user .ac-bubble{border-top-right-radius:4px;background:var(--ac-color);color:#fff}",
     ".ac-citations{margin-top:7px;color:#64748b;font-size:10px;font-weight:600}",
@@ -77,6 +82,7 @@
     ".ac-input::placeholder{color:#94a3b8}",
     ".ac-send{width:40px;height:40px;display:grid;place-items:center;flex:none;border:0;border-radius:10px;background:var(--ac-color);color:#fff;cursor:pointer}",
     ".ac-send:hover{background:var(--ac-color-dark)}.ac-send:disabled{cursor:not-allowed;opacity:.55}",
+    ".ac-send.ac-stop{background:#dc2626}.ac-send.ac-stop:hover{background:#b91c1c}",
     ".ac-send svg{width:17px;height:17px}",
     ".ac-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}",
     ".ac-handoff{border:0;background:transparent;padding:2px;color:#64748b;font:600 10px/1.3 inherit;cursor:pointer}",
@@ -114,6 +120,11 @@
   launcher.addEventListener("click", openWidget);
   closeButton.addEventListener("click", closeWidget);
   form.addEventListener("submit", onSubmit);
+  sendButton.addEventListener("click", function (event) {
+    if (!state.sending) return;
+    event.preventDefault();
+    cancelGeneration();
+  });
   handoffButton.addEventListener("click", requestHandoff);
   input.addEventListener("keydown", function (event) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -201,23 +212,35 @@
 
     try {
       await ensureConversation();
+      var clientMessageId = createId();
+      state.activeClientMessageId = clientMessageId;
+      state.conversation.messages[state.conversation.messages.length - 1].id = "optimistic-" + clientMessageId;
+      var socketReady = await ensureSocket(1500);
+      if (socketReady) {
+        state.socket.emit("message.send", {
+          clientMessageId: clientMessageId,
+          content: content,
+        });
+        return;
+      }
       var response = await apiRequest(
         "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/messages",
         {
           method: "POST",
           headers: { "x-visitor-token": state.session.visitorToken },
-          body: { content: content },
+          body: { content: content, clientMessageId: clientMessageId },
         },
       );
       state.conversation = response.conversation;
-      startRealtime();
     } catch (error) {
       state.error = readableError(error, "Your message could not be sent. Please try again.");
       removeOptimisticMessages();
       input.value = content;
       if (error && (error.status === 401 || error.status === 404)) clearSession();
     } finally {
+      if (state.socketReady && state.activeClientMessageId) return;
       state.sending = false;
+      state.activeClientMessageId = null;
       setSending(false);
       renderMessages();
       input.focus();
@@ -277,50 +300,124 @@
 
   function startRealtime() {
     if (!state.session || !state.session.conversationId || !state.session.visitorToken) return;
-    if (state.streamAbort) state.streamAbort.abort();
-    var controller = new AbortController();
-    state.streamAbort = controller;
-    void consumeRealtime(controller);
+    if (state.socket && (state.socket.connected || state.socket.active)) return;
+    void loadSocketClient().then(connectSocket).catch(function () {
+      state.socketReady = false;
+    });
   }
 
-  async function consumeRealtime(controller) {
-    try {
-      var response = await fetch(
-        apiBase + "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/events",
-        {
-          method: "GET",
-          headers: { "x-visitor-token": state.session.visitorToken },
-          mode: "cors",
-          credentials: "omit",
-          signal: controller.signal,
-        },
-      );
-      if (!response.ok || !response.body) throw Object.assign(new Error("Realtime unavailable"), { status: response.status });
-      var reader = response.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = "";
-      while (!controller.signal.aborted) {
-        var result = await reader.read();
-        if (result.done) break;
-        buffer += decoder.decode(result.value, { stream: true });
-        var blocks = buffer.split("\n\n");
-        buffer = blocks.pop() || "";
-        for (var index = 0; index < blocks.length; index += 1) {
-          if (blocks[index].indexOf("event: heartbeat") === -1) await refreshConversation();
-        }
-      }
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      if (error && (error.status === 401 || error.status === 404)) {
+  function connectSocket() {
+    if (!state.session || !window.io) return;
+    if (state.socket) state.socket.disconnect();
+    var details = socketDetails();
+    var socket = window.io(details.origin, {
+      path: details.path,
+      auth: {
+        conversationId: state.session.conversationId,
+        visitorToken: state.session.visitorToken,
+      },
+      transports: ["websocket"],
+      reconnection: true,
+      reconnectionAttempts: 8,
+      reconnectionDelay: 750,
+      reconnectionDelayMax: 10000,
+      timeout: 5000,
+      forceNew: true,
+    });
+    state.socket = socket;
+    socket.on("ready", function () {
+      if (state.socket !== socket) return;
+      state.socketReady = true;
+    });
+    socket.on("conversation.event", function (event) {
+      handleSocketEvent(socket, "conversation.event", event);
+    });
+    ["message.started", "message.delta", "message.replace", "message.completed", "message.cancelled", "message.error"].forEach(function (eventName) {
+      socket.on(eventName, function (payload) {
+        handleSocketEvent(socket, eventName, payload || {});
+      });
+    });
+    socket.on("disconnect", function () {
+      if (state.socket !== socket) return;
+      state.socketReady = false;
+      if (state.activeClientMessageId) void refreshConversation();
+    });
+    socket.on("connect_error", function (error) {
+      if (state.socket !== socket) return;
+      state.socketReady = false;
+      var code = error && error.data ? error.data.code : "";
+      if (code === "unauthorized" || code === "not_found") {
         clearSession();
-        return;
       }
+    });
+  }
+
+  function handleSocketEvent(socket, eventName, frame) {
+    if (state.socket !== socket) return;
+    if (eventName === "conversation.event") {
+      void refreshConversation();
+      return;
     }
-    if (!controller.signal.aborted) {
-      window.setTimeout(function () {
-        if (!controller.signal.aborted) startRealtime();
-      }, 3000);
+    if (frame.clientMessageId && frame.clientMessageId !== state.activeClientMessageId) return;
+    if (eventName === "message.started") {
+      state.streamingContent = "";
+      renderMessages(true);
+      return;
     }
+    if (eventName === "message.delta") {
+      state.streamingContent += frame.delta || "";
+      renderMessages(false);
+      return;
+    }
+    if (eventName === "message.replace") {
+      state.streamingContent = frame.content || "";
+      renderMessages(false);
+      return;
+    }
+    if (eventName === "message.completed") {
+      state.conversation = frame.result && frame.result.conversation ? frame.result.conversation : state.conversation;
+      finishGeneration();
+      return;
+    }
+    if (eventName === "message.cancelled") {
+      finishGeneration();
+      void refreshConversation();
+      return;
+    }
+    if (eventName === "message.error") {
+      state.error = frame.message || "The reply could not be completed.";
+      finishGeneration();
+    }
+  }
+
+  function finishGeneration() {
+    state.sending = false;
+    state.activeClientMessageId = null;
+    state.streamingContent = "";
+    setSending(false);
+    renderMessages();
+    input.focus();
+  }
+
+  function ensureSocket(timeoutMs) {
+    startRealtime();
+    if (state.socketReady) return Promise.resolve(true);
+    return new Promise(function (resolve) {
+      var started = Date.now();
+      var timer = window.setInterval(function () {
+        if (state.socketReady || Date.now() - started >= timeoutMs) {
+          window.clearInterval(timer);
+          resolve(state.socketReady);
+        }
+      }, 50);
+    });
+  }
+
+  function cancelGeneration() {
+    if (!state.activeClientMessageId || !state.socketReady) return;
+    state.socket.emit("message.cancel", {
+      clientMessageId: state.activeClientMessageId,
+    });
   }
 
   async function refreshConversation() {
@@ -353,7 +450,8 @@
       });
     }
 
-    if (showTyping) appendTyping();
+    if (state.streamingContent) appendBubble("assistant", state.streamingContent, []);
+    else if (showTyping || state.sending) appendTyping();
     if (state.error) appendError(state.error);
     setSending(state.sending);
     window.requestAnimationFrame(function () {
@@ -369,7 +467,8 @@
     var bubble = document.createElement("div");
     bubble.className = "ac-bubble";
     var text = document.createElement("div");
-    text.textContent = content || "";
+    if (isUser) text.textContent = content || "";
+    else renderMarkdown(text, content || "");
     bubble.appendChild(text);
     if (citations.length) {
       var citation = document.createElement("div");
@@ -401,8 +500,10 @@
   }
 
   function setSending(sending) {
-    sendButton.disabled = sending;
     input.disabled = sending;
+    sendButton.classList.toggle("ac-stop", sending);
+    sendButton.setAttribute("aria-label", sending ? "Stop generating" : "Send message");
+    sendButton.innerHTML = sending ? stopIcon() : sendIcon();
     handoffButton.disabled =
       sending || (state.conversation && state.conversation.status === "waiting_for_agent");
     handoffButton.textContent =
@@ -435,7 +536,7 @@
   }
 
   function destroyWidget() {
-    if (state.streamAbort) state.streamAbort.abort();
+    if (state.socket) state.socket.disconnect();
     rootHost.remove();
     try { delete window.AgentCoreWidget; } catch { window.AgentCoreWidget = undefined; }
   }
@@ -478,11 +579,45 @@
   }
 
   function clearSession() {
-    if (state.streamAbort) state.streamAbort.abort();
-    state.streamAbort = null;
+    if (state.socket) state.socket.disconnect();
+    state.socket = null;
+    state.socketReady = false;
+    state.activeClientMessageId = null;
+    state.streamingContent = "";
     state.session = null;
     state.conversation = null;
     try { localStorage.removeItem(storageKey); } catch {}
+  }
+
+  function socketDetails() {
+    var url = new URL(apiBase, window.location.href);
+    return {
+      origin: url.origin,
+      path: url.pathname.replace(/\/+$/, "") + "/customer-chat/widget/socket.io",
+      scriptUrl: url.origin + url.pathname.replace(/\/+$/, "") + "/customer-chat/widget/socket.io/socket.io.js",
+    };
+  }
+
+  function loadSocketClient() {
+    if (typeof window.io === "function") return Promise.resolve();
+    if (state.socketClientPromise) return state.socketClientPromise;
+    state.socketClientPromise = new Promise(function (resolve, reject) {
+      var clientScript = document.createElement("script");
+      clientScript.src = socketDetails().scriptUrl;
+      clientScript.async = true;
+      clientScript.onload = function () {
+        if (typeof window.io === "function") resolve();
+        else reject(new Error("Socket.IO client did not initialize"));
+      };
+      clientScript.onerror = function () {
+        reject(new Error("Socket.IO client could not be loaded"));
+      };
+      document.head.appendChild(clientScript);
+    }).catch(function (error) {
+      state.socketClientPromise = null;
+      throw error;
+    });
+    return state.socketClientPromise;
   }
 
   function createId() {
@@ -522,6 +657,65 @@
   }
   function closeIcon() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  }
+  function stopIcon() {
+    return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>';
+  }
+
+  function renderMarkdown(container, value) {
+    container.className = "ac-markdown";
+    var lines = String(value || "").split("\n");
+    var code = null;
+    var list = null;
+    lines.forEach(function (line) {
+      if (/^```/.test(line.trim())) {
+        if (code) { container.appendChild(code.pre); code = null; }
+        else {
+          var pre = document.createElement("pre");
+          var codeNode = document.createElement("code");
+          pre.appendChild(codeNode);
+          code = { pre: pre, node: codeNode };
+        }
+        list = null;
+        return;
+      }
+      if (code) {
+        code.node.appendChild(document.createTextNode((code.node.textContent ? "\n" : "") + line));
+        return;
+      }
+      var listMatch = line.match(/^\s*([-*]|\d+\.)\s+(.+)$/);
+      if (listMatch) {
+        var tag = /\d+\./.test(listMatch[1]) ? "ol" : "ul";
+        if (!list || list.tagName.toLowerCase() !== tag) {
+          list = document.createElement(tag);
+          container.appendChild(list);
+        }
+        var item = document.createElement("li");
+        appendInlineMarkdown(item, listMatch[2]);
+        list.appendChild(item);
+        return;
+      }
+      list = null;
+      var heading = line.match(/^(#{1,3})\s+(.+)$/);
+      var node = document.createElement(heading ? "h" + heading[1].length : "p");
+      appendInlineMarkdown(node, heading ? heading[2] : line);
+      if (line || heading) container.appendChild(node);
+    });
+    if (code) container.appendChild(code.pre);
+  }
+
+  function appendInlineMarkdown(container, value) {
+    var pattern = /(?:\*\*[^*]+\*\*|`[^`]+`)/g;
+    var last = 0;
+    String(value).replace(pattern, function (match, offset) {
+      container.appendChild(document.createTextNode(value.slice(last, offset)));
+      var node = document.createElement(match.slice(0, 2) === "**" ? "strong" : "code");
+      node.textContent = match.slice(match.slice(0, 2) === "**" ? 2 : 1, match.slice(0, 2) === "**" ? -2 : -1);
+      container.appendChild(node);
+      last = offset + match.length;
+      return match;
+    });
+    container.appendChild(document.createTextNode(value.slice(last)));
   }
   function sparkleIcon() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3-1.9 5.1L5 10l5.1 1.9L12 17l1.9-5.1L19 10l-5.1-1.9Z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></svg>';
