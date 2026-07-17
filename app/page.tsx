@@ -1,7 +1,8 @@
 "use client";
 
 import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import {
   BookOpenText,
@@ -26,6 +27,7 @@ import { AppointmentsView } from "@/components/appointments-view";
 import { AuditView } from "@/components/audit-view";
 import { DashboardView } from "@/components/dashboard-view";
 import { InboxView } from "@/components/inbox-view";
+import { HandoffNotifications } from "@/components/handoff-notifications";
 import { KnowledgeView } from "@/components/knowledge-view";
 import { LoginPanel } from "@/components/login-panel";
 import { OrganizationsView } from "@/components/organizations-view";
@@ -252,6 +254,17 @@ function streamPublicWidgetMessage(input: {
 
 type ThemeMode = "light" | "dark";
 
+type CustomerChatRealtimeEvent = {
+  type:
+    | "conversation.created"
+    | "conversation.updated"
+    | "message.created"
+    | "handoff.requested";
+  conversationId: string;
+  organizationId: string;
+  occurredAt: string;
+};
+
 const navItems: Array<{ id: TabId; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "organizations", label: "Organizations" },
@@ -267,7 +280,76 @@ const navItems: Array<{ id: TabId; label: string }> = [
   { id: "audit", label: "Audit" },
 ];
 
-const validTabIds = new Set<TabId>(navItems.map((item) => item.id));
+const tabRoutes: Record<TabId, string> = {
+  dashboard: "/dashboard",
+  organizations: "/organizations",
+  inbox: "/inbox",
+  knowledge: "/knowledge",
+  appointments: "/appointments",
+  whatsapp: "/whatsapp",
+  voice: "/voice",
+  widget: "/widget",
+  users: "/users",
+  products: "/products",
+  ai: "/ai-providers",
+  audit: "/audit",
+};
+
+const routeTabs = new Map<string, TabId>(
+  Object.entries(tabRoutes).map(([tab, path]) => [path, tab as TabId]),
+);
+
+function tabFromPathname(pathname: string): TabId | null {
+  if (pathname === "/") return "dashboard";
+  return routeTabs.get(pathname.replace(/\/$/, "")) ?? null;
+}
+
+function parseCustomerChatEvent(block: string): CustomerChatRealtimeEvent | null {
+  if (!block || block.includes("event: heartbeat")) return null;
+  const data = block
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .join("\n");
+  if (!data) return null;
+
+  try {
+    return JSON.parse(data) as CustomerChatRealtimeEvent;
+  } catch {
+    return null;
+  }
+}
+
+async function playHandoffChime() {
+  const AudioContextClass =
+    window.AudioContext ??
+    (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  try {
+    const context = new AudioContextClass();
+    if (context.state === "suspended") await context.resume();
+    const master = context.createGain();
+    master.gain.setValueAtTime(0.0001, context.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
+    master.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.48);
+    master.connect(context.destination);
+
+    [0, 0.14].forEach((delay, index) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = index === 0 ? 740 : 988;
+      oscillator.connect(master);
+      oscillator.start(context.currentTime + delay);
+      oscillator.stop(context.currentTime + delay + 0.22);
+    });
+
+    window.setTimeout(() => void context.close(), 650);
+  } catch {
+    // Browsers may block audio until the user has interacted with the page.
+  }
+}
 
 function parseMinuteOffsets(value: FormDataEntryValue | null): number[] {
   return [
@@ -362,12 +444,14 @@ const navMeta: Record<
 };
 
 export default function Home() {
+  const pathname = usePathname();
+  const router = useRouter();
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
+  const activeTab = tabFromPathname(pathname) ?? "dashboard";
   const [health, setHealth] = useState<Health | null>(null);
   const [observability, setObservability] =
     useState<ObservabilitySummary | null>(null);
@@ -392,6 +476,13 @@ export default function Home() {
   );
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
+  const [handoffNotifications, setHandoffNotifications] = useState<
+    Conversation[]
+  >([]);
+  const [handoffNotificationTotal, setHandoffNotificationTotal] = useState(0);
+  const [notificationSoundEnabled, setNotificationSoundEnabled] =
+    useState(true);
+  const handoffNotificationIds = useRef(new Set<string>());
   const [widgetConfigs, setWidgetConfigs] = useState<WidgetConfig[]>([]);
   const [widgetPageInfo, setWidgetPageInfo] = useState<WidgetPageInfo>({
     page: 1,
@@ -618,20 +709,21 @@ export default function Home() {
       return true;
     });
   }, [products, user]);
+  const canAccessInbox = visibleNavItems.some((item) => item.id === "inbox");
 
   useEffect(() => {
     const restoreSession = window.setTimeout(() => {
       try {
         const storedUser = window.localStorage.getItem("agentcore_user");
         const storedTheme = window.localStorage.getItem("agentcore_theme");
-        const storedTab = window.localStorage.getItem("agentcore_active_tab");
+        const storedNotificationSound = window.localStorage.getItem(
+          "agentcore_notification_sound",
+        );
         setToken(window.localStorage.getItem("agentcore_token"));
         setRefreshToken(window.localStorage.getItem("agentcore_refresh_token"));
         setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
         setTheme(storedTheme === "dark" ? "dark" : "light");
-        if (storedTab && validTabIds.has(storedTab as TabId)) {
-          setActiveTab(storedTab as TabId);
-        }
+        setNotificationSoundEnabled(storedNotificationSound !== "off");
       } catch {
         clearSession();
       } finally {
@@ -648,8 +740,13 @@ export default function Home() {
   }, [theme]);
 
   useEffect(() => {
-    window.localStorage.setItem("agentcore_active_tab", activeTab);
-  }, [activeTab]);
+    if (!token || activeTab !== "inbox") return;
+    const conversationId = new URLSearchParams(window.location.search).get(
+      "conversation",
+    );
+    if (conversationId) void loadConversation(conversationId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeTab]);
 
   useEffect(() => {
     if (!token) return;
@@ -669,7 +766,7 @@ export default function Home() {
   }, [selectedOrganizationId]);
 
   useEffect(() => {
-    if (!token || activeTab !== "inbox") return;
+    if (!token || !canAccessInbox) return;
     const controller = new AbortController();
     const selectedId = selectedConversation?.id;
     const organizationId = selectedOrganizationId ?? user?.orgId;
@@ -695,9 +792,18 @@ export default function Home() {
           buffer += decoder.decode(result.value, { stream: true });
           const blocks = buffer.split("\n\n");
           buffer = blocks.pop() ?? "";
-          if (blocks.some((block) => !block.includes("event: heartbeat"))) {
-            await loadConversations();
-            if (selectedId) await loadConversation(selectedId);
+          for (const block of blocks) {
+            const event = parseCustomerChatEvent(block);
+            if (!event) continue;
+            await loadHandoffNotifications(
+              event.type === "handoff.requested"
+                ? event.conversationId
+                : undefined,
+            );
+            if (activeTab === "inbox") {
+              await loadConversations();
+              if (selectedId) await loadConversation(selectedId);
+            }
           }
         }
       } catch {
@@ -708,10 +814,18 @@ export default function Home() {
       }
     }
 
+    void loadHandoffNotifications();
     void connect();
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeTab, selectedOrganizationId, selectedConversation?.id]);
+  }, [
+    token,
+    canAccessInbox,
+    activeTab,
+    selectedOrganizationId,
+    selectedConversation?.id,
+    notificationSoundEnabled,
+  ]);
 
   useEffect(() => {
     if (!token || activeTab !== "voice") return;
@@ -1019,7 +1133,11 @@ export default function Home() {
       baseTasks.push(loadKnowledgeSources());
     }
     if (canUse("customer_chat")) {
-      baseTasks.push(loadConversations(), loadWidgetConfig());
+      baseTasks.push(
+        loadConversations(),
+        loadHandoffNotifications(),
+        loadWidgetConfig(),
+      );
     }
     if (canUse("appointment_booking")) {
       baseTasks.push(
@@ -1048,6 +1166,9 @@ export default function Home() {
     setProducts([]);
     setConversations(null);
     setSelectedConversation(null);
+    setHandoffNotifications([]);
+    setHandoffNotificationTotal(0);
+    handoffNotificationIds.current.clear();
     setWidgetConfigs([]);
     setWidgetConfig(null);
     setWidgetTestConversation(null);
@@ -1077,7 +1198,11 @@ export default function Home() {
     ];
 
     if (isEnabled("customer_chat")) {
-      tasks.push(loadConversations(), loadWidgetConfig());
+      tasks.push(
+        loadConversations(),
+        loadHandoffNotifications(),
+        loadWidgetConfig(),
+      );
     }
     if (isEnabled("appointment_booking")) {
       tasks.push(
@@ -1197,11 +1322,74 @@ export default function Home() {
     }
   }
 
+  async function loadHandoffNotifications(newHandoffId?: string) {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams({
+      status: "waiting_for_agent",
+      limit: "25",
+      ...(organizationId ? { organizationId } : {}),
+    });
+
+    try {
+      const result = await api<ConversationList>(
+        `/customer-chat/conversations?${params.toString()}`,
+      );
+      const nextIds = new Set(result.data.map((conversation) => conversation.id));
+      const shouldPlaySound = Boolean(
+        newHandoffId &&
+          nextIds.has(newHandoffId) &&
+          !handoffNotificationIds.current.has(newHandoffId) &&
+          notificationSoundEnabled,
+      );
+      handoffNotificationIds.current = nextIds;
+      setHandoffNotifications(result.data);
+      setHandoffNotificationTotal(result.total);
+      if (shouldPlaySound) void playHandoffChime();
+    } catch {
+      // Keep the last notification snapshot and let the realtime stream reconnect.
+    }
+  }
+
   async function loadConversation(id: string) {
     const result = await run(() =>
       api<Conversation>(`/customer-chat/conversations/${id}`),
     );
     if (result) setSelectedConversation(result);
+  }
+
+  function navigateToTab(tab: TabId) {
+    router.push(tabRoutes[tab]);
+  }
+
+  function openHandoffNotification(conversation: Conversation) {
+    setFilters({ status: "waiting_for_agent", search: "" });
+    setSelectedConversation(conversation);
+    setConversations((current) => {
+      const existing = current?.data ?? [];
+      const data = [
+        conversation,
+        ...existing.filter((item) => item.id !== conversation.id),
+      ];
+      return {
+        data,
+        total: Math.max(current?.total ?? 0, data.length),
+        page: current?.page ?? 1,
+        limit: current?.limit ?? 30,
+      };
+    });
+    router.push(`/inbox?conversation=${encodeURIComponent(conversation.id)}`);
+    void loadConversation(conversation.id);
+  }
+
+  function toggleNotificationSound() {
+    setNotificationSoundEnabled((current) => {
+      const next = !current;
+      window.localStorage.setItem(
+        "agentcore_notification_sound",
+        next ? "on" : "off",
+      );
+      return next;
+    });
   }
 
   async function loadWidgetConfig(page = 1) {
@@ -1677,6 +1865,9 @@ export default function Home() {
     setOrganization(null);
     setOrganizations([]);
     setSelectedConversation(null);
+    setHandoffNotifications([]);
+    setHandoffNotificationTotal(0);
+    handoffNotificationIds.current.clear();
     setSelectedWhatsAppConversation(null);
     setSelectedVoiceCall(null);
   }
@@ -3754,7 +3945,7 @@ export default function Home() {
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => navigateToTab(item.id)}
                   className={`group flex h-11 w-full items-center gap-3 rounded-md px-3 text-sm transition ${
                     activeTab === item.id
                       ? "bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-[var(--shadow-soft)]"
@@ -3796,7 +3987,7 @@ export default function Home() {
         </aside>
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex min-h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-header)] px-4 backdrop-blur md:px-7">
+          <header className="relative z-50 flex min-h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--surface-header)] px-4 backdrop-blur md:px-7">
             <div className="flex items-center gap-3">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-tint)] text-[10px] font-bold text-[var(--accent-primary)] lg:hidden">
                 AC
@@ -3815,11 +4006,15 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {health ? (
-                <div className="hidden items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 py-2 text-xs text-[var(--text-muted)] sm:flex">
-                  <span className="h-2 w-2 rounded-full bg-[var(--accent-secondary)] shadow-[0_0_10px_rgba(45,212,191,0.65)]" />
-                  API {health.status} · DB {health.database}
-                </div>
+              {canAccessInbox ? (
+                <HandoffNotifications
+                  notifications={handoffNotifications}
+                  total={handoffNotificationTotal}
+                  storageKey={`agentcore_seen_handoffs:${user?.id ?? "anonymous"}:${selectedOrganizationId ?? user?.orgId ?? "platform"}`}
+                  soundEnabled={notificationSoundEnabled}
+                  onToggleSound={toggleNotificationSound}
+                  onSelect={openHandoffNotification}
+                />
               ) : null}
               <button
                 type="button"
@@ -3849,7 +4044,6 @@ export default function Home() {
                   <SunMedium className="h-4 w-4" />
                 )}
               </button>
-              <StatusPill status={health?.status ?? "checking"} />
               {user ? (
                 <button
                   onClick={handleLogout}
@@ -3866,7 +4060,7 @@ export default function Home() {
               {visibleNavItems.map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setActiveTab(item.id)}
+                  onClick={() => navigateToTab(item.id)}
                   className={`h-9 shrink-0 rounded-md px-3 text-sm ${
                     activeTab === item.id
                       ? "bg-[var(--accent-primary)] text-[var(--text-on-accent)]"
