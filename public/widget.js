@@ -44,7 +44,7 @@
     ".ac-root.ac-left{right:auto;left:24px}",
     ".ac-launcher{height:56px;display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:0 20px;background:var(--ac-color);color:#fff;font:600 14px/1 inherit;box-shadow:0 14px 38px rgba(15,23,42,.24);cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background .16s ease}",
     ".ac-launcher:hover{background:var(--ac-color-dark);transform:translateY(-1px);box-shadow:0 17px 42px rgba(15,23,42,.28)}",
-    ".ac-launcher:focus-visible,.ac-close:focus-visible,.ac-send:focus-visible,.ac-handoff:focus-visible,.ac-retry:focus-visible,.ac-input:focus-visible{outline:3px solid rgba(14,165,233,.45);outline-offset:2px}",
+    ".ac-launcher:focus-visible,.ac-close:focus-visible,.ac-new-chat:focus-visible,.ac-send:focus-visible,.ac-handoff:focus-visible,.ac-retry:focus-visible,.ac-confirm-button:focus-visible,.ac-input:focus-visible{outline:3px solid rgba(14,165,233,.45);outline-offset:2px}",
     ".ac-launcher svg{width:21px;height:21px;flex:none}",
     ".ac-panel{position:absolute;right:0;bottom:70px;width:min(380px,calc(100vw - 32px));height:min(620px,calc(100vh - 112px));display:none;grid-template-rows:auto 1fr auto;overflow:hidden;border:1px solid #dbe4f0;border-radius:18px;background:#fff;box-shadow:0 24px 72px rgba(15,23,42,.23);transform-origin:bottom right}",
     ".ac-left .ac-panel{right:auto;left:0;transform-origin:bottom left}",
@@ -58,9 +58,11 @@
     ".ac-name{margin:0;overflow:hidden;font-size:14px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}",
     ".ac-presence{display:flex;align-items:center;gap:6px;margin:2px 0 0;color:rgba(255,255,255,.82);font-size:11px}",
     ".ac-presence:before{content:\"\";width:6px;height:6px;border-radius:50%;background:#86efac}",
-    ".ac-close{width:34px;height:34px;display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:transparent;color:#fff;cursor:pointer}",
-    ".ac-close:hover{background:rgba(255,255,255,.13)}",
-    ".ac-close svg{width:19px;height:19px}",
+    ".ac-header-actions{display:flex;align-items:center;gap:2px}",
+    ".ac-close,.ac-new-chat{width:34px;height:34px;display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:transparent;color:#fff;cursor:pointer}",
+    ".ac-close:hover,.ac-new-chat:hover{background:rgba(255,255,255,.13)}",
+    ".ac-close svg,.ac-new-chat svg{width:19px;height:19px}",
+    ".ac-new-chat:disabled{cursor:not-allowed;opacity:.5}",
     ".ac-messages{overflow-y:auto;padding:16px;background:#f6f8fc;scroll-behavior:smooth}",
     ".ac-row{display:flex;margin:0 0 12px}",
     ".ac-row-user{justify-content:flex-end}",
@@ -89,6 +91,15 @@
     ".ac-handoff{border:0;background:transparent;padding:2px;color:#64748b;font:600 10px/1.3 inherit;cursor:pointer}",
     ".ac-handoff:hover{color:var(--ac-color);text-decoration:underline}.ac-handoff:disabled{cursor:default;color:#94a3b8;text-decoration:none}",
     ".ac-footer{margin-top:8px;text-align:center;color:#94a3b8;font-size:9px}",
+    ".ac-confirm{position:absolute;inset:0;z-index:5;display:grid;place-items:center;background:rgba(15,23,42,.48);padding:22px}",
+    ".ac-confirm-card{width:100%;border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:18px;box-shadow:0 18px 44px rgba(15,23,42,.24)}",
+    ".ac-confirm-title{margin:0;color:#172033;font-size:15px;font-weight:700}",
+    ".ac-confirm-copy{margin:7px 0 16px;color:#64748b;font-size:12px;line-height:1.55}",
+    ".ac-confirm-actions{display:flex;justify-content:flex-end;gap:8px}",
+    ".ac-confirm-button{min-height:38px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 13px;color:#334155;font:600 12px/1 inherit;cursor:pointer}",
+    ".ac-confirm-button:hover{background:#f8fafc}.ac-confirm-button:disabled{cursor:not-allowed;opacity:.55}",
+    ".ac-confirm-primary{border-color:var(--ac-color);background:var(--ac-color);color:#fff}",
+    ".ac-confirm-primary:hover{background:var(--ac-color-dark)}",
     ".ac-hidden{display:none!important}",
     "@media(max-width:520px){.ac-root,.ac-root.ac-left{right:12px;bottom:12px;left:12px}.ac-launcher{margin-left:auto}.ac-left .ac-launcher{margin-right:auto;margin-left:0}.ac-panel,.ac-left .ac-panel{position:fixed;inset:12px;width:auto;height:auto;border-radius:16px}.ac-open .ac-panel{display:grid}.ac-open .ac-launcher{display:none}}",
     "@media(prefers-reduced-motion:reduce){.ac-panel,.ac-launcher,.ac-messages{animation:none!important;transition:none!important;scroll-behavior:auto}}",
@@ -101,17 +112,27 @@
     '<section class="ac-panel" role="dialog" aria-label="Customer support chat" aria-modal="false">' +
     '<header class="ac-header"><div class="ac-avatar" aria-hidden="true">' + sparkleIcon() + '</div>' +
     '<div class="ac-identity"><p class="ac-name">AI Assistant</p><p class="ac-presence">Online</p></div>' +
-    '<button class="ac-close" type="button" aria-label="Close chat">' + closeIcon() + '</button></header>' +
+    '<div class="ac-header-actions"><button class="ac-new-chat ac-hidden" type="button" aria-label="Start a new conversation" title="Start a new conversation">' + refreshIcon() + '</button>' +
+    '<button class="ac-close" type="button" aria-label="Close chat">' + closeIcon() + '</button></div></header>' +
     '<main class="ac-messages" role="log" aria-live="polite" aria-relevant="additions"></main>' +
     '<footer class="ac-composer"><form class="ac-form"><textarea class="ac-input" rows="1" maxlength="2000" placeholder="Type your message..." aria-label="Message"></textarea>' +
     '<button class="ac-send" type="submit" aria-label="Send message">' + sendIcon() + '</button></form>' +
-    '<div class="ac-actions"><button class="ac-handoff" type="button">Talk to a human</button><span class="ac-footer">Powered by AgentCore</span></div></footer></section>' +
+    '<div class="ac-actions"><button class="ac-handoff" type="button">Talk to a human</button><span class="ac-footer">Powered by AgentCore</span></div></footer>' +
+    '<div class="ac-confirm ac-hidden" role="alertdialog" aria-modal="true" aria-labelledby="ac-confirm-title"><div class="ac-confirm-card">' +
+    '<p class="ac-confirm-title" id="ac-confirm-title">Start a new conversation?</p>' +
+    '<p class="ac-confirm-copy">This conversation will be closed and kept in support history. Your new chat will start with a clean context.</p>' +
+    '<div class="ac-confirm-actions"><button class="ac-confirm-button ac-confirm-cancel" type="button">Cancel</button>' +
+    '<button class="ac-confirm-button ac-confirm-primary ac-confirm-start" type="button">Start new</button></div></div></div></section>' +
     '<button class="ac-launcher" type="button" aria-label="Open support chat">' + chatIcon() + '<span>Chat with us</span></button>';
   shadow.appendChild(root);
 
   var panel = root.querySelector(".ac-panel");
   var launcher = root.querySelector(".ac-launcher");
   var closeButton = root.querySelector(".ac-close");
+  var newChatButton = root.querySelector(".ac-new-chat");
+  var confirmDialog = root.querySelector(".ac-confirm");
+  var confirmCancelButton = root.querySelector(".ac-confirm-cancel");
+  var confirmStartButton = root.querySelector(".ac-confirm-start");
   var messages = root.querySelector(".ac-messages");
   var form = root.querySelector(".ac-form");
   var input = root.querySelector(".ac-input");
@@ -120,6 +141,17 @@
 
   launcher.addEventListener("click", openWidget);
   closeButton.addEventListener("click", closeWidget);
+  newChatButton.addEventListener("click", showNewChatConfirmation);
+  confirmCancelButton.addEventListener("click", hideNewChatConfirmation);
+  confirmStartButton.addEventListener("click", startNewConversation);
+  confirmDialog.addEventListener("click", function (event) {
+    if (event.target === confirmDialog) hideNewChatConfirmation();
+  });
+  panel.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    if (!confirmDialog.classList.contains("ac-hidden")) hideNewChatConfirmation();
+    else closeWidget();
+  });
   form.addEventListener("submit", onSubmit);
   sendButton.addEventListener("click", function (event) {
     if (!state.sending) return;
@@ -454,6 +486,7 @@
     if (state.streamingContent) appendBubble("assistant", state.streamingContent, []);
     else if (showTyping || state.sending) appendTyping();
     if (state.error) appendError(state.error);
+    newChatButton.classList.toggle("ac-hidden", !state.session);
     setSending(state.sending);
     window.requestAnimationFrame(function () {
       messages.scrollTop = messages.scrollHeight;
@@ -502,6 +535,12 @@
 
   function setSending(sending) {
     input.disabled = sending;
+    newChatButton.disabled = sending;
+    confirmCancelButton.disabled = sending;
+    confirmStartButton.disabled = sending;
+    confirmDialog.setAttribute("aria-busy", sending ? "true" : "false");
+    confirmStartButton.textContent =
+      sending && !confirmDialog.classList.contains("ac-hidden") ? "Starting..." : "Start new";
     sendButton.classList.toggle("ac-stop", sending);
     sendButton.setAttribute("aria-label", sending ? "Stop generating" : "Send message");
     sendButton.innerHTML = sending ? stopIcon() : sendIcon();
@@ -529,11 +568,52 @@
   }
 
   function closeWidget() {
+    hideNewChatConfirmation();
     state.open = false;
     root.classList.remove("ac-open");
     panel.setAttribute("aria-modal", "false");
     launcher.setAttribute("aria-expanded", "false");
     launcher.focus();
+  }
+
+  function showNewChatConfirmation() {
+    if (!state.session || state.sending) return;
+    confirmDialog.classList.remove("ac-hidden");
+    confirmStartButton.focus();
+  }
+
+  function hideNewChatConfirmation(force) {
+    if (state.sending && force !== true) return;
+    var shouldRestoreFocus =
+      force !== true && !confirmDialog.classList.contains("ac-hidden") && state.open;
+    confirmDialog.classList.add("ac-hidden");
+    if (shouldRestoreFocus) newChatButton.focus();
+  }
+
+  async function startNewConversation() {
+    if (!state.session || state.sending) return;
+    state.sending = true;
+    state.error = "";
+    setSending(true);
+    try {
+      await apiRequest(
+        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/close",
+        {
+          method: "PATCH",
+          headers: { "x-visitor-token": state.session.visitorToken },
+        },
+      );
+      hideNewChatConfirmation(true);
+      clearSession();
+    } catch (error) {
+      state.error = readableError(error, "A new conversation could not be started. Please try again.");
+      hideNewChatConfirmation(true);
+    } finally {
+      state.sending = false;
+      setSending(false);
+      renderMessages();
+      input.focus();
+    }
   }
 
   function destroyWidget() {
@@ -658,6 +738,9 @@
   }
   function closeIcon() {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+  }
+  function refreshIcon() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0 2 5.3"/><path d="M20 4v7h-7"/></svg>';
   }
   function stopIcon() {
     return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>';

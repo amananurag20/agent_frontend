@@ -1308,10 +1308,11 @@ function TestChat({
           <button
             type="button"
             onClick={onReset}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
+            disabled={isSending}
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             title="Start a new test conversation"
           >
-            <RefreshCw size={15} />
+            <RefreshCw size={15} className={isSending ? "animate-spin" : ""} />
           </button>
         ) : null}
       </div>

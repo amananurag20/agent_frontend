@@ -2298,6 +2298,53 @@ export default function Home() {
     }
   }
 
+  async function resetWidgetTestChat() {
+    if (widgetTestMessageSending) return;
+    if (!widgetTestConversation || !widgetVisitorToken) {
+      setWidgetTestConversation(null);
+      setWidgetVisitorToken(null);
+      return;
+    }
+
+    const shouldReset = window.confirm(
+      "Start a new test conversation? The current conversation will be closed and retained in Inbox history.",
+    );
+    if (!shouldReset) return;
+
+    setWidgetTestMessageSending(true);
+    try {
+      const closedConversation = await run(
+        () =>
+          publicApi<Conversation>(
+            `/customer-chat/widget/conversations/${widgetTestConversation.id}/close`,
+            {
+              method: "PATCH",
+              headers: { "x-visitor-token": widgetVisitorToken },
+            },
+          ),
+        "Test conversation closed",
+      );
+      if (!closedConversation) return;
+
+      setConversations((current) =>
+        current
+          ? {
+              ...current,
+              data: current.data.map((conversation) =>
+                conversation.id === closedConversation.id
+                  ? closedConversation
+                  : conversation,
+              ),
+            }
+          : current,
+      );
+      setWidgetTestConversation(null);
+      setWidgetVisitorToken(null);
+    } finally {
+      setWidgetTestMessageSending(false);
+    }
+  }
+
   function productAccessFromForm(form: FormData) {
     const role = String(form.get("role"));
     return (form.getAll("productKeys") as ProductKey[]).map((productKey) => ({
@@ -4043,11 +4090,7 @@ export default function Home() {
                   testConversation={widgetTestConversation}
                   isTestMessageSending={widgetTestMessageSending}
                   onSendTestMessage={sendWidgetTestMessage}
-                  onResetTestChat={() => {
-                    setWidgetTestConversation(null);
-                    setWidgetVisitorToken(null);
-                    setWidgetTestMessageSending(false);
-                  }}
+                  onResetTestChat={resetWidgetTestChat}
                   apiBaseUrl={API_BASE_URL}
                 />
               ) : null}
