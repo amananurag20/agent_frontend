@@ -37,6 +37,7 @@ export function StatusPill({ status }: { status: string }) {
     status === "active" ||
     status === "ready" ||
     status === "completed" ||
+    status === "approved" ||
     status === "sent" ||
     status === "delivered" ||
     status === "read" ||

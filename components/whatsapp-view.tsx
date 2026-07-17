@@ -1,14 +1,30 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import {
+  Check,
+  Copy,
+  Database,
   Download,
   ExternalLink,
   FileText,
   ImageIcon,
+  Languages,
   MessageSquareText,
   Paperclip,
+  Pencil,
+  Plus,
   RefreshCw,
+  Search,
   Send,
   Settings,
+  ShieldCheck,
+  Trash2,
+  X,
 } from "lucide-react";
 import type {
   FormHandler,
@@ -29,6 +45,14 @@ type WhatsAppFilters = {
   limit: number;
 };
 
+type ConfigFormHandler = (
+  event: FormEvent<HTMLFormElement>,
+) => boolean | Promise<boolean>;
+
+type DeleteConfigHandler = (
+  config: WhatsAppConfig,
+) => boolean | Promise<boolean>;
+
 type Props = {
   configs: WhatsAppConfig[];
   selectedConfigId: string | null;
@@ -42,8 +66,9 @@ type Props = {
   folders: KnowledgeFolder[];
   filters: WhatsAppFilters;
   setFilters: (filters: WhatsAppFilters) => void;
-  onCreateConfig: FormHandler;
-  onUpdateConfig: FormHandler;
+  onCreateConfig: ConfigFormHandler;
+  onUpdateConfig: ConfigFormHandler;
+  onDeleteConfig: DeleteConfigHandler;
   onSelectConfig: (id: string) => void;
   onSyncTemplates: (id: string) => void;
   onLoadConversations: () => void;
@@ -114,6 +139,23 @@ function readFolderIds(config?: WhatsAppConfig) {
     : [];
 }
 
+function connectionChecks(config: WhatsAppConfig) {
+  if (config.provider === "meta") {
+    return [
+      config.hasAccessToken,
+      config.hasWebhookVerifyToken,
+      config.hasAppSecret,
+      Boolean(config.phoneNumberId),
+      Boolean(config.businessAccountId),
+    ];
+  }
+  return [
+    config.hasAccessToken,
+    Boolean(config.phoneNumberId),
+    Boolean(config.businessAccountId),
+  ];
+}
+
 function remainingSession(expiresAt: string | null | undefined, now: number) {
   if (!expiresAt) return { open: false, label: "Window unavailable" };
   const remaining = new Date(expiresAt).getTime() - now;
@@ -143,6 +185,7 @@ export function WhatsAppView(props: Props) {
     setFilters,
     onCreateConfig,
     onUpdateConfig,
+    onDeleteConfig,
     onSelectConfig,
     onSyncTemplates,
     onLoadConversations,
@@ -251,12 +294,15 @@ export function WhatsAppView(props: Props) {
             onSelectConfig={onSelectConfig}
             onCreateConfig={onCreateConfig}
             onUpdateConfig={onUpdateConfig}
+            onDeleteConfig={onDeleteConfig}
           />
         ) : (
           <TemplatePanel
+            configs={configs}
             activeConfig={activeConfig}
             templates={templates}
             canConfigure={canConfigure}
+            onSelectConfig={onSelectConfig}
             onSyncTemplates={onSyncTemplates}
           />
         )}
@@ -434,122 +480,481 @@ function ConfigurationPanel({
   onSelectConfig,
   onCreateConfig,
   onUpdateConfig,
+  onDeleteConfig,
 }: {
   configs: WhatsAppConfig[];
   activeConfig?: WhatsAppConfig;
   canConfigure: boolean;
   folders: KnowledgeFolder[];
   onSelectConfig: (id: string) => void;
-  onCreateConfig: FormHandler;
-  onUpdateConfig: FormHandler;
+  onCreateConfig: ConfigFormHandler;
+  onUpdateConfig: ConfigFormHandler;
+  onDeleteConfig: DeleteConfigHandler;
 }) {
+  const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WhatsAppConfig | null>(null);
+  const [copiedConfigId, setCopiedConfigId] = useState<string | null>(null);
+  const activeCount = configs.filter((config) => config.status === "active").length;
+  const securedCount = configs.filter((config) =>
+    connectionChecks(config).every(Boolean),
+  ).length;
+
+  useEffect(() => {
+    if (!dialog) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDialog(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [dialog]);
+
+  async function copyWebhook(config: WhatsAppConfig) {
+    const path = `/api/v1/whatsapp-assistant/webhook/${config.id}`;
+    await navigator.clipboard.writeText(path);
+    setCopiedConfigId(config.id);
+    window.setTimeout(() => setCopiedConfigId(null), 1600);
+  }
+
+  function openEdit(config: WhatsAppConfig) {
+    onSelectConfig(config.id);
+    setDialog("edit");
+  }
+
   return (
-    <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-      <div className="space-y-4">
-        <Field label="Configured provider">
-          <select
-            className="input"
-            value={activeConfig?.id ?? ""}
-            onChange={(event) => onSelectConfig(event.target.value)}
-          >
-            {!configs.length ? (
-              <option value="">No configuration</option>
-            ) : null}
-            {configs.map((config) => (
-              <option key={config.id} value={config.id}>
-                {config.name} · {config.provider} · {config.status}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {activeConfig ? (
-          <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <StatusPill status={activeConfig.status} />
-              <StatusPill
-                status={activeConfig.hasAccessToken ? "token" : "no token"}
-              />
-              <StatusPill
-                status={
-                  activeConfig.hasWebhookVerifyToken ? "verify" : "no verify"
-                }
-              />
-              <StatusPill
-                status={activeConfig.hasAppSecret ? "secret" : "no secret"}
-              />
-            </div>
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-tint)] p-3 text-xs">
-              <p className="font-medium text-[var(--text-strong)]">
-                Meta callback URL (GET verification + POST events)
-              </p>
-              <code className="mt-2 block break-all text-[var(--text-muted)]">
-                /api/v1/whatsapp-assistant/webhook/{activeConfig.id}
-              </code>
-            </div>
-          </>
-        ) : (
-          <EmptyState>No WhatsApp configuration yet.</EmptyState>
-        )}
+    <div className="p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-[var(--text-strong)]">
+            Provider configurations
+          </h3>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
+            Manage phone numbers, webhook security and AI knowledge policies.
+          </p>
+        </div>
         {canConfigure ? (
-          <details className="rounded-xl border border-[var(--border-subtle)] p-4">
-            <summary className="cursor-pointer text-sm font-medium">
-              Add another provider
-            </summary>
-            <ConfigForm
-              className="mt-4"
-              onSubmit={onCreateConfig}
-              submitLabel="Create config"
-              folders={folders}
-            />
-          </details>
+          <button
+            type="button"
+            onClick={() => setDialog("create")}
+            className="flex h-10 items-center gap-2 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] shadow-sm hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Add configuration
+          </button>
         ) : null}
       </div>
 
-      {activeConfig && canConfigure ? (
-        <form
-          key={activeConfig.id}
-          onSubmit={onUpdateConfig}
-          className="space-y-4"
-        >
-          <input type="hidden" name="configId" value={activeConfig.id} />
-          <div className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            <h3 className="font-medium">Edit configuration</h3>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3">
+        <SummaryTile
+          icon={<Settings className="h-4 w-4" />}
+          label="Total configurations"
+          value={String(configs.length)}
+        />
+        <SummaryTile
+          icon={<Check className="h-4 w-4" />}
+          label="Active"
+          value={String(activeCount)}
+        />
+        <SummaryTile
+          icon={<ShieldCheck className="h-4 w-4" />}
+          label="Credentials ready"
+          value={`${securedCount}/${configs.length}`}
+        />
+      </div>
+
+      <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--border-subtle)]">
+        {configs.length ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[940px] text-left text-sm">
+              <thead className="bg-[var(--surface-tint)] text-xs uppercase tracking-wide text-[var(--text-muted)]">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Configuration</th>
+                  <th className="px-4 py-3 font-medium">Provider</th>
+                  <th className="px-4 py-3 font-medium">Connection</th>
+                  <th className="px-4 py-3 font-medium">AI policy</th>
+                  <th className="px-4 py-3 font-medium">Webhook</th>
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {configs.map((config) => {
+                  const knowledgeScope = readStringSetting(
+                    config,
+                    "knowledgeScope",
+                    "all",
+                  );
+                  const memoryEnabled = readBooleanSetting(
+                    config,
+                    "memoryEnabled",
+                    true,
+                  );
+                  const credentialParts = connectionChecks(config);
+                  const readyCredentials = credentialParts.filter(Boolean).length;
+                  const isSelected = config.id === activeConfig?.id;
+                  return (
+                    <tr
+                      key={config.id}
+                      className={`transition-colors hover:bg-[var(--surface-hover)] ${
+                        isSelected ? "bg-[var(--surface-accent)]" : ""
+                      }`}
+                    >
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-tint)] text-sm font-semibold uppercase text-[var(--text-strong)]">
+                            {config.name.slice(0, 2)}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => onSelectConfig(config.id)}
+                                className="truncate font-medium text-[var(--text-strong)] hover:text-[var(--accent-primary)]"
+                              >
+                                {config.name}
+                              </button>
+                              <StatusPill status={config.status} />
+                            </div>
+                            <p className="mt-1 max-w-[220px] truncate text-xs text-[var(--text-muted)]">
+                              {config.phoneNumberId || "No sender configured"}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <p className="font-medium capitalize">{config.provider}</p>
+                        <p className="mt-1 text-xs uppercase text-[var(--text-muted)]">
+                          {config.defaultLocale}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-2 w-2 rounded-full ${
+                              readyCredentials === credentialParts.length
+                                ? "bg-[var(--success-text)]"
+                                : "bg-[var(--warning-text)]"
+                            }`}
+                          />
+                          <span className="font-medium">
+                            {readyCredentials}/{credentialParts.length} ready
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                          {config.businessAccountId
+                            ? `Account ${config.businessAccountId}`
+                            : "Account ID not set"}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2 text-xs">
+                          <Database className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                          <span>
+                            {knowledgeScope === "folders"
+                              ? `${readFolderIds(config).length} folders`
+                              : "All knowledge"}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">
+                          Memory {memoryEnabled ? "enabled" : "disabled"}
+                        </p>
+                      </td>
+                      <td className="px-4 py-4">
+                        <button
+                          type="button"
+                          onClick={() => void copyWebhook(config)}
+                          className="inline-flex max-w-[170px] items-center gap-2 rounded-lg border border-[var(--border-strong)] px-2.5 py-2 text-xs hover:bg-[var(--surface-hover)]"
+                          title="Copy callback URL"
+                        >
+                          {copiedConfigId === config.id ? (
+                            <Check className="h-3.5 w-3.5 text-[var(--success-text)]" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                          <span className="truncate">
+                            {copiedConfigId === config.id
+                              ? "Copied"
+                              : "Copy callback"}
+                          </span>
+                        </button>
+                      </td>
+                      <td className="px-4 py-4 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={!canConfigure}
+                            onClick={() => openEdit(config)}
+                            className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--border-strong)] px-3 text-xs font-medium hover:border-[var(--accent-primary)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Pencil className="h-3.5 w-3.5" /> Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!canConfigure}
+                            onClick={() => setDeleteTarget(config)}
+                            aria-label={`Delete ${config.name}`}
+                            title="Delete configuration"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] text-[var(--danger-text)] hover:border-[var(--danger-text)] hover:bg-[var(--danger-bg)] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          <ConfigFields config={activeConfig} folders={folders} />
-          <button className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
-            Save changes
-          </button>
-        </form>
-      ) : (
-        <div className="rounded-xl border border-dashed border-[var(--border-strong)] p-6 text-sm text-[var(--text-muted)]">
-          {canConfigure
-            ? "Create a configuration to connect Meta or Twilio."
-            : "Configuration requires WhatsApp configure access."}
-        </div>
-      )}
+        ) : (
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface-tint)]">
+              <Settings className="h-5 w-5 text-[var(--text-muted)]" />
+            </span>
+            <h4 className="mt-4 font-medium text-[var(--text-strong)]">
+              No WhatsApp configuration yet
+            </h4>
+            <p className="mt-1 max-w-md text-sm text-[var(--text-muted)]">
+              Add a Meta or Twilio provider to start receiving customer
+              conversations.
+            </p>
+            {canConfigure ? (
+              <button
+                type="button"
+                onClick={() => setDialog("create")}
+                className="mt-5 flex h-10 items-center gap-2 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]"
+              >
+                <Plus className="h-4 w-4" /> Add first configuration
+              </button>
+            ) : null}
+          </div>
+        )}
+      </div>
+
+      {dialog ? (
+        <ConfigDialog
+          mode={dialog}
+          config={dialog === "edit" ? activeConfig : undefined}
+          folders={folders}
+          onSubmit={
+            dialog === "edit" ? onUpdateConfig : onCreateConfig
+          }
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+      {deleteTarget ? (
+        <DeleteConfigDialog
+          config={deleteTarget}
+          onDelete={onDeleteConfig}
+          onClose={() => setDeleteTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }
 
-function ConfigForm({
-  onSubmit,
-  submitLabel,
-  folders,
-  className = "",
+function SummaryTile({
+  icon,
+  label,
+  value,
 }: {
-  onSubmit: FormHandler;
-  submitLabel: string;
-  folders: KnowledgeFolder[];
-  className?: string;
+  icon: ReactNode;
+  label: string;
+  value: string;
 }) {
   return (
-    <form onSubmit={onSubmit} className={`space-y-4 ${className}`}>
-      <ConfigFields folders={folders} />
-      <button className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
-        {submitLabel}
-      </button>
-    </form>
+    <div className="flex items-center gap-3 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-tint)] px-4 py-3">
+      <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--surface-card)] text-[var(--text-muted)] shadow-sm">
+        {icon}
+      </span>
+      <div>
+        <p className="text-xs text-[var(--text-muted)]">{label}</p>
+        <p className="mt-0.5 text-lg font-semibold text-[var(--text-strong)]">
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DeleteConfigDialog({
+  config,
+  onDelete,
+  onClose,
+}: {
+  config: WhatsAppConfig;
+  onDelete: DeleteConfigHandler;
+  onClose: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const isInactive = config.status === "inactive";
+  const confirmed = isInactive && confirmation.trim() === config.name;
+
+  async function remove() {
+    if (!confirmed || deleting) return;
+    setDeleting(true);
+    const succeeded = await onDelete(config);
+    if (succeeded) onClose();
+    else setDeleting(false);
+  }
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]"
+    >
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-whatsapp-config-title"
+        aria-describedby="delete-whatsapp-config-description"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-2xl"
+      >
+        <div className="p-6">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[var(--danger-bg)] text-[var(--danger-text)]">
+            <Trash2 className="h-5 w-5" />
+          </span>
+          <h3
+            id="delete-whatsapp-config-title"
+            className="mt-4 text-lg font-semibold text-[var(--text-strong)]"
+          >
+            Delete {config.name}?
+          </h3>
+          <p
+            id="delete-whatsapp-config-description"
+            className="mt-2 text-sm leading-6 text-[var(--text-muted)]"
+          >
+            This permanently removes its encrypted credentials and synchronized
+            templates. Configurations with conversation history cannot be
+            deleted; deactivate them instead.
+          </p>
+          {!isInactive ? (
+            <div className="mt-4 rounded-xl bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning-text)]">
+              Deactivate this configuration from Edit before deleting it. This
+              prevents an inbound webhook from arriving during deletion.
+            </div>
+          ) : null}
+          <div className="mt-5 rounded-xl bg-[var(--surface-tint)] p-3 text-xs text-[var(--text-muted)]">
+            Type <strong className="text-[var(--text-strong)]">{config.name}</strong>{" "}
+            to confirm.
+          </div>
+          <input
+            autoFocus
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+            onKeyDown={(event) =>
+              event.key === "Enter" && confirmed && void remove()
+            }
+            placeholder={config.name}
+            disabled={!isInactive}
+            className="input mt-3"
+          />
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-tint)] px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={deleting}
+            className="h-10 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-medium hover:bg-[var(--surface-hover)] disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!confirmed || deleting}
+            onClick={() => void remove()}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--danger-bg)] px-4 text-sm font-medium text-[var(--danger-text)] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" />
+            {deleting
+              ? "Deleting…"
+              : isInactive
+                ? "Delete configuration"
+                : "Deactivate first"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfigDialog({
+  mode,
+  config,
+  onSubmit,
+  folders,
+  onClose,
+}: {
+  mode: "create" | "edit";
+  config?: WhatsAppConfig;
+  onSubmit: ConfigFormHandler;
+  folders: KnowledgeFolder[];
+  onClose: () => void;
+}) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    const succeeded = await onSubmit(event);
+    if (succeeded) onClose();
+  }
+
+  return (
+    <div
+      role="presentation"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="whatsapp-config-dialog-title"
+        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-2xl"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-5">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-[var(--accent-primary)]">
+              {mode === "create" ? "New provider" : "Provider settings"}
+            </p>
+            <h3
+              id="whatsapp-config-dialog-title"
+              className="mt-1 text-lg font-semibold text-[var(--text-strong)]"
+            >
+              {mode === "create"
+                ? "Add WhatsApp configuration"
+                : `Edit ${config?.name ?? "configuration"}`}
+            </h3>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">
+              Credentials remain encrypted and are never displayed after save.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close configuration dialog"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[var(--border-strong)] hover:bg-[var(--surface-hover)]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <form onSubmit={(event) => void submit(event)} className="contents">
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            {config ? (
+              <input type="hidden" name="configId" value={config.id} />
+            ) : null}
+            <ConfigFields config={config} folders={folders} />
+          </div>
+          <div className="flex items-center justify-end gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-tint)] px-6 py-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-10 rounded-xl border border-[var(--border-strong)] px-4 text-sm font-medium hover:bg-[var(--surface-hover)]"
+            >
+              Cancel
+            </button>
+            <button className="h-10 rounded-xl bg-[var(--accent-primary)] px-5 text-sm font-medium text-[var(--text-on-accent)] shadow-sm hover:opacity-90">
+              {mode === "create" ? "Create configuration" : "Save changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -783,63 +1188,254 @@ function ConfigFields({
 }
 
 function TemplatePanel({
+  configs,
   activeConfig,
   templates,
   canConfigure,
+  onSelectConfig,
   onSyncTemplates,
 }: {
+  configs: WhatsAppConfig[];
   activeConfig?: WhatsAppConfig;
   templates: WhatsAppTemplate[];
   canConfigure: boolean;
+  onSelectConfig: (id: string) => void;
   onSyncTemplates: (id: string) => void;
 }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const currentTemplates = templates.filter(
     (template) => template.configId === activeConfig?.id,
   );
+  const filteredTemplates = currentTemplates.filter((template) => {
+    const matchesSearch = `${template.name} ${template.language} ${template.category ?? ""}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase());
+    const matchesStatus =
+      status === "all" || template.status.toLowerCase() === status;
+    return matchesSearch && matchesStatus;
+  });
+  const totalPages = Math.max(1, Math.ceil(filteredTemplates.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const visibleTemplates = filteredTemplates.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
+  const approvedCount = currentTemplates.filter(
+    (template) => template.status.toLowerCase() === "approved",
+  ).length;
+  const reviewCount = currentTemplates.filter((template) =>
+    ["pending", "in_appeal", "paused"].includes(
+      template.status.toLowerCase(),
+    ),
+  ).length;
+  const rejectedCount = currentTemplates.filter((template) =>
+    ["rejected", "disabled"].includes(template.status.toLowerCase()),
+  ).length;
+
   return (
     <div className="p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h3 className="font-medium">Meta message templates</h3>
+          <h3 className="font-semibold text-[var(--text-strong)]">
+            Message templates
+          </h3>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Approved templates are available outside the 24-hour service window.
+            Review Meta templates available outside the 24-hour service window.
           </p>
         </div>
-        <button
-          type="button"
-          disabled={
-            !activeConfig || activeConfig.provider !== "meta" || !canConfigure
-          }
-          onClick={() => activeConfig && onSyncTemplates(activeConfig.id)}
-          className="flex h-10 items-center gap-2 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] disabled:opacity-40"
-        >
-          <RefreshCw className="h-4 w-4" /> Sync from Meta
-        </button>
-      </div>
-      <div className="mt-4 overflow-hidden rounded-xl border border-[var(--border-subtle)]">
-        {currentTemplates.length ? (
-          currentTemplates.map((template) => (
-            <div
-              key={template.id}
-              className="grid gap-2 border-b border-[var(--border-subtle)] p-4 last:border-0 sm:grid-cols-[1fr_130px_110px_150px] sm:items-center"
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-[var(--text-muted)]">
+              Configuration
+            </span>
+            <select
+              value={activeConfig?.id ?? ""}
+              onChange={(event) => {
+                setPage(1);
+                onSelectConfig(event.target.value);
+              }}
+              className="input h-10 min-w-[220px]"
             >
-              <div>
-                <p className="text-sm font-medium">{template.name}</p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {template.category ?? "Uncategorized"}
-                </p>
-              </div>
-              <span className="text-xs uppercase">{template.language}</span>
-              <StatusPill status={template.status.toLowerCase()} />
-              <span className="text-xs text-[var(--text-muted)]">
-                {formatDateTime(template.syncedAt)}
-              </span>
+              {!configs.length ? (
+                <option value="">No configuration</option>
+              ) : null}
+              {configs.map((config) => (
+                <option key={config.id} value={config.id}>
+                  {config.name} · {config.provider}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={
+              !activeConfig || activeConfig.provider !== "meta" || !canConfigure
+            }
+            onClick={() => activeConfig && onSyncTemplates(activeConfig.id)}
+            className="flex h-10 items-center gap-2 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)] shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <RefreshCw className="h-4 w-4" /> Sync templates
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-4">
+        <SummaryTile
+          icon={<Languages className="h-4 w-4" />}
+          label="Total templates"
+          value={String(currentTemplates.length)}
+        />
+        <SummaryTile
+          icon={<Check className="h-4 w-4" />}
+          label="Approved"
+          value={String(approvedCount)}
+        />
+        <SummaryTile
+          icon={<RefreshCw className="h-4 w-4" />}
+          label="In review"
+          value={String(reviewCount)}
+        />
+        <SummaryTile
+          icon={<X className="h-4 w-4" />}
+          label="Unavailable"
+          value={String(rejectedCount)}
+        />
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-t-2xl border border-b-0 border-[var(--border-subtle)] bg-[var(--surface-tint)] p-3">
+        <div className="relative min-w-[240px] flex-1 sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+          <input
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search templates, language or category"
+            className="input h-10 pl-9"
+          />
+        </div>
+        <select
+          value={status}
+          onChange={(event) => {
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+          className="input h-10 min-w-[150px]"
+        >
+          <option value="all">All statuses</option>
+          <option value="approved">Approved</option>
+          <option value="pending">Pending</option>
+          <option value="rejected">Rejected</option>
+          <option value="paused">Paused</option>
+          <option value="disabled">Disabled</option>
+          <option value="stale">Stale</option>
+        </select>
+      </div>
+
+      <div className="overflow-hidden rounded-b-2xl border border-[var(--border-subtle)]">
+        {visibleTemplates.length ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] text-left text-sm">
+              <thead className="border-b border-[var(--border-subtle)] bg-[var(--surface-tint)] text-xs uppercase tracking-wide text-[var(--text-muted)]">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Template</th>
+                  <th className="px-4 py-3 font-medium">Language</th>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Components</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Last synchronized</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--border-subtle)]">
+                {visibleTemplates.map((template) => (
+                  <tr
+                    key={template.id}
+                    className="hover:bg-[var(--surface-hover)]"
+                  >
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-[var(--text-strong)]">
+                        {template.name}
+                      </p>
+                      <p className="mt-1 max-w-[280px] truncate font-mono text-[11px] text-[var(--text-muted)]">
+                        {template.id}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="inline-flex items-center gap-2 rounded-lg bg-[var(--surface-tint)] px-2.5 py-1.5 text-xs font-medium uppercase">
+                        <Languages className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                        {template.language}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-xs">
+                      {template.category ?? "Uncategorized"}
+                    </td>
+                    <td className="px-4 py-4 text-xs text-[var(--text-muted)]">
+                      {template.components.length} component
+                      {template.components.length === 1 ? "" : "s"}
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusPill status={template.status.toLowerCase()} />
+                    </td>
+                    <td className="px-4 py-4 text-xs text-[var(--text-muted)]">
+                      {formatDateTime(template.syncedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              </table>
             </div>
-          ))
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-tint)] px-4 py-3 text-xs text-[var(--text-muted)]">
+              <span>
+                Showing {(currentPage - 1) * pageSize + 1}–
+                {Math.min(currentPage * pageSize, filteredTemplates.length)} of{" "}
+                {filteredTemplates.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setPage((current) => current - 1)}
+                  className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-card)] px-3 py-2 text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setPage((current) => current + 1)}
+                  className="rounded-lg border border-[var(--border-strong)] bg-[var(--surface-card)] px-3 py-2 text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </>
         ) : (
-          <EmptyState>
-            No synchronized templates for this configuration.
-          </EmptyState>
+          <div className="flex flex-col items-center px-6 py-14 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[var(--surface-tint)]">
+              <Languages className="h-5 w-5 text-[var(--text-muted)]" />
+            </span>
+            <h4 className="mt-4 font-medium text-[var(--text-strong)]">
+              {currentTemplates.length
+                ? "No templates match these filters"
+                : "No synchronized templates"}
+            </h4>
+            <p className="mt-1 max-w-md text-sm text-[var(--text-muted)]">
+              {currentTemplates.length
+                ? "Try another search term or status."
+                : activeConfig?.provider === "meta"
+                  ? "Sync this configuration to import templates from Meta."
+                  : "Template synchronization is available for Meta configurations."}
+            </p>
+          </div>
         )}
       </div>
     </div>

@@ -3125,6 +3125,7 @@ export default function Home() {
       formElement.reset();
       await loadWhatsAppConfigs();
     }
+    return Boolean(result);
   }
 
   async function updateWhatsAppConfig(event: FormEvent<HTMLFormElement>) {
@@ -3132,7 +3133,7 @@ export default function Home() {
     const form = new FormData(event.currentTarget);
     const configId = String(form.get("configId"));
     const existing = whatsAppConfigs.find((config) => config.id === configId);
-    if (!existing) return;
+    if (!existing) return false;
     const result = await run(
       () =>
         api<WhatsAppConfig>(`/whatsapp-assistant/configs/${configId}`, {
@@ -3162,6 +3163,26 @@ export default function Home() {
       "WhatsApp config updated",
     );
     if (result) await loadWhatsAppConfigs();
+    return Boolean(result);
+  }
+
+  async function deleteWhatsAppConfig(config: WhatsAppConfig) {
+    const result = await run(
+      () =>
+        api<{ deleted: boolean; id: string }>(
+          `/whatsapp-assistant/configs/${config.id}`,
+          { method: "DELETE" },
+        ),
+      "WhatsApp configuration deleted",
+    );
+    if (result) {
+      if (selectedWhatsAppConfigId === config.id) {
+        setSelectedWhatsAppConfigId(null);
+        setWhatsAppTemplates([]);
+      }
+      await loadWhatsAppConfigs();
+    }
+    return Boolean(result);
   }
 
   async function syncWhatsAppTemplates(configId: string) {
@@ -3954,6 +3975,7 @@ export default function Home() {
                   setFilters={setWhatsAppFilters}
                   onCreateConfig={createWhatsAppConfig}
                   onUpdateConfig={updateWhatsAppConfig}
+                  onDeleteConfig={deleteWhatsAppConfig}
                   onSelectConfig={selectWhatsAppConfig}
                   onSyncTemplates={syncWhatsAppTemplates}
                   onLoadConversations={() =>
