@@ -89,6 +89,7 @@ type ConfigDraft = {
   routingKeywords: string;
   dtmfRoutes: string;
   voicemailPrompt: string;
+  recordingConsentMessage: string;
   voicemailMaxLengthSeconds: string;
   handoffNotificationEmail: string;
   handoffNotificationPhone: string;
@@ -136,6 +137,8 @@ const emptyDraft: ConfigDraft = {
   routingKeywords: "",
   dtmfRoutes: "",
   voicemailPrompt: "Please leave a voicemail after the tone.",
+  recordingConsentMessage:
+    "This voicemail will be recorded and transcribed so our team can respond. If you do not consent, please hang up now.",
   voicemailMaxLengthSeconds: "120",
   handoffNotificationEmail: "",
   handoffNotificationPhone: "",
@@ -228,6 +231,10 @@ function draftFromConfig(config: VoiceConfig): ConfigDraft {
     routingKeywords: routesToLines(settings.routingKeywords),
     dtmfRoutes: routesToLines(settings.dtmfRoutes, true),
     voicemailPrompt: text(settings.voicemailPrompt, emptyDraft.voicemailPrompt),
+    recordingConsentMessage: text(
+      settings.recordingConsentMessage,
+      emptyDraft.recordingConsentMessage,
+    ),
     voicemailMaxLengthSeconds: String(
       typeof settings.voicemailMaxLengthSeconds === "number"
         ? settings.voicemailMaxLengthSeconds
@@ -323,6 +330,7 @@ function buildConfigInput(
   set("routingKeywords", parseKeywordRoutes(draft.routingKeywords));
   set("dtmfRoutes", parseDtmfRoutes(draft.dtmfRoutes));
   set("voicemailPrompt", draft.voicemailPrompt.trim());
+  set("recordingConsentMessage", draft.recordingConsentMessage.trim());
   set(
     "voicemailMaxLengthSeconds",
     Number(draft.voicemailMaxLengthSeconds) || 120,
@@ -1397,6 +1405,20 @@ export function VoiceReceptionistView({
                           update("voicemailPrompt", event.target.value)
                         }
                       />
+                    </Field>
+                    <Field label="Recording and transcription consent announcement">
+                      <textarea
+                        className="input min-h-24"
+                        value={draft.recordingConsentMessage}
+                        onChange={(event) =>
+                          update("recordingConsentMessage", event.target.value)
+                        }
+                      />
+                      <p className="mt-1 text-xs text-[var(--text-muted)]">
+                        Played before recording starts. Have the wording
+                        reviewed for every jurisdiction where calls are
+                        received.
+                      </p>
                     </Field>
                     <Field label="Maximum recording seconds (10–600)">
                       <input

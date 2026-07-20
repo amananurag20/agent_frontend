@@ -112,6 +112,14 @@ function whatsAppSettingsFromForm(
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean),
+    optOutKeywords: String(form.get("optOutKeywords") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    optInKeywords: String(form.get("optInKeywords") || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
     knowledgeScope,
     folderIds:
       knowledgeScope === "folders" ? form.getAll("folderIds").map(String) : [],
@@ -340,6 +348,23 @@ function streamPublicWidgetMessage(input: {
         settled = true;
         cleanup();
         resolve(frame.result.conversation);
+      },
+    );
+    socket.on(
+      "message.discarded",
+      (frame: {
+        clientMessageId?: string;
+        conversation?: Conversation;
+      }) => {
+        if (frame.clientMessageId !== clientMessageId) return;
+        settled = true;
+        cleanup();
+        const conversation = frame.conversation ?? {
+          ...input.conversation,
+          messages: baseMessages,
+        };
+        input.onProgress(conversation);
+        resolve(conversation);
       },
     );
     socket.on(
@@ -3842,6 +3867,57 @@ export default function Home() {
     }
   }
 
+  async function sendWhatsAppInteractive(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedWhatsAppConversation) return;
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
+    const value = (name: string) => String(form.get(name) ?? "").trim();
+    const kind = value("kind") === "list" ? "list" : "button";
+    const body = {
+      kind,
+      body: value("body"),
+      header: value("header") || undefined,
+      footer: value("footer") || undefined,
+      ...(kind === "button"
+        ? {
+            buttons: [1, 2, 3]
+              .map((number) => ({
+                id: value(`buttonId${number}`),
+                title: value(`buttonTitle${number}`),
+              }))
+              .filter((button) => button.id && button.title),
+          }
+        : {
+            buttonText: value("buttonText"),
+            sections: [
+              {
+                title: value("sectionTitle") || "Options",
+                rows: [1, 2, 3]
+                  .map((number) => ({
+                    id: value(`rowId${number}`),
+                    title: value(`rowTitle${number}`),
+                  }))
+                  .filter((row) => row.id && row.title),
+              },
+            ],
+          }),
+    };
+    const result = await run(
+      () =>
+        api<{ conversation: WhatsAppConversation }>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/interactive-messages`,
+          { method: "POST", body: JSON.stringify(body) },
+        ),
+      "WhatsApp interactive message sent",
+    );
+    if (result) {
+      formElement.reset();
+      setSelectedWhatsAppConversation(result.conversation);
+      await loadWhatsAppConversations(undefined, true);
+    }
+  }
+
   async function assignWhatsAppConversation(assignedAgentId: string | null) {
     if (!selectedWhatsAppConversation) return;
     const result = await run(
@@ -4003,6 +4079,30 @@ export default function Home() {
     if (result) {
       setSelectedWhatsAppConversation(result);
       await loadWhatsAppConversations();
+    }
+  }
+
+  async function updateWhatsAppConsent(
+    status: WhatsAppConversation["consentStatus"],
+    source?: string,
+  ) {
+    if (!selectedWhatsAppConversation) return;
+    const result = await run(
+      () =>
+        api<WhatsAppConversation>(
+          `/whatsapp-assistant/conversations/${selectedWhatsAppConversation.id}/consent`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({ status, source }),
+          },
+        ),
+      status === "opted_in"
+        ? "WhatsApp opt-in recorded"
+        : "WhatsApp opt-out recorded",
+    );
+    if (result) {
+      setSelectedWhatsAppConversation(result);
+      await loadWhatsAppConversations(undefined, true);
     }
   }
 
@@ -4553,11 +4653,13 @@ export default function Home() {
                   onSendReply={sendWhatsAppReply}
                   onSendTemplate={sendWhatsAppTemplate}
                   onSendMedia={sendWhatsAppMedia}
+                  onSendInteractive={sendWhatsAppInteractive}
                   onOpenMedia={openWhatsAppMedia}
                   onRetryMessage={retryWhatsAppMessage}
                   onAssign={assignWhatsAppConversation}
                   onRequestHandoff={requestWhatsAppHandoff}
                   onUpdateStatus={updateWhatsAppStatus}
+                  onUpdateConsent={updateWhatsAppConsent}
                 />
               ) : null}
               {activeTab === "voice" ? (

@@ -365,7 +365,7 @@
     socket.on("conversation.event", function (event) {
       handleSocketEvent(socket, "conversation.event", event);
     });
-    ["message.started", "message.delta", "message.replace", "message.completed", "message.cancelled", "message.error"].forEach(function (eventName) {
+    ["message.started", "message.delta", "message.replace", "message.completed", "message.discarded", "message.cancelled", "message.error"].forEach(function (eventName) {
       socket.on(eventName, function (payload) {
         handleSocketEvent(socket, eventName, payload || {});
       });
@@ -410,6 +410,12 @@
     if (eventName === "message.completed") {
       state.conversation = frame.result && frame.result.conversation ? frame.result.conversation : state.conversation;
       finishGeneration();
+      return;
+    }
+    if (eventName === "message.discarded") {
+      state.conversation = frame.conversation || state.conversation;
+      finishGeneration();
+      void refreshConversation();
       return;
     }
     if (eventName === "message.cancelled") {

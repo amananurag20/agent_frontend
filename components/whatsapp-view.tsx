@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -18,6 +19,7 @@ import {
   FileText,
   ImageIcon,
   Languages,
+  ListChecks,
   MapPin,
   MessageSquareText,
   MoreVertical,
@@ -104,6 +106,7 @@ type Props = {
   onSendReply: FormHandler;
   onSendTemplate: FormHandler;
   onSendMedia: FormHandler;
+  onSendInteractive: FormHandler;
   onOpenMedia: (
     message: WhatsAppMessage,
     disposition: "open" | "download",
@@ -112,6 +115,10 @@ type Props = {
   onAssign: (agentId: string | null) => void;
   onRequestHandoff: () => void;
   onUpdateStatus: (status: WhatsAppConversation["status"]) => void;
+  onUpdateConsent: (
+    status: WhatsAppConversation["consentStatus"],
+    source?: string,
+  ) => void;
 };
 
 function formatDateTime(value: string) {
@@ -128,6 +135,17 @@ function readKeywords(config?: WhatsAppConfig) {
         .filter((item): item is string => typeof item === "string")
         .join(", ")
     : "";
+}
+
+function readConsentKeywords(
+  config: WhatsAppConfig | undefined,
+  key: "optOutKeywords" | "optInKeywords",
+  fallback: string[],
+) {
+  const value = config?.settings[key];
+  return (Array.isArray(value) ? value : fallback)
+    .filter((item): item is string => typeof item === "string")
+    .join(", ");
 }
 
 function readStringSetting(
@@ -226,18 +244,20 @@ export function WhatsAppView(props: Props) {
     onSendReply,
     onSendTemplate,
     onSendMedia,
+    onSendInteractive,
     onOpenMedia,
     onRetryMessage,
     onAssign,
     onRequestHandoff,
     onUpdateStatus,
+    onUpdateConsent,
   } = props;
   const [adminPanel, setAdminPanel] = useState<"configuration" | "templates">(
     "configuration",
   );
-  const [composer, setComposer] = useState<"text" | "template" | "media">(
-    "text",
-  );
+  const [composer, setComposer] = useState<
+    "text" | "template" | "media" | "interactive"
+  >("text");
   const [now, setNow] = useState(() => Date.now());
   const activeConfig =
     configs.find((config) => config.id === selectedConfigId) ?? configs[0];
@@ -474,6 +494,7 @@ export function WhatsAppView(props: Props) {
                 onAssign={onAssign}
                 onRequestHandoff={onRequestHandoff}
                 onUpdateStatus={onUpdateStatus}
+                onUpdateConsent={onUpdateConsent}
               />
               <div className="max-h-[600px] flex-1 space-y-3 overflow-auto bg-[var(--surface-tint)] p-4">
                 {selectedConversation.messages.map((message) => (
@@ -489,6 +510,7 @@ export function WhatsAppView(props: Props) {
                 mode={effectiveComposer}
                 setMode={setComposer}
                 sessionOpen={session.open}
+                consentStatus={selectedConversation.consentStatus}
                 templates={conversationConfigTemplates}
                 selectedTemplate={selectedTemplate}
                 selectedTemplateKey={effectiveTemplateKey}
@@ -496,6 +518,7 @@ export function WhatsAppView(props: Props) {
                 onSendReply={onSendReply}
                 onSendTemplate={onSendTemplate}
                 onSendMedia={onSendMedia}
+                onSendInteractive={onSendInteractive}
               />
             </div>
           ) : (
@@ -1132,6 +1155,40 @@ function ConfigFields({
             defaultValue={readKeywords(config)}
           />
         </Field>
+      </div>
+      <div className="rounded-xl border border-[var(--border-subtle)] p-4">
+        <h4 className="text-sm font-medium text-[var(--text-strong)]">
+          Messaging consent
+        </h4>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          These exact inbound commands update the contact&apos;s auditable opt-in
+          state. Template sending remains blocked until opt-in is recorded.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Opt-out keywords">
+            <input
+              name="optOutKeywords"
+              className="input"
+              defaultValue={readConsentKeywords(config, "optOutKeywords", [
+                "stop",
+                "unsubscribe",
+                "cancel",
+                "end",
+                "quit",
+              ])}
+            />
+          </Field>
+          <Field label="Opt-in keywords">
+            <input
+              name="optInKeywords"
+              className="input"
+              defaultValue={readConsentKeywords(config, "optInKeywords", [
+                "start",
+                "subscribe",
+              ])}
+            />
+          </Field>
+        </div>
       </div>
       <div className="rounded-xl border border-[var(--border-subtle)] p-4">
         <h4 className="text-sm font-medium text-[var(--text-strong)]">
@@ -3024,6 +3081,7 @@ function ConversationHeader({
   onAssign,
   onRequestHandoff,
   onUpdateStatus,
+  onUpdateConsent,
 }: {
   conversation: WhatsAppConversation;
   session: { open: boolean; label: string };
@@ -3032,6 +3090,10 @@ function ConversationHeader({
   onAssign: (id: string | null) => void;
   onRequestHandoff: () => void;
   onUpdateStatus: (status: WhatsAppConversation["status"]) => void;
+  onUpdateConsent: (
+    status: WhatsAppConversation["consentStatus"],
+    source?: string,
+  ) => void;
 }) {
   return (
     <div className="border-b border-[var(--border-subtle)] p-4">
@@ -3047,12 +3109,33 @@ function ConversationHeader({
           <div className="mt-2 flex flex-wrap gap-2">
             <StatusPill status={conversation.status} />
             <StatusPill status={session.open ? "open" : "closed"} />
+            <StatusPill status={conversation.consentStatus} />
             <span className="self-center text-xs text-[var(--text-muted)]">
               {session.label}
             </span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const source = window.prompt(
+                "Where did this contact opt in? (for example: website checkout checkbox)",
+                conversation.consentSource ?? "",
+              );
+              if (source?.trim()) onUpdateConsent("opted_in", source.trim());
+            }}
+            className="h-9 rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-sm text-emerald-800 hover:bg-emerald-100"
+          >
+            Record opt-in
+          </button>
+          <button
+            type="button"
+            onClick={() => onUpdateConsent("opted_out", "manual_agent_update")}
+            className="h-9 rounded-xl border border-amber-300 bg-amber-50 px-3 text-sm text-amber-900 hover:bg-amber-100"
+          >
+            Opt out
+          </button>
           <button
             type="button"
             onClick={onRequestHandoff}
@@ -3493,6 +3576,7 @@ function Composer({
   mode,
   setMode,
   sessionOpen,
+  consentStatus,
   templates,
   selectedTemplate,
   selectedTemplateKey,
@@ -3500,10 +3584,14 @@ function Composer({
   onSendReply,
   onSendTemplate,
   onSendMedia,
+  onSendInteractive,
 }: {
-  mode: "text" | "template" | "media";
-  setMode: (mode: "text" | "template" | "media") => void;
+  mode: "text" | "template" | "media" | "interactive";
+  setMode: (
+    mode: "text" | "template" | "media" | "interactive",
+  ) => void;
   sessionOpen: boolean;
+  consentStatus: WhatsAppConversation["consentStatus"];
   templates: WhatsAppTemplate[];
   selectedTemplate?: WhatsAppTemplate;
   selectedTemplateKey: string;
@@ -3511,7 +3599,11 @@ function Composer({
   onSendReply: FormHandler;
   onSendTemplate: FormHandler;
   onSendMedia: FormHandler;
+  onSendInteractive: FormHandler;
 }) {
+  const [interactiveKind, setInteractiveKind] = useState<"button" | "list">(
+    "button",
+  );
   return (
     <div className="border-t border-[var(--border-subtle)] p-4">
       <div className="mb-3 flex flex-wrap gap-2">
@@ -3535,11 +3627,24 @@ function Composer({
           icon={<Paperclip className="h-4 w-4" />}
           label="Media"
         />
+        <ComposerButton
+          active={mode === "interactive"}
+          disabled={!sessionOpen}
+          onClick={() => setMode("interactive")}
+          icon={<ListChecks className="h-4 w-4" />}
+          label="Buttons / list"
+        />
       </div>
       {!sessionOpen ? (
         <p className="mb-3 rounded-xl bg-[var(--warning-bg)] px-3 py-2 text-xs text-[var(--warning-text)]">
           The 24-hour service window is closed. Send an approved template to
           reopen contact.
+        </p>
+      ) : null}
+      {consentStatus !== "opted_in" && mode === "template" ? (
+        <p className="mb-3 rounded-xl bg-[var(--warning-bg)] px-3 py-2 text-xs text-[var(--warning-text)]">
+          Record the contact&apos;s opt-in source before sending an approved
+          template. STOP/opted-out contacts cannot receive outbound messages.
         </p>
       ) : null}
       {mode === "text" ? (
@@ -3589,7 +3694,10 @@ function Composer({
               template={selectedTemplate}
             />
           ) : null}
-          <SendButton label="Send template" disabled={!selectedTemplate} />
+          <SendButton
+            label="Send template"
+            disabled={!selectedTemplate || consentStatus !== "opted_in"}
+          />
         </form>
       ) : null}
       {mode === "media" ? (
@@ -3632,6 +3740,72 @@ function Composer({
             <input name="caption" className="input" />
           </Field>
           <SendButton label="Send media" />
+        </form>
+      ) : null}
+      {mode === "interactive" ? (
+        <form onSubmit={onSendInteractive} className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Interaction type">
+              <select
+                name="kind"
+                className="input"
+                value={interactiveKind}
+                onChange={(event) =>
+                  setInteractiveKind(event.target.value as "button" | "list")
+                }
+              >
+                <option value="button">Reply buttons</option>
+                <option value="list">List menu</option>
+              </select>
+            </Field>
+            <Field label="Header (optional)">
+              <input name="header" className="input" maxLength={60} />
+            </Field>
+          </div>
+          <Field label="Message">
+            <textarea name="body" className="input min-h-20" maxLength={1024} required />
+          </Field>
+          <Field label="Footer (optional)">
+            <input name="footer" className="input" maxLength={60} />
+          </Field>
+          {interactiveKind === "button" ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[1, 2, 3].map((number) => (
+                <Fragment key={number}>
+                  <Field label={`Button ${number} label`}>
+                    <input name={`buttonTitle${number}`} className="input" maxLength={20} required={number === 1} />
+                  </Field>
+                  <Field label={`Button ${number} ID`}>
+                    <input name={`buttonId${number}`} className="input" maxLength={256} required={number === 1} />
+                  </Field>
+                </Fragment>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Open-list button label">
+                  <input name="buttonText" className="input" maxLength={20} required />
+                </Field>
+                <Field label="Section title">
+                  <input name="sectionTitle" className="input" maxLength={24} defaultValue="Options" />
+                </Field>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {[1, 2, 3].map((number) => (
+                  <Fragment key={number}>
+                    <Field label={`Row ${number} title`}>
+                      <input name={`rowTitle${number}`} className="input" maxLength={24} required={number === 1} />
+                    </Field>
+                    <Field label={`Row ${number} ID`}>
+                      <input name={`rowId${number}`} className="input" maxLength={200} required={number === 1} />
+                    </Field>
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          )}
+          <SendButton label="Send interactive message" />
         </form>
       ) : null}
     </div>

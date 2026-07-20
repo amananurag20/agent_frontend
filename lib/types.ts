@@ -704,6 +704,9 @@ export type WhatsAppMessage = {
     | "document"
     | "sticker"
     | "location"
+    | "interactive"
+    | "contact"
+    | "reaction"
     | "unknown";
   providerMessageId?: string | null;
   content?: string | null;
@@ -742,6 +745,10 @@ export type WhatsAppConversation = {
   contactPhone?: string | null;
   locale: string;
   assignedAgentId?: string | null;
+  consentStatus: "unknown" | "opted_in" | "opted_out";
+  consentSource?: string | null;
+  consentedAt?: string | null;
+  optedOutAt?: string | null;
   sessionExpiresAt?: string | null;
   lastMessageAt: string;
   metadata: Record<string, unknown>;
