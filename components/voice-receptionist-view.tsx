@@ -1,4 +1,15 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  BarChart3,
+  Check,
+  Copy,
+  Headphones,
+  PhoneCall,
+  Settings2,
+  Sparkles,
+} from "lucide-react";
+import Link from "next/link";
 import type {
   User,
   VoiceAnalytics,
@@ -22,6 +33,28 @@ const WEEKDAYS = [
   [5, "Fri"],
   [6, "Sat"],
 ] as const;
+
+type VoiceWorkspace = "overview" | "setup" | "calls";
+type ConfigSection =
+  | "general"
+  | "ai"
+  | "voice"
+  | "hours"
+  | "routing"
+  | "advanced";
+
+const CONFIG_SECTIONS: Array<{
+  id: ConfigSection;
+  label: string;
+  description: string;
+}> = [
+  { id: "general", label: "General", description: "Number and credentials" },
+  { id: "ai", label: "AI & messages", description: "Knowledge and caller experience" },
+  { id: "voice", label: "Voice", description: "Speech and live streaming" },
+  { id: "hours", label: "Hours", description: "Availability and holidays" },
+  { id: "routing", label: "Routing", description: "Transfers and voicemail" },
+  { id: "advanced", label: "Advanced", description: "Provider callbacks" },
+];
 
 type ConfigDraft = {
   name: string;
@@ -370,6 +403,10 @@ export function VoiceReceptionistView({
   onAssignCall: (assignedAgentId: string | null) => void;
   onOpenRecording: (callId: string) => void;
 }) {
+  const [workspace, setWorkspace] = useState<VoiceWorkspace>("overview");
+  const [configSection, setConfigSection] =
+    useState<ConfigSection>("general");
+  const [copiedEndpoint, setCopiedEndpoint] = useState<string | null>(null);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(
     configs[0]?.id ?? null,
   );
@@ -390,6 +427,7 @@ export function VoiceReceptionistView({
       : selectedConfig
         ? draftFromConfig(selectedConfig)
         : { ...emptyDraft, businessDays: [...emptyDraft.businessDays] };
+  const hasUnsavedChanges = editor?.key === editorKey;
   const [routeEditor, setRouteEditor] = useState({
     callId: "",
     transferTo: "",
@@ -411,6 +449,52 @@ export function VoiceReceptionistView({
   );
   const totalPages = calls ? Math.max(1, Math.ceil(calls.total / calls.limit)) : 1;
 
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [hasUnsavedChanges]);
+
+  const readiness = [
+      {
+        label: "Active configuration",
+        complete: draft.status === "active",
+        detail: "Receptionist can accept provider callbacks",
+      },
+      {
+        label: "Twilio credentials",
+        complete: Boolean(selectedConfig?.hasApiKey || draft.apiKey) && Boolean(draft.twilioAccountSid),
+        detail: "Account SID and auth token are configured",
+      },
+      {
+        label: "Incoming number",
+        complete: Boolean(draft.phoneNumber),
+        detail: "An E.164 phone number is attached",
+      },
+      {
+        label: "Caller greeting",
+        complete: Boolean(draft.greeting.trim()),
+        detail: "Callers hear a welcome message immediately",
+      },
+      {
+        label: "Live streaming",
+        complete: Boolean(draft.conversationRelayUrl || selectedConfig),
+        detail: "ConversationRelay uses this config or the server default",
+      },
+      {
+        label: "Fallback route",
+        complete: draft.voicemailEnabled || Boolean(draft.transferPhoneNumber),
+        detail: "Unanswered callers have a safe next step",
+      },
+    ];
+  const readinessComplete = readiness.filter((item) => item.complete).length;
+  const readinessPercent = Math.round(
+    (readinessComplete / readiness.length) * 100,
+  );
+
   async function submitConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const saved = await onSaveConfig(
@@ -425,12 +509,24 @@ export function VoiceReceptionistView({
   }
 
   function selectConfig(config: VoiceConfig) {
+    if (
+      hasUnsavedChanges &&
+      !window.confirm("Discard your unsaved voice configuration changes?")
+    ) {
+      return;
+    }
     setSelectedConfigId(config.id);
     setIsCreatingConfig(false);
     setEditor(null);
   }
 
   function newConfig() {
+    if (
+      hasUnsavedChanges &&
+      !window.confirm("Discard your unsaved voice configuration changes?")
+    ) {
+      return;
+    }
     setSelectedConfigId(null);
     setIsCreatingConfig(true);
     setEditor({
@@ -443,24 +539,212 @@ export function VoiceReceptionistView({
     setEditor({ key: editorKey, draft: { ...draft, [key]: value } });
   }
 
+  async function copyEndpoint(label: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedEndpoint(label);
+    window.setTimeout(() => setCopiedEndpoint(null), 1800);
+  }
+
   const callbackRoot = selectedConfig
     ? `${apiBaseUrl}/voice-receptionist/webhook/${selectedConfig.id}/twilio`
     : null;
+  const websocketEndpoint = selectedConfig
+    ? draft.conversationRelayUrl ||
+      `${apiBaseUrl.replace(/^http/, "ws")}/voice-receptionist/stream/${selectedConfig.id}`
+    : null;
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-        <CallMetric label="30-day calls" value={String(analytics?.totalCalls ?? 0)} />
-        <CallMetric label="Active" value={String(analytics?.inProgress ?? 0)} />
-        <CallMetric label="Containment" value={`${analytics?.containmentRate ?? 0}%`} />
-        <CallMetric label="Transfer rate" value={`${analytics?.transferRate ?? 0}%`} />
-        <CallMetric label="Voicemails" value={String(analytics?.voicemail ?? 0)} />
-        <CallMetric label="Failures" value={String(analytics?.failed ?? 0)} />
-        <CallMetric label="Avg duration" value={formatDuration(analytics?.averageDurationSeconds)} />
-        <CallMetric label="Live streams" value={String(runtimeHealth?.activeSessions ?? 0)} />
-      </div>
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[470px_minmax(0,1fr)]">
-        <div className="space-y-4">
+    <div className="space-y-5">
+      <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[linear-gradient(135deg,var(--surface-card),var(--surface-tint))] shadow-[var(--shadow-card)]">
+        <div className="flex flex-col gap-5 px-5 py-5 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+          <div className="flex items-start gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[var(--accent-primary)] text-[var(--text-on-accent)] shadow-sm">
+              <Headphones className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-semibold text-[var(--text-strong)]">
+                  AI Voice Receptionist
+                </h1>
+                <StatusPill
+                  status={
+                    runtimeHealth?.activeSessions ? "live" : "ready"
+                  }
+                />
+              </div>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
+                Configure how your AI answers, monitor live conversations, and
+                route callers to the right person.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setWorkspace("setup")}
+              className="h-10 rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] px-4 text-sm font-medium hover:bg-[var(--surface-hover)]"
+            >
+              Configure receptionist
+            </button>
+            <button
+              type="button"
+              onClick={() => setWorkspace("calls")}
+              className="h-10 rounded-xl bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]"
+            >
+              Open live calls
+            </button>
+          </div>
+        </div>
+        <div className="flex gap-1 overflow-x-auto border-t border-[var(--border-subtle)] px-3 pt-2 sm:px-5">
+          {([
+            ["overview", "Overview", BarChart3],
+            ["setup", "Setup", Settings2],
+            ["calls", "Calls", PhoneCall],
+          ] as const).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setWorkspace(id)}
+              className={`flex h-11 shrink-0 items-center gap-2 border-b-2 px-4 text-sm font-medium transition-colors ${
+                workspace === id
+                  ? "border-[var(--accent-primary)] text-[var(--accent-primary)]"
+                  : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-strong)]"
+              }`}
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {workspace === "overview" ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+            <CallMetric label="30-day calls" value={String(analytics?.totalCalls ?? 0)} />
+            <CallMetric label="Active" value={String(analytics?.inProgress ?? 0)} />
+            <CallMetric label="Containment" value={`${analytics?.containmentRate ?? 0}%`} />
+            <CallMetric label="Transfer rate" value={`${analytics?.transferRate ?? 0}%`} />
+            <CallMetric label="Voicemails" value={String(analytics?.voicemail ?? 0)} />
+            <CallMetric label="Failures" value={String(analytics?.failed ?? 0)} />
+            <CallMetric label="Avg duration" value={formatDuration(analytics?.averageDurationSeconds)} />
+            <CallMetric label="Live streams" value={String(runtimeHealth?.activeSessions ?? 0)} />
+          </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,.75fr)]">
+            <Card>
+              <div className="border-b border-[var(--border-subtle)] p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-[var(--text-strong)]">
+                      Call outcomes
+                    </h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Last 30 days across this organization
+                    </p>
+                  </div>
+                  <Activity className="h-5 w-5 text-[var(--accent-primary)]" />
+                </div>
+              </div>
+              <div className="grid gap-5 p-5 md:grid-cols-2">
+                <OutcomeBar
+                  label="Completed by AI"
+                  value={analytics?.completed ?? 0}
+                  total={analytics?.totalCalls ?? 0}
+                  tone="success"
+                />
+                <OutcomeBar
+                  label="Transferred"
+                  value={analytics?.transferred ?? 0}
+                  total={analytics?.totalCalls ?? 0}
+                  tone="accent"
+                />
+                <OutcomeBar
+                  label="Voicemail"
+                  value={analytics?.voicemail ?? 0}
+                  total={analytics?.totalCalls ?? 0}
+                  tone="warning"
+                />
+                <OutcomeBar
+                  label="Failed"
+                  value={analytics?.failed ?? 0}
+                  total={analytics?.totalCalls ?? 0}
+                  tone="danger"
+                />
+              </div>
+              <div className="grid grid-cols-2 border-t border-[var(--border-subtle)] md:grid-cols-4">
+                <OverviewStat label="AI replies" value={analytics?.assistantResponses ?? 0} />
+                <OverviewStat label="Barge-ins" value={analytics?.bargeIns ?? 0} />
+                <OverviewStat label="Waiting" value={analytics?.waitingForAgent ?? 0} />
+                <OverviewStat label="Live now" value={runtimeHealth?.activeSessions ?? 0} />
+              </div>
+            </Card>
+
+            <Card>
+              <div className="border-b border-[var(--border-subtle)] p-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold text-[var(--text-strong)]">
+                      Setup readiness
+                    </h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      {selectedConfig?.name ?? "Create your first receptionist"}
+                    </p>
+                  </div>
+                  <span className="text-2xl font-semibold text-[var(--accent-primary)]">
+                    {readinessPercent}%
+                  </span>
+                </div>
+                <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--surface-tint)]">
+                  <div
+                    className="h-full rounded-full bg-[var(--accent-primary)] transition-all"
+                    style={{ width: `${readinessPercent}%` }}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1 p-3">
+                {readiness.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-start gap-3 rounded-xl p-2.5"
+                  >
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                        item.complete
+                          ? "bg-[var(--success-bg)] text-[var(--success-text)]"
+                          : "bg-[var(--neutral-bg)] text-[var(--text-soft)]"
+                      }`}
+                    >
+                      {item.complete ? <Check className="h-3.5 w-3.5" /> : null}
+                    </span>
+                    <span>
+                      <span className="block text-sm font-medium text-[var(--text-strong)]">
+                        {item.label}
+                      </span>
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {item.detail}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-[var(--border-subtle)] p-4">
+                <button
+                  type="button"
+                  onClick={() => setWorkspace("setup")}
+                  className="h-10 w-full rounded-xl bg-[var(--surface-tint)] text-sm font-medium hover:bg-[var(--surface-hover)]"
+                >
+                  Review setup
+                </button>
+              </div>
+            </Card>
+          </div>
+        </>
+      ) : null}
+
+      <div
+        className={`${workspace === "overview" ? "hidden" : "grid"} grid-cols-1 gap-4`}
+      >
+        <div className={workspace === "setup" ? "space-y-4" : "hidden"}>
           <Card>
             <div className="flex items-center justify-between border-b border-[var(--border-subtle)] p-4">
               <div>
@@ -501,14 +785,49 @@ export function VoiceReceptionistView({
           <form onSubmit={submitConfig}>
             <Card>
               <div className="border-b border-[var(--border-subtle)] p-4">
-                <h2 className="font-semibold">
-                  {selectedConfig ? `Edit ${selectedConfig.name}` : "New receptionist"}
-                </h2>
-                <p className="mt-1 text-xs text-[var(--text-muted)]">
-                  Secrets left blank are preserved when editing.
-                </p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-semibold">
+                      {selectedConfig
+                        ? `Edit ${selectedConfig.name}`
+                        : "New receptionist"}
+                    </h2>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Secrets left blank are preserved when editing.
+                    </p>
+                  </div>
+                  {hasUnsavedChanges ? (
+                    <StatusPill status="unsaved changes" />
+                  ) : null}
+                </div>
+              </div>
+              <div className="grid gap-1 border-b border-[var(--border-subtle)] bg-[var(--surface-tint)] p-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                {CONFIG_SECTIONS.map((section) => (
+                  <button
+                    key={section.id}
+                    type="button"
+                    onClick={() => setConfigSection(section.id)}
+                    className={`rounded-xl px-3 py-2 text-left transition-colors ${
+                      configSection === section.id
+                        ? "bg-[var(--surface-card)] text-[var(--accent-primary)] shadow-sm"
+                        : "text-[var(--text-muted)] hover:bg-[var(--surface-hover)]"
+                    }`}
+                  >
+                    <span className="block text-sm font-medium">
+                      {section.label}
+                    </span>
+                    <span className="hidden text-[11px] text-[var(--text-soft)] xl:block">
+                      {section.description}
+                    </span>
+                  </button>
+                ))}
               </div>
               <fieldset disabled={!canConfigure} className="space-y-4 p-4 disabled:opacity-70">
+                <div
+                  className={
+                    configSection === "general" ? "space-y-4" : "hidden"
+                  }
+                >
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Name">
                     <input className="input" required value={draft.name} onChange={(event) => update("name", event.target.value)} />
@@ -524,8 +843,8 @@ export function VoiceReceptionistView({
                   <Field label="Provider">
                     <select className="input" value={draft.provider} onChange={(event) => update("provider", event.target.value as VoiceConfig["provider"])}>
                       <option value="twilio">Twilio</option>
-                      <option value="sip">SIP</option>
-                      <option value="custom">Custom</option>
+                      <option value="sip" disabled={draft.provider !== "sip"}>SIP — adapter required</option>
+                      <option value="custom" disabled={draft.provider !== "custom"}>Custom — adapter required</option>
                     </select>
                   </Field>
                   <Field label="Default locale">
@@ -555,8 +874,16 @@ export function VoiceReceptionistView({
                     </Field>
                   </div>
                 </details>
+                {draft.provider !== "twilio" ? (
+                  <div className="rounded-xl border border-[var(--warning-text)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning-text)]">
+                    This saved configuration uses {draft.provider}, but live
+                    calling requires a provider-specific adapter. New
+                    receptionists should use Twilio.
+                  </div>
+                ) : null}
+                </div>
 
-                <details open className="rounded-xl border border-[var(--border-subtle)] p-3">
+                <details open className={`${configSection === "voice" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
                   <summary className="cursor-pointer text-sm font-semibold">Speech and streaming</summary>
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
@@ -613,17 +940,40 @@ export function VoiceReceptionistView({
                   </div>
                 </details>
 
-                <details open className="rounded-xl border border-[var(--border-subtle)] p-3">
-                  <summary className="cursor-pointer text-sm font-semibold">Messages and human transfer</summary>
+                <details open className={`${configSection === "ai" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
+                  <summary className="cursor-pointer text-sm font-semibold">AI knowledge and caller messages</summary>
                   <div className="mt-3 space-y-3">
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-tint)] p-4">
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--surface-accent)] text-[var(--accent-primary)]">
+                          <Sparkles className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--text-strong)]">
+                            Organization knowledge is connected
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-[var(--text-muted)]">
+                            The receptionist answers with your uploaded
+                            documents, website content, FAQs, and configured AI
+                            instructions. Knowledge is managed centrally for the
+                            organization.
+                          </p>
+                          <Link
+                            href="/knowledge"
+                            className="mt-2 inline-flex text-xs font-medium text-[var(--accent-primary)] hover:underline"
+                          >
+                            Manage knowledge sources →
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
                     <Field label="Greeting"><textarea className="input min-h-20" value={draft.greeting} onChange={(event) => update("greeting", event.target.value)} /></Field>
                     <Field label="AI error fallback"><textarea className="input min-h-20" value={draft.errorMessage} onChange={(event) => update("errorMessage", event.target.value)} /></Field>
                     <Field label="After-hours message"><textarea className="input min-h-20" value={draft.afterHoursMessage} onChange={(event) => update("afterHoursMessage", event.target.value)} /></Field>
-                    <Field label="Default transfer number"><input className="input" placeholder="+919876543210" value={draft.transferPhoneNumber} onChange={(event) => update("transferPhoneNumber", event.target.value)} /></Field>
                   </div>
                 </details>
 
-                <details className="rounded-xl border border-[var(--border-subtle)] p-3">
+                <details open className={`${configSection === "hours" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
                   <summary className="cursor-pointer text-sm font-semibold">Business hours and holidays</summary>
                   <div className="mt-3 space-y-3">
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.businessHoursEnabled} onChange={(event) => update("businessHoursEnabled", event.target.checked)} /> Enforce business hours</label>
@@ -643,15 +993,16 @@ export function VoiceReceptionistView({
                   </div>
                 </details>
 
-                <details className="rounded-xl border border-[var(--border-subtle)] p-3">
+                <details open className={`${configSection === "routing" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
                   <summary className="cursor-pointer text-sm font-semibold">Keyword and keypad routing</summary>
                   <div className="mt-3 space-y-3">
+                    <Field label="Default transfer number"><input className="input" placeholder="+919876543210" value={draft.transferPhoneNumber} onChange={(event) => update("transferPhoneNumber", event.target.value)} /></Field>
                     <Field label="Keyword routes — one keyword=+number per line"><textarea className="input min-h-28 font-mono text-xs" placeholder={"sales=+919800000001\nsupport=+919800000002"} value={draft.routingKeywords} onChange={(event) => update("routingKeywords", event.target.value)} /></Field>
                     <Field label="DTMF routes — digit=Department|+number"><textarea className="input min-h-28 font-mono text-xs" placeholder={"1=Sales|+919800000001\n0=+919800000000"} value={draft.dtmfRoutes} onChange={(event) => update("dtmfRoutes", event.target.value)} /></Field>
                   </div>
                 </details>
 
-                <details className="rounded-xl border border-[var(--border-subtle)] p-3">
+                <details open className={`${configSection === "routing" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
                   <summary className="cursor-pointer text-sm font-semibold">Voicemail and notifications</summary>
                   <div className="mt-3 space-y-3">
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.voicemailEnabled} onChange={(event) => update("voicemailEnabled", event.target.checked)} /> Enable voicemail fallback</label>
@@ -666,7 +1017,7 @@ export function VoiceReceptionistView({
                   </div>
                 </details>
 
-                <details className="rounded-xl border border-[var(--border-subtle)] p-3">
+                <details open className={`${configSection === "advanced" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
                   <summary className="cursor-pointer text-sm font-semibold">Advanced callback overrides</summary>
                   <div className="mt-3 space-y-3">
                     {([
@@ -702,10 +1053,10 @@ export function VoiceReceptionistView({
             <Card>
               <div className="border-b border-[var(--border-subtle)] p-4"><h2 className="font-semibold">Twilio endpoints</h2></div>
               <div className="space-y-3 p-4 text-xs">
-                <Endpoint label="Incoming call" value={`${callbackRoot}/incoming`} />
-                <Endpoint label="Status callback" value={`${callbackRoot}/status`} />
-                <Endpoint label="ConversationRelay action" value={`${callbackRoot}/relay`} />
-                <Endpoint label="WebSocket" value={draft.conversationRelayUrl || `${apiBaseUrl.replace(/^http/, "ws")}/voice-receptionist/stream/${selectedConfig.id} (server default may differ)`} />
+                <Endpoint label="Incoming call" value={`${callbackRoot}/incoming`} copied={copiedEndpoint === "Incoming call"} onCopy={() => copyEndpoint("Incoming call", `${callbackRoot}/incoming`)} />
+                <Endpoint label="Status callback" value={`${callbackRoot}/status`} copied={copiedEndpoint === "Status callback"} onCopy={() => copyEndpoint("Status callback", `${callbackRoot}/status`)} />
+                <Endpoint label="ConversationRelay action" value={`${callbackRoot}/relay`} copied={copiedEndpoint === "ConversationRelay action"} onCopy={() => copyEndpoint("ConversationRelay action", `${callbackRoot}/relay`)} />
+                <Endpoint label="WebSocket" value={websocketEndpoint ?? ""} copied={copiedEndpoint === "WebSocket"} onCopy={() => copyEndpoint("WebSocket", websocketEndpoint ?? "")} />
                 <div className="flex flex-wrap gap-2">
                   <StatusPill status={selectedConfig.hasApiKey ? "credentials ready" : "missing credentials"} />
                   <StatusPill status={draft.conversationRelayUrl ? "stream configured" : "server default"} />
@@ -716,11 +1067,15 @@ export function VoiceReceptionistView({
           ) : null}
         </div>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[370px_minmax(0,1fr)]">
+        <div
+          className={`${
+            workspace === "calls" ? "grid" : "hidden"
+          } min-w-0 grid-cols-1 gap-4 xl:grid-cols-[370px_minmax(0,1fr)]`}
+        >
           <Card>
             <div className="border-b border-[var(--border-subtle)] p-4">
               <div className="flex items-center justify-between"><h2 className="font-semibold">Voice calls</h2><span className="text-xs text-[var(--text-muted)]">Live event stream</span></div>
-              <div className="mt-3 grid grid-cols-[1fr_140px] gap-2">
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
                 <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value, page: 1 })} placeholder="Caller, number, or call ID" className="input" />
                 <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, page: 1 })} className="input">
                   <option value="">All statuses</option>
@@ -804,7 +1159,7 @@ export function VoiceReceptionistView({
                 </div>
                 <form onSubmit={onSendMessage} className="border-t border-[var(--border-subtle)] p-4">
                   <textarea name="reply" rows={3} className="input min-h-24 resize-y" placeholder="Speak a live agent message" required />
-                  <div className="mt-3 flex justify-between gap-3"><p className="text-xs text-[var(--text-muted)]">On live Twilio calls this updates the active call TwiML.</p><button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">Speak message</button></div>
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-[var(--text-muted)]">Delivered through the active ConversationRelay session without interrupting the call.</p><button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">Speak message</button></div>
                 </form>
                 <details className="border-t border-[var(--border-subtle)] p-4 text-xs"><summary className="cursor-pointer font-medium">Call metadata</summary><pre className="mt-2 overflow-auto rounded-md bg-[var(--surface-tint)] p-3">{JSON.stringify(selectedCall.metadata, null, 2)}</pre></details>
               </div>
@@ -816,12 +1171,87 @@ export function VoiceReceptionistView({
   );
 }
 
-function Endpoint({ label, value }: { label: string; value: string }) {
-  return <div><p className="font-medium text-[var(--text-muted)]">{label}</p><code className="mt-1 block overflow-auto rounded-md bg-[var(--surface-tint)] p-2 text-[var(--text-strong)]">{value}</code></div>;
+function Endpoint({
+  label,
+  value,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-medium text-[var(--text-muted)]">{label}</p>
+        <button
+          type="button"
+          onClick={onCopy}
+          className="inline-flex items-center gap-1 text-[var(--accent-primary)] hover:underline"
+          aria-label={`Copy ${label}`}
+        >
+          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <code className="mt-1 block overflow-auto rounded-md bg-[var(--surface-tint)] p-2 text-[var(--text-strong)]">
+        {value}
+      </code>
+    </div>
+  );
 }
 
 function CallMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-md bg-[var(--surface-tint)] p-2"><p className="text-[var(--text-muted)]">{label}</p><p className="mt-1 truncate font-medium text-[var(--text-strong)]">{value}</p></div>;
+  return <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-sm"><p className="text-xs text-[var(--text-muted)]">{label}</p><p className="mt-1 truncate text-base font-semibold text-[var(--text-strong)]">{value}</p></div>;
+}
+
+function OutcomeBar({
+  label,
+  value,
+  total,
+  tone,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  tone: "success" | "accent" | "warning" | "danger";
+}) {
+  const percent = total ? Math.round((value / total) * 100) : 0;
+  const colors = {
+    success: "bg-[var(--success-text)]",
+    accent: "bg-[var(--accent-primary)]",
+    warning: "bg-[var(--warning-text)]",
+    danger: "bg-[var(--danger-text)]",
+  };
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+        <span className="text-[var(--text-muted)]">{label}</span>
+        <span className="font-semibold text-[var(--text-strong)]">
+          {value} · {percent}%
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-tint)]">
+        <div
+          className={`h-full rounded-full ${colors[tone]}`}
+          style={{ width: `${percent}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function OverviewStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border-r border-[var(--border-subtle)] p-4 last:border-r-0">
+      <p className="text-xs text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 text-lg font-semibold text-[var(--text-strong)]">
+        {value}
+      </p>
+    </div>
+  );
 }
 
 function VoiceEventBubble({ event }: { event: VoiceCallEvent }) {

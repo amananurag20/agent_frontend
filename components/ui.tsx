@@ -35,6 +35,7 @@ export function StatusPill({ status }: { status: string }) {
     status === "open" ||
     status === "enabled" ||
     status === "active" ||
+    status === "live" ||
     status === "ready" ||
     status === "completed" ||
     status === "approved" ||
@@ -59,7 +60,8 @@ export function StatusPill({ status }: { status: string }) {
             status === "queued" ||
             status === "processing" ||
             status === "quarantined" ||
-            status === "stale"
+            status === "stale" ||
+            status === "unsaved changes"
           ? "bg-[var(--warning-bg)] text-[var(--warning-text)]"
           : "bg-[var(--danger-bg)] text-[var(--danger-text)]";
 
