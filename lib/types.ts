@@ -674,6 +674,10 @@ export type WhatsAppTemplate = {
   status: string;
   category?: string | null;
   components: unknown[];
+  source: "local" | "meta" | string;
+  providerTemplateId?: string | null;
+  rejectionReason?: string | null;
+  submittedAt?: string | null;
   syncedAt: string;
 };
 

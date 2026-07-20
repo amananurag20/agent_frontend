@@ -45,11 +45,17 @@ export function StatusPill({ status }: { status: string }) {
     status === "verify" ||
     status === "secret"
       ? "bg-[var(--success-bg)] text-[var(--success-text)]"
-      : status === "closed" || status === "disabled" || status === "inactive"
+      : status === "closed" ||
+          status === "disabled" ||
+          status === "inactive" ||
+          status === "draft"
         ? "bg-[var(--neutral-bg)] text-[var(--neutral-text)]"
         : status === "degraded" ||
             status === "waiting_for_agent" ||
             status === "pending" ||
+            status === "in_review" ||
+            status === "in_appeal" ||
+            status === "paused" ||
             status === "queued" ||
             status === "processing" ||
             status === "quarantined" ||

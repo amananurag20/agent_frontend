@@ -105,6 +105,7 @@ function whatsAppSettingsFromForm(
   const knowledgeScope = String(form.get("knowledgeScope") || "all");
   return {
     ...existing,
+    metaAppId: String(form.get("metaAppId") || "").trim(),
     handoffKeywords: String(form.get("handoffKeywords") || "")
       .split(",")
       .map((value) => value.trim())
@@ -120,6 +121,139 @@ function whatsAppSettingsFromForm(
     maxClarificationAttempts: Number(
       form.get("maxClarificationAttempts") || 2,
     ),
+  };
+}
+
+function whatsAppTemplateFromForm(form: FormData) {
+  const lines = (name: string) =>
+    String(form.get(name) || "")
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  const components: Record<string, unknown>[] = [];
+  const category = String(form.get("category") || "UTILITY");
+  if (category === "AUTHENTICATION") {
+    components.push({
+      type: "BODY",
+      add_security_recommendation:
+        form.get("addSecurityRecommendation") === "on",
+    });
+    const expirationMinutes = Number(form.get("codeExpirationMinutes") || 10);
+    components.push({
+      type: "FOOTER",
+      code_expiration_minutes: expirationMinutes,
+    });
+    const otpType = String(form.get("otpType") || "COPY_CODE");
+    components.push({
+      type: "BUTTONS",
+      buttons: [
+        {
+          type: "OTP",
+          otp_type: otpType,
+          text: String(form.get("otpButtonText") || "Copy code").trim(),
+          ...(otpType === "ONE_TAP"
+            ? {
+                autofill_text: String(
+                  form.get("otpAutofillText") || "Autofill",
+                ).trim(),
+                package_name: String(form.get("otpPackageName") || "").trim(),
+                signature_hash: String(
+                  form.get("otpSignatureHash") || "",
+                ).trim(),
+              }
+            : {}),
+        },
+      ],
+    });
+    return {
+      name: String(form.get("name") || ""),
+      language: String(form.get("language") || ""),
+      category,
+      components,
+    };
+  }
+
+  const headerFormat = String(form.get("headerFormat") || "NONE");
+  const headerText = String(form.get("headerText") || "").trim();
+  if (headerFormat === "TEXT" && headerText) {
+    const examples = /\{\{\d+\}\}/.test(headerText)
+      ? lines("headerExamples")
+      : [];
+    components.push({
+      type: "HEADER",
+      format: "TEXT",
+      text: headerText,
+      ...(examples.length ? { example: { header_text: examples } } : {}),
+    });
+  } else if (["IMAGE", "VIDEO", "DOCUMENT"].includes(headerFormat)) {
+    components.push({
+      type: "HEADER",
+      format: headerFormat,
+      example: {
+        header_handle: [String(form.get("headerMediaHandle") || "").trim()],
+      },
+    });
+  } else if (headerFormat === "LOCATION") {
+    components.push({ type: "HEADER", format: "LOCATION" });
+  }
+  const bodyText = String(form.get("bodyText") || "").trim();
+  const bodyExamples = /\{\{\d+\}\}/.test(bodyText)
+    ? lines("bodyExamples")
+    : [];
+  components.push({
+    type: "BODY",
+    text: bodyText,
+    ...(bodyExamples.length
+      ? { example: { body_text: [bodyExamples] } }
+      : {}),
+  });
+  const footerText = String(form.get("footerText") || "").trim();
+  if (footerText) components.push({ type: "FOOTER", text: footerText });
+
+  const parsedButtons = JSON.parse(
+    String(form.get("buttons") || "[]"),
+  ) as Array<{
+    type: string;
+    text: string;
+    value?: string;
+    example?: string;
+    flowId?: string;
+    navigateScreen?: string;
+    flowAction?: string;
+  }>;
+  if (parsedButtons.length) {
+    components.push({
+      type: "BUTTONS",
+      buttons: parsedButtons.map((button) => ({
+        type: button.type,
+        text: button.text.trim(),
+        ...(button.type === "URL" ? { url: button.value?.trim() } : {}),
+        ...(button.type === "URL" && button.example?.trim()
+          ? { example: [button.example.trim()] }
+          : {}),
+        ...(button.type === "PHONE_NUMBER"
+          ? { phone_number: button.value?.trim() }
+          : {}),
+        ...(button.type === "FLOW"
+          ? {
+              flow_id: button.flowId?.trim(),
+              flow_action:
+                button.flowAction === "data_exchange"
+                  ? "data_exchange"
+                  : "navigate",
+              ...(button.navigateScreen?.trim()
+                ? { navigate_screen: button.navigateScreen.trim() }
+                : {}),
+            }
+          : {}),
+      })),
+    });
+  }
+  return {
+    name: String(form.get("name") || ""),
+    language: String(form.get("language") || ""),
+    category,
+    components,
   };
 }
 
@@ -3435,6 +3569,90 @@ export default function Home() {
     if (result) setWhatsAppTemplates(result);
   }
 
+  async function createWhatsAppTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const configId = String(form.get("configId"));
+    const payload = whatsAppTemplateFromForm(form);
+    const result = await run(
+      () =>
+        api<WhatsAppTemplate>(
+          `/whatsapp-assistant/configs/${configId}/templates`,
+          { method: "POST", body: JSON.stringify(payload) },
+        ),
+      "WhatsApp template draft created",
+    );
+    if (result) await loadWhatsAppTemplates(configId, true);
+    return Boolean(result);
+  }
+
+  async function uploadWhatsAppTemplateMedia(configId: string, file: File) {
+    const body = new FormData();
+    body.append("file", file);
+    return run(
+      () =>
+        uploadApi<{
+          handle: string;
+          filename: string;
+          mimeType: string;
+          size: number;
+        }>(`/whatsapp-assistant/configs/${configId}/templates/media`, body),
+      "Template sample uploaded to Meta",
+    );
+  }
+
+  async function updateWhatsAppTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const configId = String(form.get("configId"));
+    const templateId = String(form.get("templateId"));
+    const payload = whatsAppTemplateFromForm(form);
+    const result = await run(
+      () =>
+        api<WhatsAppTemplate>(
+          `/whatsapp-assistant/configs/${configId}/templates/${templateId}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              name: payload.name,
+              language: payload.language,
+              category: payload.category,
+              components: payload.components,
+            }),
+          },
+        ),
+      "WhatsApp template draft updated",
+    );
+    if (result) await loadWhatsAppTemplates(configId, true);
+    return Boolean(result);
+  }
+
+  async function submitWhatsAppTemplate(template: WhatsAppTemplate) {
+    const result = await run(
+      () =>
+        api<WhatsAppTemplate>(
+          `/whatsapp-assistant/configs/${template.configId}/templates/${template.id}/submit`,
+          { method: "POST" },
+        ),
+      "Template submitted to Meta",
+    );
+    if (result) await loadWhatsAppTemplates(template.configId, true);
+    return Boolean(result);
+  }
+
+  async function deleteWhatsAppTemplate(template: WhatsAppTemplate) {
+    const result = await run(
+      () =>
+        api<{ deleted: boolean; id: string }>(
+          `/whatsapp-assistant/configs/${template.configId}/templates/${template.id}`,
+          { method: "DELETE" },
+        ),
+      "WhatsApp template draft deleted",
+    );
+    if (result) await loadWhatsAppTemplates(template.configId, true);
+    return Boolean(result);
+  }
+
   async function sendWhatsAppReply(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedWhatsAppConversation) return;
@@ -3466,7 +3684,9 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const result = await run(() => {
-      const componentsText = String(form.get("components") || "").trim();
+      const componentsText = String(
+        form.get("componentsOverride") || form.get("components") || "",
+      ).trim();
       let components: Record<string, unknown>[] | undefined;
       if (componentsText) {
         const parsed: unknown = JSON.parse(componentsText);
@@ -4219,6 +4439,11 @@ export default function Home() {
                   onDeleteConfig={deleteWhatsAppConfig}
                   onSelectConfig={selectWhatsAppConfig}
                   onSyncTemplates={syncWhatsAppTemplates}
+                  onCreateTemplate={createWhatsAppTemplate}
+                  onUpdateTemplate={updateWhatsAppTemplate}
+                  onSubmitTemplate={submitWhatsAppTemplate}
+                  onDeleteTemplate={deleteWhatsAppTemplate}
+                  onUploadTemplateMedia={uploadWhatsAppTemplateMedia}
                   onLoadConversations={() =>
                     loadWhatsAppConversations({ page: 1 })
                   }
