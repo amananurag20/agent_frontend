@@ -19,7 +19,11 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@twilio/*": [
+        "./.vendor/node_modules/@twilio/*",
+        "./node_modules/@twilio/*"
+      ]
     }
   },
   "include": [

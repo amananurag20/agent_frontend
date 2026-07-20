@@ -86,6 +86,7 @@ import type {
   VoiceConfigDiagnostic,
   VoiceConfigInput,
   VoiceRuntimeHealth,
+  VoiceSoftphoneState,
   WidgetConfig,
   WidgetConfigList,
   WidgetPageInfo,
@@ -116,12 +117,8 @@ function whatsAppSettingsFromForm(
       knowledgeScope === "folders" ? form.getAll("folderIds").map(String) : [],
     memoryEnabled: form.get("memoryEnabled") === "on",
     recentMessageLimit: Number(form.get("recentMessageLimit") || 8),
-    lowConfidenceAction: String(
-      form.get("lowConfidenceAction") || "clarify",
-    ),
-    maxClarificationAttempts: Number(
-      form.get("maxClarificationAttempts") || 2,
-    ),
+    lowConfidenceAction: String(form.get("lowConfidenceAction") || "clarify"),
+    maxClarificationAttempts: Number(form.get("maxClarificationAttempts") || 2),
   };
 }
 
@@ -204,9 +201,7 @@ function whatsAppTemplateFromForm(form: FormData) {
   components.push({
     type: "BODY",
     text: bodyText,
-    ...(bodyExamples.length
-      ? { example: { body_text: [bodyExamples] } }
-      : {}),
+    ...(bodyExamples.length ? { example: { body_text: [bodyExamples] } } : {}),
   });
   const footerText = String(form.get("footerText") || "").trim();
   if (footerText) components.push({ type: "FOOTER", text: footerText });
@@ -319,11 +314,14 @@ function streamPublicWidgetMessage(input: {
         content: input.content,
       });
     });
-    socket.on("message.delta", (frame: { clientMessageId?: string; delta?: string }) => {
-      if (frame.clientMessageId !== clientMessageId) return;
-      streamed += frame.delta ?? "";
-      updateStreamingMessage();
-    });
+    socket.on(
+      "message.delta",
+      (frame: { clientMessageId?: string; delta?: string }) => {
+        if (frame.clientMessageId !== clientMessageId) return;
+        streamed += frame.delta ?? "";
+        updateStreamingMessage();
+      },
+    );
     socket.on(
       "message.replace",
       (frame: { clientMessageId?: string; content?: string }) => {
@@ -347,7 +345,8 @@ function streamPublicWidgetMessage(input: {
     socket.on(
       "message.error",
       (frame: { clientMessageId?: string; message?: string }) => {
-        if (frame.clientMessageId && frame.clientMessageId !== clientMessageId) return;
+        if (frame.clientMessageId && frame.clientMessageId !== clientMessageId)
+          return;
         settled = true;
         cleanup();
         reject(connectionError(frame.message ?? "Realtime generation failed"));
@@ -439,7 +438,9 @@ function tabFromPathname(pathname: string): TabId | null {
   return routeTabs.get(pathname.replace(/\/$/, "")) ?? null;
 }
 
-function parseCustomerChatEvent(block: string): CustomerChatRealtimeEvent | null {
+function parseCustomerChatEvent(
+  block: string,
+): CustomerChatRealtimeEvent | null {
   if (!block || block.includes("event: heartbeat")) return null;
   const data = block
     .split("\n")
@@ -468,7 +469,10 @@ async function playHandoffChime() {
     const master = context.createGain();
     master.gain.setValueAtTime(0.0001, context.currentTime);
     master.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02);
-    master.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.48);
+    master.gain.exponentialRampToValueAtTime(
+      0.0001,
+      context.currentTime + 0.48,
+    );
     master.connect(context.destination);
 
     [0, 0.14].forEach((delay, index) => {
@@ -701,6 +705,8 @@ export default function Home() {
     useState<VoiceRuntimeHealth | null>(null);
   const [voiceDiagnostic, setVoiceDiagnostic] =
     useState<VoiceConfigDiagnostic | null>(null);
+  const [voiceSoftphone, setVoiceSoftphone] =
+    useState<VoiceSoftphoneState | null>(null);
   const [selectedVoiceCall, setSelectedVoiceCall] = useState<VoiceCall | null>(
     null,
   );
@@ -1292,6 +1298,7 @@ export default function Home() {
         loadVoiceConfigs(),
         loadVoiceCalls(),
         loadVoiceOperations(),
+        loadVoiceSoftphone(),
       );
     }
     await Promise.all(baseTasks);
@@ -1353,7 +1360,12 @@ export default function Home() {
       tasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
     }
     if (isEnabled("voice_receptionist")) {
-      tasks.push(loadVoiceConfigs(), loadVoiceCalls(), loadVoiceOperations());
+      tasks.push(
+        loadVoiceConfigs(),
+        loadVoiceCalls(),
+        loadVoiceOperations(),
+        loadVoiceSoftphone(),
+      );
     }
     await Promise.all(tasks);
   }
@@ -1469,12 +1481,14 @@ export default function Home() {
       const result = await api<ConversationList>(
         `/customer-chat/conversations?${params.toString()}`,
       );
-      const nextIds = new Set(result.data.map((conversation) => conversation.id));
+      const nextIds = new Set(
+        result.data.map((conversation) => conversation.id),
+      );
       const shouldPlaySound = Boolean(
         newHandoffId &&
-          nextIds.has(newHandoffId) &&
-          !handoffNotificationIds.current.has(newHandoffId) &&
-          notificationSoundEnabled,
+        nextIds.has(newHandoffId) &&
+        !handoffNotificationIds.current.has(newHandoffId) &&
+        notificationSoundEnabled,
       );
       handoffNotificationIds.current = nextIds;
       setHandoffNotifications(result.data);
@@ -1863,6 +1877,53 @@ export default function Home() {
       setVoiceAnalytics(result[0]);
       setVoiceRuntimeHealth(result[1]);
     }
+  }
+
+  async function loadVoiceSoftphone(silent = false) {
+    if (selectedOrganizationId && selectedOrganizationId !== user?.orgId) {
+      setVoiceSoftphone(null);
+      return null;
+    }
+    const request = () =>
+      api<VoiceSoftphoneState>("/voice-receptionist/agent/softphone");
+    const result = silent
+      ? await request().catch(() => null)
+      : await run(request);
+    if (result) setVoiceSoftphone(result);
+    return result;
+  }
+
+  async function setVoiceAgentAvailability(
+    availability: "offline" | "available",
+  ) {
+    const result = await run(
+      () =>
+        api<{ availability: VoiceSoftphoneState["availability"] }>(
+          "/voice-receptionist/agent/presence",
+          {
+            method: "PATCH",
+            body: JSON.stringify({ availability }),
+          },
+        ),
+      availability === "available"
+        ? "You are available for voice calls"
+        : "Voice softphone is offline",
+    );
+    if (!result) return null;
+    return loadVoiceSoftphone(true);
+  }
+
+  async function heartbeatVoiceAgent() {
+    return api<{ availability: VoiceSoftphoneState["availability"] }>(
+      "/voice-receptionist/agent/heartbeat",
+      { method: "POST" },
+    ).catch(() => null);
+  }
+
+  async function refreshVoiceSoftphoneToken() {
+    return api<VoiceSoftphoneState>(
+      "/voice-receptionist/agent/softphone",
+    ).catch(() => null);
   }
 
   async function loadVoiceCalls(
@@ -2627,7 +2688,10 @@ export default function Home() {
             {
               method: "POST",
               headers: { "x-visitor-token": visitorToken },
-              body: JSON.stringify({ content, clientMessageId: crypto.randomUUID() }),
+              body: JSON.stringify({
+                content,
+                clientMessageId: crypto.randomUUID(),
+              }),
             },
           );
           return sent.conversation;
@@ -4502,6 +4566,7 @@ export default function Home() {
                   calls={voiceCalls}
                   analytics={voiceAnalytics}
                   runtimeHealth={voiceRuntimeHealth}
+                  softphone={voiceSoftphone}
                   diagnostic={voiceDiagnostic}
                   selectedCall={selectedVoiceCall}
                   users={users}
@@ -4521,6 +4586,9 @@ export default function Home() {
                   onUpdateStatus={updateVoiceStatus}
                   onAssignCall={assignVoiceCall}
                   onOpenRecording={openVoiceRecording}
+                  onRefreshSoftphone={refreshVoiceSoftphoneToken}
+                  onSetAgentAvailability={setVoiceAgentAvailability}
+                  onHeartbeatAgent={heartbeatVoiceAgent}
                 />
               ) : null}
               {activeTab === "widget" ? (

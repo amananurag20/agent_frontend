@@ -591,10 +591,12 @@ export type AppointmentScheduleFeed = {
     resource: { name: string; type: string };
   }>;
   blackouts: AppointmentBlackout[];
-  waitlist: Array<AppointmentWaitlistEntry & {
-    service: { name: string };
-    staff: { name: string };
-  }>;
+  waitlist: Array<
+    AppointmentWaitlistEntry & {
+      service: { name: string };
+      staff: { name: string };
+    }
+  >;
   externalBusy: Array<{
     id: string;
     staffId: string;
@@ -896,6 +898,25 @@ export type VoiceConfigDiagnostic = {
     accountStatus?: string;
   };
   checkedAt: string;
+};
+
+export type VoiceSoftphoneState = {
+  configured: boolean;
+  configId?: string;
+  identity: string;
+  token?: string;
+  tokenTtlSeconds: number;
+  availability: "offline" | "available" | "busy";
+  activeCallId?: string | null;
+  message?: string;
+  pendingCalls: Array<{
+    id: string;
+    callerName?: string | null;
+    fromNumber?: string | null;
+    status: VoiceCall["status"];
+    summary?: string | null;
+    startedAt: string;
+  }>;
 };
 
 export type VoiceCallList = {

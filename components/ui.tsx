@@ -36,6 +36,7 @@ export function StatusPill({ status }: { status: string }) {
     status === "enabled" ||
     status === "active" ||
     status === "live" ||
+    status === "available" ||
     status === "ready" ||
     status === "completed" ||
     status === "approved" ||
@@ -49,10 +50,13 @@ export function StatusPill({ status }: { status: string }) {
       : status === "closed" ||
           status === "disabled" ||
           status === "inactive" ||
+          status === "offline" ||
+          status === "connecting" ||
           status === "draft"
         ? "bg-[var(--neutral-bg)] text-[var(--neutral-text)]"
         : status === "degraded" ||
             status === "waiting_for_agent" ||
+            status === "busy" ||
             status === "pending" ||
             status === "in_review" ||
             status === "in_appeal" ||

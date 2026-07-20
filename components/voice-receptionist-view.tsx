@@ -1,11 +1,15 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   BarChart3,
   Check,
   Copy,
   Headphones,
+  Mic,
+  MicOff,
   PhoneCall,
+  PhoneIncoming,
+  PhoneOff,
   Settings2,
   Sparkles,
 } from "lucide-react";
@@ -21,7 +25,9 @@ import type {
   VoiceConfigDiagnostic,
   VoiceConfigInput,
   VoiceRuntimeHealth,
+  VoiceSoftphoneState,
 } from "@/lib/types";
+import type { Call, Device } from "@twilio/voice-sdk";
 import { Card, EmptyState, Field, StatusPill } from "./ui";
 
 const WEEKDAYS = [
@@ -36,12 +42,7 @@ const WEEKDAYS = [
 
 type VoiceWorkspace = "overview" | "setup" | "calls";
 type ConfigSection =
-  | "general"
-  | "ai"
-  | "voice"
-  | "hours"
-  | "routing"
-  | "advanced";
+  "general" | "ai" | "voice" | "hours" | "routing" | "advanced";
 
 const CONFIG_SECTIONS: Array<{
   id: ConfigSection;
@@ -49,7 +50,11 @@ const CONFIG_SECTIONS: Array<{
   description: string;
 }> = [
   { id: "general", label: "General", description: "Number and credentials" },
-  { id: "ai", label: "AI & messages", description: "Knowledge and caller experience" },
+  {
+    id: "ai",
+    label: "AI & messages",
+    description: "Knowledge and caller experience",
+  },
   { id: "voice", label: "Voice", description: "Speech and live streaming" },
   { id: "hours", label: "Hours", description: "Availability and holidays" },
   { id: "routing", label: "Routing", description: "Transfers and voicemail" },
@@ -98,6 +103,7 @@ type ConfigDraft = {
   twilioDialCallbackUrl: string;
   twilioRecordingCallbackUrl: string;
   twilioConversationRelayCallbackUrl: string;
+  twilioClientStatusCallbackUrl: string;
 };
 
 const emptyDraft: ConfigDraft = {
@@ -144,6 +150,7 @@ const emptyDraft: ConfigDraft = {
   twilioDialCallbackUrl: "",
   twilioRecordingCallbackUrl: "",
   twilioConversationRelayCallbackUrl: "",
+  twilioClientStatusCallbackUrl: "",
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -209,7 +216,8 @@ function draftFromConfig(config: VoiceConfig): ConfigDraft {
       settings.afterHoursMessage,
       emptyDraft.afterHoursMessage,
     ),
-    businessHoursEnabled: hours.enabled !== false && Boolean(settings.businessHours),
+    businessHoursEnabled:
+      hours.enabled !== false && Boolean(settings.businessHours),
     timezone: text(hours.timezone, emptyDraft.timezone),
     businessDays: Array.isArray(hours.days)
       ? hours.days.filter((day): day is number => typeof day === "number")
@@ -242,21 +250,23 @@ function draftFromConfig(config: VoiceConfig): ConfigDraft {
       settings.conversationRelayTranscriptionProvider,
       emptyDraft.conversationRelayTranscriptionProvider,
     ),
-    conversationRelaySpeechModel: text(
-      settings.conversationRelaySpeechModel,
-    ),
+    conversationRelaySpeechModel: text(settings.conversationRelaySpeechModel),
     twilioGatherUrl: text(settings.twilioGatherUrl),
     twilioDialCallbackUrl: text(settings.twilioDialCallbackUrl),
     twilioRecordingCallbackUrl: text(settings.twilioRecordingCallbackUrl),
     twilioConversationRelayCallbackUrl: text(
       settings.twilioConversationRelayCallbackUrl,
     ),
+    twilioClientStatusCallbackUrl: text(settings.twilioClientStatusCallbackUrl),
   };
 }
 
 function parseKeywordRoutes(lines: string) {
   const routes: Record<string, string> = {};
-  for (const line of lines.split("\n").map((item) => item.trim()).filter(Boolean)) {
+  for (const line of lines
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean)) {
     const separator = line.indexOf("=");
     if (separator < 1) continue;
     routes[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
@@ -265,8 +275,14 @@ function parseKeywordRoutes(lines: string) {
 }
 
 function parseDtmfRoutes(lines: string) {
-  const routes: Record<string, string | { department: string; transferTo: string }> = {};
-  for (const line of lines.split("\n").map((item) => item.trim()).filter(Boolean)) {
+  const routes: Record<
+    string,
+    string | { department: string; transferTo: string }
+  > = {};
+  for (const line of lines
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean)) {
     const separator = line.indexOf("=");
     if (separator < 1) continue;
     const digits = line.slice(0, separator).trim();
@@ -285,7 +301,8 @@ function buildConfigInput(
 ): VoiceConfigInput {
   const settings: Record<string, unknown> = { ...(existing?.settings ?? {}) };
   const set = (key: string, value: unknown) => {
-    if (value === "" || value === undefined || value === null) delete settings[key];
+    if (value === "" || value === undefined || value === null)
+      delete settings[key];
     else settings[key] = value;
   };
   set("twilioAccountSid", draft.twilioAccountSid.trim());
@@ -324,6 +341,7 @@ function buildConfigInput(
     "twilioDialCallbackUrl",
     "twilioRecordingCallbackUrl",
     "twilioConversationRelayCallbackUrl",
+    "twilioClientStatusCallbackUrl",
   ] as const) {
     set(key, draft[key].trim());
   }
@@ -353,6 +371,7 @@ export function VoiceReceptionistView({
   calls,
   analytics,
   runtimeHealth,
+  softphone,
   diagnostic,
   selectedCall,
   users,
@@ -372,11 +391,15 @@ export function VoiceReceptionistView({
   onUpdateStatus,
   onAssignCall,
   onOpenRecording,
+  onRefreshSoftphone,
+  onSetAgentAvailability,
+  onHeartbeatAgent,
 }: {
   configs: VoiceConfig[];
   calls: VoiceCallList | null;
   analytics: VoiceAnalytics | null;
   runtimeHealth: VoiceRuntimeHealth | null;
+  softphone: VoiceSoftphoneState | null;
   diagnostic: VoiceConfigDiagnostic | null;
   selectedCall: VoiceCall | null;
   users: User[];
@@ -402,10 +425,14 @@ export function VoiceReceptionistView({
   onUpdateStatus: (status: VoiceCall["status"]) => void;
   onAssignCall: (assignedAgentId: string | null) => void;
   onOpenRecording: (callId: string) => void;
+  onRefreshSoftphone: () => Promise<VoiceSoftphoneState | null>;
+  onSetAgentAvailability: (
+    availability: "offline" | "available",
+  ) => Promise<VoiceSoftphoneState | null>;
+  onHeartbeatAgent: () => Promise<unknown>;
 }) {
   const [workspace, setWorkspace] = useState<VoiceWorkspace>("overview");
-  const [configSection, setConfigSection] =
-    useState<ConfigSection>("general");
+  const [configSection, setConfigSection] = useState<ConfigSection>("general");
   const [copiedEndpoint, setCopiedEndpoint] = useState<string | null>(null);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(
     configs[0]?.id ?? null,
@@ -443,11 +470,15 @@ export function VoiceReceptionistView({
       users.filter(
         (candidate) =>
           candidate.isActive !== false &&
-          candidate.roles.some((role) => role === "agent" || role === "org_admin"),
+          candidate.roles.some(
+            (role) => role === "agent" || role === "org_admin",
+          ),
       ),
     [users],
   );
-  const totalPages = calls ? Math.max(1, Math.ceil(calls.total / calls.limit)) : 1;
+  const totalPages = calls
+    ? Math.max(1, Math.ceil(calls.total / calls.limit))
+    : 1;
 
   useEffect(() => {
     if (!hasUnsavedChanges) return;
@@ -459,37 +490,39 @@ export function VoiceReceptionistView({
   }, [hasUnsavedChanges]);
 
   const readiness = [
-      {
-        label: "Active configuration",
-        complete: draft.status === "active",
-        detail: "Receptionist can accept provider callbacks",
-      },
-      {
-        label: "Twilio credentials",
-        complete: Boolean(selectedConfig?.hasApiKey || draft.apiKey) && Boolean(draft.twilioAccountSid),
-        detail: "Account SID and auth token are configured",
-      },
-      {
-        label: "Incoming number",
-        complete: Boolean(draft.phoneNumber),
-        detail: "An E.164 phone number is attached",
-      },
-      {
-        label: "Caller greeting",
-        complete: Boolean(draft.greeting.trim()),
-        detail: "Callers hear a welcome message immediately",
-      },
-      {
-        label: "Live streaming",
-        complete: Boolean(draft.conversationRelayUrl || selectedConfig),
-        detail: "ConversationRelay uses this config or the server default",
-      },
-      {
-        label: "Fallback route",
-        complete: draft.voicemailEnabled || Boolean(draft.transferPhoneNumber),
-        detail: "Unanswered callers have a safe next step",
-      },
-    ];
+    {
+      label: "Active configuration",
+      complete: draft.status === "active",
+      detail: "Receptionist can accept provider callbacks",
+    },
+    {
+      label: "Twilio credentials",
+      complete:
+        Boolean(selectedConfig?.hasApiKey || draft.apiKey) &&
+        Boolean(draft.twilioAccountSid),
+      detail: "Account SID and auth token are configured",
+    },
+    {
+      label: "Incoming number",
+      complete: Boolean(draft.phoneNumber),
+      detail: "An E.164 phone number is attached",
+    },
+    {
+      label: "Caller greeting",
+      complete: Boolean(draft.greeting.trim()),
+      detail: "Callers hear a welcome message immediately",
+    },
+    {
+      label: "Live streaming",
+      complete: Boolean(draft.conversationRelayUrl || selectedConfig),
+      detail: "ConversationRelay uses this config or the server default",
+    },
+    {
+      label: "Fallback route",
+      complete: draft.voicemailEnabled || Boolean(draft.transferPhoneNumber),
+      detail: "Unanswered callers have a safe next step",
+    },
+  ];
   const readinessComplete = readiness.filter((item) => item.complete).length;
   const readinessPercent = Math.round(
     (readinessComplete / readiness.length) * 100,
@@ -567,9 +600,7 @@ export function VoiceReceptionistView({
                   AI Voice Receptionist
                 </h1>
                 <StatusPill
-                  status={
-                    runtimeHealth?.activeSessions ? "live" : "ready"
-                  }
+                  status={runtimeHealth?.activeSessions ? "live" : "ready"}
                 />
               </div>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-[var(--text-muted)]">
@@ -596,11 +627,13 @@ export function VoiceReceptionistView({
           </div>
         </div>
         <div className="flex gap-1 overflow-x-auto border-t border-[var(--border-subtle)] px-3 pt-2 sm:px-5">
-          {([
-            ["overview", "Overview", BarChart3],
-            ["setup", "Setup", Settings2],
-            ["calls", "Calls", PhoneCall],
-          ] as const).map(([id, label, Icon]) => (
+          {(
+            [
+              ["overview", "Overview", BarChart3],
+              ["setup", "Setup", Settings2],
+              ["calls", "Calls", PhoneCall],
+            ] as const
+          ).map(([id, label, Icon]) => (
             <button
               key={id}
               type="button"
@@ -621,14 +654,38 @@ export function VoiceReceptionistView({
       {workspace === "overview" ? (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
-            <CallMetric label="30-day calls" value={String(analytics?.totalCalls ?? 0)} />
-            <CallMetric label="Active" value={String(analytics?.inProgress ?? 0)} />
-            <CallMetric label="Containment" value={`${analytics?.containmentRate ?? 0}%`} />
-            <CallMetric label="Transfer rate" value={`${analytics?.transferRate ?? 0}%`} />
-            <CallMetric label="Voicemails" value={String(analytics?.voicemail ?? 0)} />
-            <CallMetric label="Failures" value={String(analytics?.failed ?? 0)} />
-            <CallMetric label="Avg duration" value={formatDuration(analytics?.averageDurationSeconds)} />
-            <CallMetric label="Live streams" value={String(runtimeHealth?.activeSessions ?? 0)} />
+            <CallMetric
+              label="30-day calls"
+              value={String(analytics?.totalCalls ?? 0)}
+            />
+            <CallMetric
+              label="Active"
+              value={String(analytics?.inProgress ?? 0)}
+            />
+            <CallMetric
+              label="Containment"
+              value={`${analytics?.containmentRate ?? 0}%`}
+            />
+            <CallMetric
+              label="Transfer rate"
+              value={`${analytics?.transferRate ?? 0}%`}
+            />
+            <CallMetric
+              label="Voicemails"
+              value={String(analytics?.voicemail ?? 0)}
+            />
+            <CallMetric
+              label="Failures"
+              value={String(analytics?.failed ?? 0)}
+            />
+            <CallMetric
+              label="Avg duration"
+              value={formatDuration(analytics?.averageDurationSeconds)}
+            />
+            <CallMetric
+              label="Live streams"
+              value={String(runtimeHealth?.activeSessions ?? 0)}
+            />
           </div>
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,.75fr)]">
             <Card>
@@ -672,10 +729,22 @@ export function VoiceReceptionistView({
                 />
               </div>
               <div className="grid grid-cols-2 border-t border-[var(--border-subtle)] md:grid-cols-4">
-                <OverviewStat label="AI replies" value={analytics?.assistantResponses ?? 0} />
-                <OverviewStat label="Barge-ins" value={analytics?.bargeIns ?? 0} />
-                <OverviewStat label="Waiting" value={analytics?.waitingForAgent ?? 0} />
-                <OverviewStat label="Live now" value={runtimeHealth?.activeSessions ?? 0} />
+                <OverviewStat
+                  label="AI replies"
+                  value={analytics?.assistantResponses ?? 0}
+                />
+                <OverviewStat
+                  label="Barge-ins"
+                  value={analytics?.bargeIns ?? 0}
+                />
+                <OverviewStat
+                  label="Waiting"
+                  value={analytics?.waitingForAgent ?? 0}
+                />
+                <OverviewStat
+                  label="Live now"
+                  value={runtimeHealth?.activeSessions ?? 0}
+                />
               </div>
             </Card>
 
@@ -754,7 +823,11 @@ export function VoiceReceptionistView({
                 </p>
               </div>
               {canConfigure ? (
-                <button type="button" onClick={newConfig} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]">
+                <button
+                  type="button"
+                  onClick={newConfig}
+                  className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
+                >
                   New
                 </button>
               ) : null}
@@ -766,19 +839,26 @@ export function VoiceReceptionistView({
                   type="button"
                   onClick={() => selectConfig(config)}
                   className={`flex w-full items-center justify-between border-b border-[var(--border-subtle)] p-3 text-left hover:bg-[var(--surface-hover)] ${
-                    selectedConfigId === config.id ? "bg-[var(--surface-accent)]" : ""
+                    selectedConfigId === config.id
+                      ? "bg-[var(--surface-accent)]"
+                      : ""
                   }`}
                 >
                   <span>
-                    <span className="block text-sm font-medium">{config.name}</span>
+                    <span className="block text-sm font-medium">
+                      {config.name}
+                    </span>
                     <span className="text-xs text-[var(--text-muted)]">
-                      {config.provider} · {config.phoneNumber ?? config.sipDomain ?? "No endpoint"}
+                      {config.provider} ·{" "}
+                      {config.phoneNumber ?? config.sipDomain ?? "No endpoint"}
                     </span>
                   </span>
                   <StatusPill status={config.status} />
                 </button>
               ))}
-              {!configs.length ? <EmptyState>No voice config yet.</EmptyState> : null}
+              {!configs.length ? (
+                <EmptyState>No voice config yet.</EmptyState>
+              ) : null}
             </div>
           </Card>
 
@@ -822,85 +902,198 @@ export function VoiceReceptionistView({
                   </button>
                 ))}
               </div>
-              <fieldset disabled={!canConfigure} className="space-y-4 p-4 disabled:opacity-70">
+              <fieldset
+                disabled={!canConfigure}
+                className="space-y-4 p-4 disabled:opacity-70"
+              >
                 <div
                   className={
                     configSection === "general" ? "space-y-4" : "hidden"
                   }
                 >
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Name">
-                    <input className="input" required value={draft.name} onChange={(event) => update("name", event.target.value)} />
-                  </Field>
-                  <Field label="Status">
-                    <select className="input" value={draft.status} onChange={(event) => update("status", event.target.value as VoiceConfig["status"])}>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                    </select>
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Provider">
-                    <select className="input" value={draft.provider} onChange={(event) => update("provider", event.target.value as VoiceConfig["provider"])}>
-                      <option value="twilio">Twilio</option>
-                      <option value="sip" disabled={draft.provider !== "sip"}>SIP — adapter required</option>
-                      <option value="custom" disabled={draft.provider !== "custom"}>Custom — adapter required</option>
-                    </select>
-                  </Field>
-                  <Field label="Default locale">
-                    <input className="input" placeholder="en-US" value={draft.defaultLocale} onChange={(event) => update("defaultLocale", event.target.value)} />
-                  </Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Phone number">
-                    <input className="input" placeholder="+919876543210" value={draft.phoneNumber} onChange={(event) => update("phoneNumber", event.target.value)} />
-                  </Field>
-                  <Field label="SIP domain">
-                    <input className="input" value={draft.sipDomain} onChange={(event) => update("sipDomain", event.target.value)} />
-                  </Field>
-                </div>
-
-                <details open={!selectedConfig} className="rounded-xl border border-[var(--border-subtle)] p-3">
-                  <summary className="cursor-pointer text-sm font-semibold">Credentials and Twilio</summary>
-                  <div className="mt-3 space-y-3">
-                    <Field label="Twilio Account SID">
-                      <input className="input" placeholder="AC…" value={draft.twilioAccountSid} onChange={(event) => update("twilioAccountSid", event.target.value)} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Name">
+                      <input
+                        className="input"
+                        required
+                        value={draft.name}
+                        onChange={(event) => update("name", event.target.value)}
+                      />
                     </Field>
-                    <Field label="Twilio auth token / provider key">
-                      <input type="password" className="input" placeholder={selectedConfig?.hasApiKey ? "Configured — leave blank to preserve" : "Required for live Twilio"} value={draft.apiKey} onChange={(event) => update("apiKey", event.target.value)} />
-                    </Field>
-                    <Field label="Generic webhook verification token">
-                      <input type="password" className="input" placeholder={selectedConfig?.hasWebhookVerifyToken ? "Configured — leave blank to preserve" : "Optional"} value={draft.webhookVerifyToken} onChange={(event) => update("webhookVerifyToken", event.target.value)} />
+                    <Field label="Status">
+                      <select
+                        className="input"
+                        value={draft.status}
+                        onChange={(event) =>
+                          update(
+                            "status",
+                            event.target.value as VoiceConfig["status"],
+                          )
+                        }
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
                     </Field>
                   </div>
-                </details>
-                {draft.provider !== "twilio" ? (
-                  <div className="rounded-xl border border-[var(--warning-text)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning-text)]">
-                    This saved configuration uses {draft.provider}, but live
-                    calling requires a provider-specific adapter. New
-                    receptionists should use Twilio.
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Provider">
+                      <select
+                        className="input"
+                        value={draft.provider}
+                        onChange={(event) =>
+                          update(
+                            "provider",
+                            event.target.value as VoiceConfig["provider"],
+                          )
+                        }
+                      >
+                        <option value="twilio">Twilio</option>
+                        <option value="sip" disabled={draft.provider !== "sip"}>
+                          SIP — adapter required
+                        </option>
+                        <option
+                          value="custom"
+                          disabled={draft.provider !== "custom"}
+                        >
+                          Custom — adapter required
+                        </option>
+                      </select>
+                    </Field>
+                    <Field label="Default locale">
+                      <input
+                        className="input"
+                        placeholder="en-US"
+                        value={draft.defaultLocale}
+                        onChange={(event) =>
+                          update("defaultLocale", event.target.value)
+                        }
+                      />
+                    </Field>
                   </div>
-                ) : null}
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Phone number">
+                      <input
+                        className="input"
+                        placeholder="+919876543210"
+                        value={draft.phoneNumber}
+                        onChange={(event) =>
+                          update("phoneNumber", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="SIP domain">
+                      <input
+                        className="input"
+                        value={draft.sipDomain}
+                        onChange={(event) =>
+                          update("sipDomain", event.target.value)
+                        }
+                      />
+                    </Field>
+                  </div>
+
+                  <details
+                    open={!selectedConfig}
+                    className="rounded-xl border border-[var(--border-subtle)] p-3"
+                  >
+                    <summary className="cursor-pointer text-sm font-semibold">
+                      Credentials and Twilio
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <Field label="Twilio Account SID">
+                        <input
+                          className="input"
+                          placeholder="AC…"
+                          value={draft.twilioAccountSid}
+                          onChange={(event) =>
+                            update("twilioAccountSid", event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label="Twilio auth token / provider key">
+                        <input
+                          type="password"
+                          className="input"
+                          placeholder={
+                            selectedConfig?.hasApiKey
+                              ? "Configured — leave blank to preserve"
+                              : "Required for live Twilio"
+                          }
+                          value={draft.apiKey}
+                          onChange={(event) =>
+                            update("apiKey", event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label="Generic webhook verification token">
+                        <input
+                          type="password"
+                          className="input"
+                          placeholder={
+                            selectedConfig?.hasWebhookVerifyToken
+                              ? "Configured — leave blank to preserve"
+                              : "Optional"
+                          }
+                          value={draft.webhookVerifyToken}
+                          onChange={(event) =>
+                            update("webhookVerifyToken", event.target.value)
+                          }
+                        />
+                      </Field>
+                    </div>
+                  </details>
+                  {draft.provider !== "twilio" ? (
+                    <div className="rounded-xl border border-[var(--warning-text)] bg-[var(--warning-bg)] p-3 text-sm text-[var(--warning-text)]">
+                      This saved configuration uses {draft.provider}, but live
+                      calling requires a provider-specific adapter. New
+                      receptionists should use Twilio.
+                    </div>
+                  ) : null}
                 </div>
 
-                <details open className={`${configSection === "voice" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
-                  <summary className="cursor-pointer text-sm font-semibold">Speech and streaming</summary>
+                <details
+                  open
+                  className={`${configSection === "voice" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Speech and streaming
+                  </summary>
                   <div className="mt-3 space-y-3">
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="STT provider">
-                        <select className="input" value={draft.sttProvider} onChange={(event) => update("sttProvider", event.target.value)}>
+                        <select
+                          className="input"
+                          value={draft.sttProvider}
+                          onChange={(event) =>
+                            update("sttProvider", event.target.value)
+                          }
+                        >
                           <option value="deepgram">Deepgram</option>
                           <option value="google">Google</option>
                           <option value="">Provider default</option>
                         </select>
                       </Field>
                       <Field label="STT model">
-                        <input className="input" placeholder="nova-3-general" value={draft.sttModel} onChange={(event) => update("sttModel", event.target.value)} />
+                        <input
+                          className="input"
+                          placeholder="nova-3-general"
+                          value={draft.sttModel}
+                          onChange={(event) =>
+                            update("sttModel", event.target.value)
+                          }
+                        />
                       </Field>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="TTS provider">
-                        <select className="input" value={draft.ttsProvider} onChange={(event) => update("ttsProvider", event.target.value)}>
+                        <select
+                          className="input"
+                          value={draft.ttsProvider}
+                          onChange={(event) =>
+                            update("ttsProvider", event.target.value)
+                          }
+                        >
                           <option value="amazon">Amazon</option>
                           <option value="google">Google</option>
                           <option value="elevenlabs">ElevenLabs</option>
@@ -908,40 +1101,93 @@ export function VoiceReceptionistView({
                         </select>
                       </Field>
                       <Field label="TTS voice">
-                        <input className="input" placeholder="Joanna-Neural" value={draft.ttsVoice} onChange={(event) => update("ttsVoice", event.target.value)} />
+                        <input
+                          className="input"
+                          placeholder="Joanna-Neural"
+                          value={draft.ttsVoice}
+                          onChange={(event) =>
+                            update("ttsVoice", event.target.value)
+                          }
+                        />
                       </Field>
                     </div>
                     <Field label="ConversationRelay WSS URL (optional per-config override)">
-                      <input className="input" placeholder="wss://api.example.com/api/v1/voice-receptionist/stream/…" value={draft.conversationRelayUrl} onChange={(event) => update("conversationRelayUrl", event.target.value)} />
+                      <input
+                        className="input"
+                        placeholder="wss://api.example.com/api/v1/voice-receptionist/stream/…"
+                        value={draft.conversationRelayUrl}
+                        onChange={(event) =>
+                          update("conversationRelayUrl", event.target.value)
+                        }
+                      />
                     </Field>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Relay transcription provider">
-                        <select className="input" value={draft.conversationRelayTranscriptionProvider} onChange={(event) => update("conversationRelayTranscriptionProvider", event.target.value)}>
+                        <select
+                          className="input"
+                          value={draft.conversationRelayTranscriptionProvider}
+                          onChange={(event) =>
+                            update(
+                              "conversationRelayTranscriptionProvider",
+                              event.target.value,
+                            )
+                          }
+                        >
                           <option value="Deepgram">Deepgram</option>
                           <option value="Google">Google</option>
                         </select>
                       </Field>
                       <Field label="Relay speech model">
-                        <input className="input" placeholder="nova-3-general" value={draft.conversationRelaySpeechModel} onChange={(event) => update("conversationRelaySpeechModel", event.target.value)} />
+                        <input
+                          className="input"
+                          placeholder="nova-3-general"
+                          value={draft.conversationRelaySpeechModel}
+                          onChange={(event) =>
+                            update(
+                              "conversationRelaySpeechModel",
+                              event.target.value,
+                            )
+                          }
+                        />
                       </Field>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <Field label="Relay TTS provider">
-                        <select className="input" value={draft.conversationRelayTtsProvider} onChange={(event) => update("conversationRelayTtsProvider", event.target.value)}>
+                        <select
+                          className="input"
+                          value={draft.conversationRelayTtsProvider}
+                          onChange={(event) =>
+                            update(
+                              "conversationRelayTtsProvider",
+                              event.target.value,
+                            )
+                          }
+                        >
                           <option value="Amazon">Amazon</option>
                           <option value="Google">Google</option>
                           <option value="ElevenLabs">ElevenLabs</option>
                         </select>
                       </Field>
                       <Field label="Relay voice">
-                        <input className="input" value={draft.conversationRelayVoice} onChange={(event) => update("conversationRelayVoice", event.target.value)} />
+                        <input
+                          className="input"
+                          value={draft.conversationRelayVoice}
+                          onChange={(event) =>
+                            update("conversationRelayVoice", event.target.value)
+                          }
+                        />
                       </Field>
                     </div>
                   </div>
                 </details>
 
-                <details open className={`${configSection === "ai" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
-                  <summary className="cursor-pointer text-sm font-semibold">AI knowledge and caller messages</summary>
+                <details
+                  open
+                  className={`${configSection === "ai" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    AI knowledge and caller messages
+                  </summary>
                   <div className="mt-3 space-y-3">
                     <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-tint)] p-4">
                       <div className="flex items-start gap-3">
@@ -967,82 +1213,351 @@ export function VoiceReceptionistView({
                         </div>
                       </div>
                     </div>
-                    <Field label="Greeting"><textarea className="input min-h-20" value={draft.greeting} onChange={(event) => update("greeting", event.target.value)} /></Field>
-                    <Field label="AI error fallback"><textarea className="input min-h-20" value={draft.errorMessage} onChange={(event) => update("errorMessage", event.target.value)} /></Field>
-                    <Field label="After-hours message"><textarea className="input min-h-20" value={draft.afterHoursMessage} onChange={(event) => update("afterHoursMessage", event.target.value)} /></Field>
+                    <Field label="Greeting">
+                      <textarea
+                        className="input min-h-20"
+                        value={draft.greeting}
+                        onChange={(event) =>
+                          update("greeting", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="AI error fallback">
+                      <textarea
+                        className="input min-h-20"
+                        value={draft.errorMessage}
+                        onChange={(event) =>
+                          update("errorMessage", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="After-hours message">
+                      <textarea
+                        className="input min-h-20"
+                        value={draft.afterHoursMessage}
+                        onChange={(event) =>
+                          update("afterHoursMessage", event.target.value)
+                        }
+                      />
+                    </Field>
                   </div>
                 </details>
 
-                <details open className={`${configSection === "hours" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
-                  <summary className="cursor-pointer text-sm font-semibold">Business hours and holidays</summary>
+                <details
+                  open
+                  className={`${configSection === "hours" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Business hours and holidays
+                  </summary>
                   <div className="mt-3 space-y-3">
-                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.businessHoursEnabled} onChange={(event) => update("businessHoursEnabled", event.target.checked)} /> Enforce business hours</label>
-                    <Field label="IANA timezone"><input className="input" value={draft.timezone} onChange={(event) => update("timezone", event.target.value)} /></Field>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={draft.businessHoursEnabled}
+                        onChange={(event) =>
+                          update("businessHoursEnabled", event.target.checked)
+                        }
+                      />{" "}
+                      Enforce business hours
+                    </label>
+                    <Field label="IANA timezone">
+                      <input
+                        className="input"
+                        value={draft.timezone}
+                        onChange={(event) =>
+                          update("timezone", event.target.value)
+                        }
+                      />
+                    </Field>
                     <div className="flex flex-wrap gap-2">
                       {WEEKDAYS.map(([day, label]) => (
-                        <label key={day} className="flex items-center gap-1 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-xs">
-                          <input type="checkbox" checked={draft.businessDays.includes(day)} onChange={(event) => update("businessDays", event.target.checked ? [...draft.businessDays, day].sort() : draft.businessDays.filter((item) => item !== day))} /> {label}
+                        <label
+                          key={day}
+                          className="flex items-center gap-1 rounded-md border border-[var(--border-subtle)] px-2 py-1 text-xs"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={draft.businessDays.includes(day)}
+                            onChange={(event) =>
+                              update(
+                                "businessDays",
+                                event.target.checked
+                                  ? [...draft.businessDays, day].sort()
+                                  : draft.businessDays.filter(
+                                      (item) => item !== day,
+                                    ),
+                              )
+                            }
+                          />{" "}
+                          {label}
                         </label>
                       ))}
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Opens"><input type="time" className="input" value={draft.startTime} onChange={(event) => update("startTime", event.target.value)} /></Field>
-                      <Field label="Closes"><input type="time" className="input" value={draft.endTime} onChange={(event) => update("endTime", event.target.value)} /></Field>
+                      <Field label="Opens">
+                        <input
+                          type="time"
+                          className="input"
+                          value={draft.startTime}
+                          onChange={(event) =>
+                            update("startTime", event.target.value)
+                          }
+                        />
+                      </Field>
+                      <Field label="Closes">
+                        <input
+                          type="time"
+                          className="input"
+                          value={draft.endTime}
+                          onChange={(event) =>
+                            update("endTime", event.target.value)
+                          }
+                        />
+                      </Field>
                     </div>
-                    <Field label="Holidays (YYYY-MM-DD, comma separated)"><textarea className="input min-h-20" value={draft.holidays} onChange={(event) => update("holidays", event.target.value)} /></Field>
+                    <Field label="Holidays (YYYY-MM-DD, comma separated)">
+                      <textarea
+                        className="input min-h-20"
+                        value={draft.holidays}
+                        onChange={(event) =>
+                          update("holidays", event.target.value)
+                        }
+                      />
+                    </Field>
                   </div>
                 </details>
 
-                <details open className={`${configSection === "routing" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
-                  <summary className="cursor-pointer text-sm font-semibold">Keyword and keypad routing</summary>
+                <details
+                  open
+                  className={`${configSection === "routing" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Keyword and keypad routing
+                  </summary>
                   <div className="mt-3 space-y-3">
-                    <Field label="Default transfer number"><input className="input" placeholder="+919876543210" value={draft.transferPhoneNumber} onChange={(event) => update("transferPhoneNumber", event.target.value)} /></Field>
-                    <Field label="Keyword routes — one keyword=+number per line"><textarea className="input min-h-28 font-mono text-xs" placeholder={"sales=+919800000001\nsupport=+919800000002"} value={draft.routingKeywords} onChange={(event) => update("routingKeywords", event.target.value)} /></Field>
-                    <Field label="DTMF routes — digit=Department|+number"><textarea className="input min-h-28 font-mono text-xs" placeholder={"1=Sales|+919800000001\n0=+919800000000"} value={draft.dtmfRoutes} onChange={(event) => update("dtmfRoutes", event.target.value)} /></Field>
+                    <Field label="Default transfer number">
+                      <input
+                        className="input"
+                        placeholder="+919876543210"
+                        value={draft.transferPhoneNumber}
+                        onChange={(event) =>
+                          update("transferPhoneNumber", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="Keyword routes — one keyword=+number per line">
+                      <textarea
+                        className="input min-h-28 font-mono text-xs"
+                        placeholder={
+                          "sales=+919800000001\nsupport=+919800000002"
+                        }
+                        value={draft.routingKeywords}
+                        onChange={(event) =>
+                          update("routingKeywords", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="DTMF routes — digit=Department|+number">
+                      <textarea
+                        className="input min-h-28 font-mono text-xs"
+                        placeholder={"1=Sales|+919800000001\n0=+919800000000"}
+                        value={draft.dtmfRoutes}
+                        onChange={(event) =>
+                          update("dtmfRoutes", event.target.value)
+                        }
+                      />
+                    </Field>
                   </div>
                 </details>
 
-                <details open className={`${configSection === "routing" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
-                  <summary className="cursor-pointer text-sm font-semibold">Voicemail and notifications</summary>
+                <details
+                  open
+                  className={`${configSection === "routing" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Voicemail and notifications
+                  </summary>
                   <div className="mt-3 space-y-3">
-                    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.voicemailEnabled} onChange={(event) => update("voicemailEnabled", event.target.checked)} /> Enable voicemail fallback</label>
-                    <Field label="Voicemail prompt"><textarea className="input min-h-20" value={draft.voicemailPrompt} onChange={(event) => update("voicemailPrompt", event.target.value)} /></Field>
-                    <Field label="Maximum recording seconds (10–600)"><input type="number" min={10} max={600} className="input" value={draft.voicemailMaxLengthSeconds} onChange={(event) => update("voicemailMaxLengthSeconds", event.target.value)} /></Field>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={draft.voicemailEnabled}
+                        onChange={(event) =>
+                          update("voicemailEnabled", event.target.checked)
+                        }
+                      />{" "}
+                      Enable voicemail fallback
+                    </label>
+                    <Field label="Voicemail prompt">
+                      <textarea
+                        className="input min-h-20"
+                        value={draft.voicemailPrompt}
+                        onChange={(event) =>
+                          update("voicemailPrompt", event.target.value)
+                        }
+                      />
+                    </Field>
+                    <Field label="Maximum recording seconds (10–600)">
+                      <input
+                        type="number"
+                        min={10}
+                        max={600}
+                        className="input"
+                        value={draft.voicemailMaxLengthSeconds}
+                        onChange={(event) =>
+                          update(
+                            "voicemailMaxLengthSeconds",
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </Field>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Handoff email"><input type="email" className="input" value={draft.handoffNotificationEmail} onChange={(event) => update("handoffNotificationEmail", event.target.value)} /></Field>
-                      <Field label="Handoff phone"><input className="input" placeholder="+91…" value={draft.handoffNotificationPhone} onChange={(event) => update("handoffNotificationPhone", event.target.value)} /></Field>
-                      <Field label="Voicemail email"><input type="email" className="input" value={draft.voicemailNotificationEmail} onChange={(event) => update("voicemailNotificationEmail", event.target.value)} /></Field>
-                      <Field label="Voicemail phone"><input className="input" placeholder="+91…" value={draft.voicemailNotificationPhone} onChange={(event) => update("voicemailNotificationPhone", event.target.value)} /></Field>
+                      <Field label="Handoff email">
+                        <input
+                          type="email"
+                          className="input"
+                          value={draft.handoffNotificationEmail}
+                          onChange={(event) =>
+                            update(
+                              "handoffNotificationEmail",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </Field>
+                      <Field label="Handoff phone">
+                        <input
+                          className="input"
+                          placeholder="+91…"
+                          value={draft.handoffNotificationPhone}
+                          onChange={(event) =>
+                            update(
+                              "handoffNotificationPhone",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </Field>
+                      <Field label="Voicemail email">
+                        <input
+                          type="email"
+                          className="input"
+                          value={draft.voicemailNotificationEmail}
+                          onChange={(event) =>
+                            update(
+                              "voicemailNotificationEmail",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </Field>
+                      <Field label="Voicemail phone">
+                        <input
+                          className="input"
+                          placeholder="+91…"
+                          value={draft.voicemailNotificationPhone}
+                          onChange={(event) =>
+                            update(
+                              "voicemailNotificationPhone",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </Field>
                     </div>
                   </div>
                 </details>
 
-                <details open className={`${configSection === "advanced" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}>
-                  <summary className="cursor-pointer text-sm font-semibold">Advanced callback overrides</summary>
+                <details
+                  open
+                  className={`${configSection === "advanced" ? "block" : "hidden"} rounded-xl border border-[var(--border-subtle)] p-3`}
+                >
+                  <summary className="cursor-pointer text-sm font-semibold">
+                    Advanced callback overrides
+                  </summary>
                   <div className="mt-3 space-y-3">
-                    {([
-                      ["twilioGatherUrl", "Gather callback"],
-                      ["twilioDialCallbackUrl", "Dial callback"],
-                      ["twilioRecordingCallbackUrl", "Recording callback"],
-                      ["twilioConversationRelayCallbackUrl", "ConversationRelay action callback"],
-                    ] as const).map(([key, label]) => (
-                      <Field key={key} label={label}><input className="input" placeholder="https://…" value={draft[key]} onChange={(event) => update(key, event.target.value)} /></Field>
+                    {(
+                      [
+                        ["twilioGatherUrl", "Gather callback"],
+                        ["twilioDialCallbackUrl", "Dial callback"],
+                        ["twilioRecordingCallbackUrl", "Recording callback"],
+                        [
+                          "twilioConversationRelayCallbackUrl",
+                          "ConversationRelay action callback",
+                        ],
+                        [
+                          "twilioClientStatusCallbackUrl",
+                          "Browser agent status callback",
+                        ],
+                      ] as const
+                    ).map(([key, label]) => (
+                      <Field key={key} label={label}>
+                        <input
+                          className="input"
+                          placeholder="https://…"
+                          value={draft[key]}
+                          onChange={(event) => update(key, event.target.value)}
+                        />
+                      </Field>
                     ))}
                   </div>
                 </details>
 
-                {canConfigure ? <button className="h-10 w-full rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">{selectedConfig ? "Update configuration" : "Create configuration"}</button> : <p className="text-sm text-[var(--text-muted)]">You have read-only Voice access.</p>}
+                {canConfigure ? (
+                  <button className="h-10 w-full rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
+                    {selectedConfig
+                      ? "Update configuration"
+                      : "Create configuration"}
+                  </button>
+                ) : (
+                  <p className="text-sm text-[var(--text-muted)]">
+                    You have read-only Voice access.
+                  </p>
+                )}
                 {canConfigure && selectedConfig ? (
                   <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => onTestConfig(selectedConfig.id)} className="h-9 rounded-md border border-[var(--border-strong)] text-sm">Test provider</button>
-                    <button type="button" onClick={() => window.confirm(`Delete ${selectedConfig.name}? Historical calls will also be deleted.`) && onDeleteConfig(selectedConfig.id)} className="h-9 rounded-md bg-[var(--danger-bg)] text-sm text-[var(--danger-text)]">Delete config</button>
+                    <button
+                      type="button"
+                      onClick={() => onTestConfig(selectedConfig.id)}
+                      className="h-9 rounded-md border border-[var(--border-strong)] text-sm"
+                    >
+                      Test provider
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.confirm(
+                          `Delete ${selectedConfig.name}? Historical calls will also be deleted.`,
+                        ) && onDeleteConfig(selectedConfig.id)
+                      }
+                      className="h-9 rounded-md bg-[var(--danger-bg)] text-sm text-[var(--danger-text)]"
+                    >
+                      Delete config
+                    </button>
                   </div>
                 ) : null}
                 {diagnostic && diagnostic.configId === selectedConfig?.id ? (
                   <div className="rounded-md bg-[var(--surface-tint)] p-3 text-xs">
-                    <div className="flex items-center justify-between"><span className="font-semibold">Provider diagnostic</span><StatusPill status={diagnostic.ready ? "ready" : "not ready"} /></div>
-                    <div className="mt-2 grid grid-cols-2 gap-1">{Object.entries(diagnostic.checks).map(([key, value]) => <span key={key}>{key}: {value ? "yes" : "no"}</span>)}</div>
-                    {diagnostic.providerTest.message ? <p className="mt-2 text-[var(--danger-text)]">{diagnostic.providerTest.message}</p> : null}
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold">Provider diagnostic</span>
+                      <StatusPill
+                        status={diagnostic.ready ? "ready" : "not ready"}
+                      />
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-1">
+                      {Object.entries(diagnostic.checks).map(([key, value]) => (
+                        <span key={key}>
+                          {key}: {value ? "yes" : "no"}
+                        </span>
+                      ))}
+                    </div>
+                    {diagnostic.providerTest.message ? (
+                      <p className="mt-2 text-[var(--danger-text)]">
+                        {diagnostic.providerTest.message}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </fieldset>
@@ -1051,16 +1566,67 @@ export function VoiceReceptionistView({
 
           {selectedConfig && callbackRoot ? (
             <Card>
-              <div className="border-b border-[var(--border-subtle)] p-4"><h2 className="font-semibold">Twilio endpoints</h2></div>
+              <div className="border-b border-[var(--border-subtle)] p-4">
+                <h2 className="font-semibold">Twilio endpoints</h2>
+              </div>
               <div className="space-y-3 p-4 text-xs">
-                <Endpoint label="Incoming call" value={`${callbackRoot}/incoming`} copied={copiedEndpoint === "Incoming call"} onCopy={() => copyEndpoint("Incoming call", `${callbackRoot}/incoming`)} />
-                <Endpoint label="Status callback" value={`${callbackRoot}/status`} copied={copiedEndpoint === "Status callback"} onCopy={() => copyEndpoint("Status callback", `${callbackRoot}/status`)} />
-                <Endpoint label="ConversationRelay action" value={`${callbackRoot}/relay`} copied={copiedEndpoint === "ConversationRelay action"} onCopy={() => copyEndpoint("ConversationRelay action", `${callbackRoot}/relay`)} />
-                <Endpoint label="WebSocket" value={websocketEndpoint ?? ""} copied={copiedEndpoint === "WebSocket"} onCopy={() => copyEndpoint("WebSocket", websocketEndpoint ?? "")} />
+                <Endpoint
+                  label="Incoming call"
+                  value={`${callbackRoot}/incoming`}
+                  copied={copiedEndpoint === "Incoming call"}
+                  onCopy={() =>
+                    copyEndpoint("Incoming call", `${callbackRoot}/incoming`)
+                  }
+                />
+                <Endpoint
+                  label="Status callback"
+                  value={`${callbackRoot}/status`}
+                  copied={copiedEndpoint === "Status callback"}
+                  onCopy={() =>
+                    copyEndpoint("Status callback", `${callbackRoot}/status`)
+                  }
+                />
+                <Endpoint
+                  label="ConversationRelay action"
+                  value={`${callbackRoot}/relay`}
+                  copied={copiedEndpoint === "ConversationRelay action"}
+                  onCopy={() =>
+                    copyEndpoint(
+                      "ConversationRelay action",
+                      `${callbackRoot}/relay`,
+                    )
+                  }
+                />
+                <Endpoint
+                  label="WebSocket"
+                  value={websocketEndpoint ?? ""}
+                  copied={copiedEndpoint === "WebSocket"}
+                  onCopy={() =>
+                    copyEndpoint("WebSocket", websocketEndpoint ?? "")
+                  }
+                />
                 <div className="flex flex-wrap gap-2">
-                  <StatusPill status={selectedConfig.hasApiKey ? "credentials ready" : "missing credentials"} />
-                  <StatusPill status={draft.conversationRelayUrl ? "stream configured" : "server default"} />
-                  <StatusPill status={selectedConfig.voicemailEnabled ? "voicemail" : "no voicemail"} />
+                  <StatusPill
+                    status={
+                      selectedConfig.hasApiKey
+                        ? "credentials ready"
+                        : "missing credentials"
+                    }
+                  />
+                  <StatusPill
+                    status={
+                      draft.conversationRelayUrl
+                        ? "stream configured"
+                        : "server default"
+                    }
+                  />
+                  <StatusPill
+                    status={
+                      selectedConfig.voicemailEnabled
+                        ? "voicemail"
+                        : "no voicemail"
+                    }
+                  />
                 </div>
               </div>
             </Card>
@@ -1072,35 +1638,145 @@ export function VoiceReceptionistView({
             workspace === "calls" ? "grid" : "hidden"
           } min-w-0 grid-cols-1 gap-4 xl:grid-cols-[370px_minmax(0,1fr)]`}
         >
+          <VoiceSoftphonePanel
+            softphone={softphone}
+            selectedCall={selectedCall}
+            onRefreshToken={onRefreshSoftphone}
+            onSetAvailability={onSetAgentAvailability}
+            onHeartbeat={onHeartbeatAgent}
+            onIncoming={(callId) => {
+              setWorkspace("calls");
+              if (callId) onSelectCall(callId);
+            }}
+          />
           <Card>
             <div className="border-b border-[var(--border-subtle)] p-4">
-              <div className="flex items-center justify-between"><h2 className="font-semibold">Voice calls</h2><span className="text-xs text-[var(--text-muted)]">Live event stream</span></div>
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold">Voice calls</h2>
+                <span className="text-xs text-[var(--text-muted)]">
+                  Live event stream
+                </span>
+              </div>
               <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px]">
-                <input value={filters.search} onChange={(event) => setFilters({ ...filters, search: event.target.value, page: 1 })} placeholder="Caller, number, or call ID" className="input" />
-                <select value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value, page: 1 })} className="input">
+                <input
+                  value={filters.search}
+                  onChange={(event) =>
+                    setFilters({
+                      ...filters,
+                      search: event.target.value,
+                      page: 1,
+                    })
+                  }
+                  placeholder="Caller, number, or call ID"
+                  className="input"
+                />
+                <select
+                  value={filters.status}
+                  onChange={(event) =>
+                    setFilters({
+                      ...filters,
+                      status: event.target.value,
+                      page: 1,
+                    })
+                  }
+                  className="input"
+                >
                   <option value="">All statuses</option>
-                  {(["ringing", "in_progress", "waiting_for_agent", "transferred", "voicemail", "completed", "failed"] as const).map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
+                  {(
+                    [
+                      "ringing",
+                      "in_progress",
+                      "waiting_for_agent",
+                      "transferred",
+                      "voicemail",
+                      "completed",
+                      "failed",
+                    ] as const
+                  ).map((status) => (
+                    <option key={status} value={status}>
+                      {status.replaceAll("_", " ")}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="mt-2 grid grid-cols-[1fr_90px] gap-2">
-                <button type="button" onClick={() => onLoadCalls({ ...filters, page: 1 })} className="h-9 rounded-md bg-[var(--surface-tint)] text-sm hover:bg-[var(--surface-hover)]">Apply filters</button>
-                <select value={filters.limit} onChange={(event) => onLoadCalls({ ...filters, page: 1, limit: Number(event.target.value) })} className="input" aria-label="Calls per page"><option value={10}>10</option><option value={30}>30</option><option value={50}>50</option><option value={100}>100</option></select>
+                <button
+                  type="button"
+                  onClick={() => onLoadCalls({ ...filters, page: 1 })}
+                  className="h-9 rounded-md bg-[var(--surface-tint)] text-sm hover:bg-[var(--surface-hover)]"
+                >
+                  Apply filters
+                </button>
+                <select
+                  value={filters.limit}
+                  onChange={(event) =>
+                    onLoadCalls({
+                      ...filters,
+                      page: 1,
+                      limit: Number(event.target.value),
+                    })
+                  }
+                  className="input"
+                  aria-label="Calls per page"
+                >
+                  <option value={10}>10</option>
+                  <option value={30}>30</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
               </div>
             </div>
             <div className="max-h-[720px] overflow-auto">
               {calls?.data.map((call) => (
-                <button key={call.id} onClick={() => onSelectCall(call.id)} className={`block w-full border-b border-[var(--border-subtle)] p-4 text-left hover:bg-[var(--surface-hover)] ${selectedCall?.id === call.id ? "bg-[var(--surface-accent)]" : ""}`}>
-                  <div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium">{call.callerName ?? call.fromNumber ?? call.providerCallId}</span><StatusPill status={call.status} /></div>
-                  <p className="mt-1 truncate text-xs text-[var(--text-muted)]">{call.events.at(-1)?.content ?? "No transcript yet"}</p>
-                  <div className="mt-2 flex justify-between text-xs text-[var(--text-soft)]"><span>{formatDateTime(call.lastEventAt)}</span><span>{formatDuration(call.durationSeconds)}</span></div>
+                <button
+                  key={call.id}
+                  onClick={() => onSelectCall(call.id)}
+                  className={`block w-full border-b border-[var(--border-subtle)] p-4 text-left hover:bg-[var(--surface-hover)] ${selectedCall?.id === call.id ? "bg-[var(--surface-accent)]" : ""}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-sm font-medium">
+                      {call.callerName ??
+                        call.fromNumber ??
+                        call.providerCallId}
+                    </span>
+                    <StatusPill status={call.status} />
+                  </div>
+                  <p className="mt-1 truncate text-xs text-[var(--text-muted)]">
+                    {call.events.at(-1)?.content ?? "No transcript yet"}
+                  </p>
+                  <div className="mt-2 flex justify-between text-xs text-[var(--text-soft)]">
+                    <span>{formatDateTime(call.lastEventAt)}</span>
+                    <span>{formatDuration(call.durationSeconds)}</span>
+                  </div>
                 </button>
               ))}
-              {!calls?.data.length ? <EmptyState>No calls match these filters.</EmptyState> : null}
+              {!calls?.data.length ? (
+                <EmptyState>No calls match these filters.</EmptyState>
+              ) : null}
             </div>
             <div className="flex items-center justify-between border-t border-[var(--border-subtle)] p-3 text-xs">
-              <button disabled={filters.page <= 1} onClick={() => onLoadCalls({ ...filters, page: filters.page - 1 })} className="h-9 rounded-md border border-[var(--border-strong)] px-3 disabled:opacity-40">Previous</button>
-              <span>Page {calls?.page ?? filters.page} of {totalPages} · {calls?.total ?? 0} calls</span>
-              <button disabled={filters.page >= totalPages} onClick={() => onLoadCalls({ ...filters, page: filters.page + 1 })} className="h-9 rounded-md border border-[var(--border-strong)] px-3 disabled:opacity-40">Next</button>
+              <button
+                disabled={filters.page <= 1}
+                onClick={() =>
+                  onLoadCalls({ ...filters, page: filters.page - 1 })
+                }
+                className="h-9 rounded-md border border-[var(--border-strong)] px-3 disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span>
+                Page {calls?.page ?? filters.page} of {totalPages} ·{" "}
+                {calls?.total ?? 0} calls
+              </span>
+              <button
+                disabled={filters.page >= totalPages}
+                onClick={() =>
+                  onLoadCalls({ ...filters, page: filters.page + 1 })
+                }
+                className="h-9 rounded-md border border-[var(--border-strong)] px-3 disabled:opacity-40"
+              >
+                Next
+              </button>
             </div>
           </Card>
 
@@ -1109,14 +1785,31 @@ export function VoiceReceptionistView({
               <div className="min-w-0">
                 <div className="border-b border-[var(--border-subtle)] p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div><h2 className="font-semibold">{selectedCall.callerName ?? "Voice caller"}</h2><p className="text-xs text-[var(--text-muted)]">{selectedCall.fromNumber ?? selectedCall.providerCallId} → {selectedCall.toNumber ?? "Unknown destination"}</p></div>
+                    <div>
+                      <h2 className="font-semibold">
+                        {selectedCall.callerName ?? "Voice caller"}
+                      </h2>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {selectedCall.fromNumber ?? selectedCall.providerCallId}{" "}
+                        → {selectedCall.toNumber ?? "Unknown destination"}
+                      </p>
+                    </div>
                     <StatusPill status={selectedCall.status} />
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
-                    <CallMetric label="Started" value={formatDateTime(selectedCall.startedAt)} />
-                    <CallMetric label="Duration" value={formatDuration(selectedCall.durationSeconds)} />
+                    <CallMetric
+                      label="Started"
+                      value={formatDateTime(selectedCall.startedAt)}
+                    />
+                    <CallMetric
+                      label="Duration"
+                      value={formatDuration(selectedCall.durationSeconds)}
+                    />
                     <CallMetric label="Locale" value={selectedCall.locale} />
-                    <CallMetric label="Events" value={String(selectedCall.events.length)} />
+                    <CallMetric
+                      label="Events"
+                      value={String(selectedCall.events.length)}
+                    />
                   </div>
                 </div>
 
@@ -1124,49 +1817,490 @@ export function VoiceReceptionistView({
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                     {canManageAgents ? (
                       <Field label="Assigned agent">
-                        <select className="input" value={selectedCall.assignedAgentId ?? ""} onChange={(event) => onAssignCall(event.target.value || null)}>
+                        <select
+                          className="input"
+                          value={selectedCall.assignedAgentId ?? ""}
+                          onChange={(event) =>
+                            onAssignCall(event.target.value || null)
+                          }
+                        >
                           <option value="">Unassigned</option>
-                          {eligibleAgents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name ?? agent.email}</option>)}
+                          {eligibleAgents.map((agent) => (
+                            <option key={agent.id} value={agent.id}>
+                              {agent.name ?? agent.email}
+                            </option>
+                          ))}
                         </select>
                       </Field>
-                    ) : <CallMetric label="Assigned agent" value={users.find((item) => item.id === selectedCall.assignedAgentId)?.name ?? selectedCall.assignedAgentId ?? "Unassigned"} />}
+                    ) : (
+                      <CallMetric
+                        label="Assigned agent"
+                        value={
+                          users.find(
+                            (item) => item.id === selectedCall.assignedAgentId,
+                          )?.name ??
+                          selectedCall.assignedAgentId ??
+                          "Unassigned"
+                        }
+                      />
+                    )}
                     <Field label="Internal status">
-                      <select className="input" value={selectedCall.status} onChange={(event) => onUpdateStatus(event.target.value as VoiceCall["status"])}>
-                        {(["ringing", "in_progress", "waiting_for_agent", "transferred", "voicemail", "completed", "failed"] as const).map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
+                      <select
+                        className="input"
+                        value={selectedCall.status}
+                        onChange={(event) =>
+                          onUpdateStatus(
+                            event.target.value as VoiceCall["status"],
+                          )
+                        }
+                      >
+                        {(
+                          [
+                            "ringing",
+                            "in_progress",
+                            "waiting_for_agent",
+                            "transferred",
+                            "voicemail",
+                            "completed",
+                            "failed",
+                          ] as const
+                        ).map((status) => (
+                          <option key={status} value={status}>
+                            {status.replaceAll("_", " ")}
+                          </option>
+                        ))}
                       </select>
                     </Field>
                   </div>
                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <Field label="Transfer destination override"><input className="input" placeholder="Use config default" value={transferTo} onChange={(event) => setRouteEditor({ callId: selectedCall.id, transferTo: event.target.value, reason: routeReason })} /></Field>
-                    <Field label="Routing reason"><input className="input" placeholder="Optional audit note" value={routeReason} onChange={(event) => setRouteEditor({ callId: selectedCall.id, transferTo, reason: event.target.value })} /></Field>
+                    <Field label="Transfer destination override">
+                      <input
+                        className="input"
+                        placeholder="Use config default"
+                        value={transferTo}
+                        onChange={(event) =>
+                          setRouteEditor({
+                            callId: selectedCall.id,
+                            transferTo: event.target.value,
+                            reason: routeReason,
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field label="Routing reason">
+                      <input
+                        className="input"
+                        placeholder="Optional audit note"
+                        value={routeReason}
+                        onChange={(event) =>
+                          setRouteEditor({
+                            callId: selectedCall.id,
+                            transferTo,
+                            reason: event.target.value,
+                          })
+                        }
+                      />
+                    </Field>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={onRequestHandoff} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]">Handoff</button>
-                    <button onClick={() => onRouteCall("transfer", { ...(transferTo ? { transferTo } : {}), ...(routeReason ? { reason: routeReason } : {}) })} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]">Transfer</button>
-                    <button onClick={() => onRouteCall("voicemail", routeReason ? { reason: routeReason } : undefined)} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]">Voicemail</button>
-                    <button onClick={() => onRouteCall("close", { reason: routeReason || "Closed by operator" })} className="h-9 rounded-md bg-[var(--danger-bg)] px-3 text-sm text-[var(--danger-text)]">End live call</button>
+                    <button
+                      onClick={onRequestHandoff}
+                      className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
+                    >
+                      Handoff
+                    </button>
+                    <button
+                      onClick={() =>
+                        onRouteCall("transfer", {
+                          ...(transferTo ? { transferTo } : {}),
+                          ...(routeReason ? { reason: routeReason } : {}),
+                        })
+                      }
+                      className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
+                    >
+                      Transfer
+                    </button>
+                    <button
+                      onClick={() =>
+                        onRouteCall(
+                          "voicemail",
+                          routeReason ? { reason: routeReason } : undefined,
+                        )
+                      }
+                      className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-sm hover:bg-[var(--surface-hover)]"
+                    >
+                      Voicemail
+                    </button>
+                    <button
+                      onClick={() =>
+                        onRouteCall("close", {
+                          reason: routeReason || "Closed by operator",
+                        })
+                      }
+                      className="h-9 rounded-md bg-[var(--danger-bg)] px-3 text-sm text-[var(--danger-text)]"
+                    >
+                      End live call
+                    </button>
                   </div>
                 </div>
 
                 {selectedCall.recordingUrl ? (
                   <div className="border-b border-[var(--border-subtle)] bg-[var(--surface-tint)] p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-medium">Voicemail recording</p><p className="text-xs text-[var(--text-muted)]">{formatDuration(selectedCall.recordingDurationSeconds)} · {selectedCall.recordingSid}</p></div><button type="button" onClick={() => onOpenRecording(selectedCall.id)} className="text-sm text-[var(--accent-primary)] underline">Open securely</button></div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">
+                          Voicemail recording
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {formatDuration(
+                            selectedCall.recordingDurationSeconds,
+                          )}{" "}
+                          · {selectedCall.recordingSid}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => onOpenRecording(selectedCall.id)}
+                        className="text-sm text-[var(--accent-primary)] underline"
+                      >
+                        Open securely
+                      </button>
+                    </div>
                   </div>
                 ) : null}
 
                 <div className="max-h-[620px] space-y-3 overflow-auto bg-[var(--surface-card)] p-4">
-                  {selectedCall.events.map((event) => <VoiceEventBubble key={event.id} event={event} />)}
+                  {selectedCall.events.map((event) => (
+                    <VoiceEventBubble key={event.id} event={event} />
+                  ))}
                 </div>
-                <form onSubmit={onSendMessage} className="border-t border-[var(--border-subtle)] p-4">
-                  <textarea name="reply" rows={3} className="input min-h-24 resize-y" placeholder="Speak a live agent message" required />
-                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-[var(--text-muted)]">Delivered through the active ConversationRelay session without interrupting the call.</p><button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">Speak message</button></div>
+                <form
+                  onSubmit={onSendMessage}
+                  className="border-t border-[var(--border-subtle)] p-4"
+                >
+                  <textarea
+                    name="reply"
+                    rows={3}
+                    className="input min-h-24 resize-y"
+                    placeholder="Speak a live agent message"
+                    required
+                  />
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-[var(--text-muted)]">
+                      Delivered through the active ConversationRelay session
+                      without interrupting the call.
+                    </p>
+                    <button className="h-10 rounded-md bg-[var(--accent-secondary)] px-4 text-sm font-medium text-[var(--text-on-accent)]">
+                      Speak message
+                    </button>
+                  </div>
                 </form>
-                <details className="border-t border-[var(--border-subtle)] p-4 text-xs"><summary className="cursor-pointer font-medium">Call metadata</summary><pre className="mt-2 overflow-auto rounded-md bg-[var(--surface-tint)] p-3">{JSON.stringify(selectedCall.metadata, null, 2)}</pre></details>
+                <details className="border-t border-[var(--border-subtle)] p-4 text-xs">
+                  <summary className="cursor-pointer font-medium">
+                    Call metadata
+                  </summary>
+                  <pre className="mt-2 overflow-auto rounded-md bg-[var(--surface-tint)] p-3">
+                    {JSON.stringify(selectedCall.metadata, null, 2)}
+                  </pre>
+                </details>
               </div>
-            ) : <EmptyState>Select a call to inspect its transcript and controls.</EmptyState>}
+            ) : (
+              <EmptyState>
+                Select a call to inspect its transcript and controls.
+              </EmptyState>
+            )}
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function VoiceSoftphonePanel({
+  softphone,
+  selectedCall,
+  onRefreshToken,
+  onSetAvailability,
+  onHeartbeat,
+  onIncoming,
+}: {
+  softphone: VoiceSoftphoneState | null;
+  selectedCall: VoiceCall | null;
+  onRefreshToken: () => Promise<VoiceSoftphoneState | null>;
+  onSetAvailability: (
+    availability: "offline" | "available",
+  ) => Promise<VoiceSoftphoneState | null>;
+  onHeartbeat: () => Promise<unknown>;
+  onIncoming: (callId?: string) => void;
+}) {
+  const deviceRef = useRef<Device | null>(null);
+  const [deviceStatus, setDeviceStatus] = useState<
+    "offline" | "connecting" | "ready" | "error"
+  >("offline");
+  const [incomingCall, setIncomingCall] = useState<Call | null>(null);
+  const [activeCall, setActiveCall] = useState<Call | null>(null);
+  const [incomingCallId, setIncomingCallId] = useState<string | undefined>();
+  const [muted, setMuted] = useState(false);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+  const callbacksRef = useRef({ onRefreshToken, onHeartbeat, onIncoming });
+
+  useEffect(() => {
+    callbacksRef.current = { onRefreshToken, onHeartbeat, onIncoming };
+  }, [onHeartbeat, onIncoming, onRefreshToken]);
+
+  useEffect(() => {
+    if (
+      !softphone?.configured ||
+      softphone.availability !== "available" ||
+      !softphone.token
+    ) {
+      return;
+    }
+    let disposed = false;
+    let heartbeat: number | undefined;
+    let device: Device | undefined;
+
+    void import("@twilio/voice-sdk").then(async ({ Device: TwilioDevice }) => {
+      if (disposed) return;
+      setDeviceStatus("connecting");
+      setDeviceError(null);
+      device = new TwilioDevice(softphone.token as string, {
+        logLevel: 3,
+        tokenRefreshMs: 60_000,
+      });
+      deviceRef.current = device;
+      device.on("registered", () => setDeviceStatus("ready"));
+      device.on("unregistered", () => setDeviceStatus("offline"));
+      device.on("error", (error) => {
+        setDeviceStatus("error");
+        setDeviceError(error.message);
+      });
+      device.on("tokenWillExpire", async () => {
+        const refreshed = await callbacksRef.current.onRefreshToken();
+        if (refreshed?.token && device) device.updateToken(refreshed.token);
+      });
+      device.on("incoming", (call) => {
+        const callId = call.customParameters.get("callId") ?? undefined;
+        setIncomingCall(call);
+        setIncomingCallId(callId);
+        callbacksRef.current.onIncoming(callId);
+        const clearIncoming = () => {
+          setIncomingCall((current) => (current === call ? null : current));
+          setIncomingCallId(undefined);
+        };
+        call.on("cancel", clearIncoming);
+        call.on("reject", clearIncoming);
+        call.on("disconnect", () => {
+          clearIncoming();
+          setActiveCall((current) => (current === call ? null : current));
+          setMuted(false);
+        });
+        call.on("error", (error: { message: string }) =>
+          setDeviceError(error.message),
+        );
+      });
+      try {
+        await device.register();
+        heartbeat = window.setInterval(
+          () => void callbacksRef.current.onHeartbeat(),
+          30_000,
+        );
+      } catch (error) {
+        setDeviceStatus("error");
+        setDeviceError(
+          error instanceof Error
+            ? error.message
+            : "Softphone registration failed",
+        );
+      }
+    });
+
+    return () => {
+      disposed = true;
+      if (heartbeat) window.clearInterval(heartbeat);
+      deviceRef.current = null;
+      device?.destroy();
+    };
+  }, [softphone?.availability, softphone?.configured, softphone?.token]);
+
+  const pending = incomingCallId
+    ? softphone?.pendingCalls.find((call) => call.id === incomingCallId)
+    : undefined;
+  const handoffSummary =
+    pending?.summary ??
+    (selectedCall && selectedCall.id === incomingCallId
+      ? selectedCall.summary
+      : undefined);
+
+  async function changeAvailability() {
+    setWorking(true);
+    try {
+      await onSetAvailability(
+        softphone?.availability === "available" ? "offline" : "available",
+      );
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function acceptIncoming() {
+    if (!incomingCall) return;
+    setWorking(true);
+    try {
+      await Promise.resolve(incomingCall.accept());
+      setActiveCall(incomingCall);
+      setIncomingCall(null);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function rejectIncoming() {
+    incomingCall?.reject();
+    setIncomingCall(null);
+    setIncomingCallId(undefined);
+  }
+
+  function toggleMute() {
+    if (!activeCall) return;
+    const next = !muted;
+    activeCall.mute(next);
+    setMuted(next);
+  }
+
+  return (
+    <div className="xl:col-span-2">
+      <Card>
+        <div className="flex flex-col gap-4 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-3">
+            <span
+              className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                deviceStatus === "ready"
+                  ? "bg-[var(--success-bg)] text-[var(--success-text)]"
+                  : "bg-[var(--surface-tint)] text-[var(--text-muted)]"
+              }`}
+            >
+              <Headphones className="h-5 w-5" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold text-[var(--text-strong)]">
+                  Browser softphone
+                </h2>
+                <StatusPill
+                  status={
+                    activeCall
+                      ? "busy"
+                      : softphone?.availability !== "available"
+                        ? "offline"
+                        : deviceStatus === "ready"
+                          ? "available"
+                          : deviceStatus
+                  }
+                />
+              </div>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                {softphone?.configured
+                  ? "Receive AI handoffs securely through this browser and microphone."
+                  : (softphone?.message ?? "Loading softphone configuration…")}
+              </p>
+              {deviceError ? (
+                <p className="mt-1 text-xs text-[var(--danger-text)]">
+                  {deviceError}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {activeCall ? (
+              <>
+                <button
+                  type="button"
+                  onClick={toggleMute}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--border-strong)] px-4 text-sm"
+                >
+                  {muted ? (
+                    <MicOff className="h-4 w-4" />
+                  ) : (
+                    <Mic className="h-4 w-4" />
+                  )}
+                  {muted ? "Unmute" : "Mute"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => activeCall.disconnect()}
+                  className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--danger-bg)] px-4 text-sm text-[var(--danger-text)]"
+                >
+                  <PhoneOff className="h-4 w-4" /> End call
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={working || !softphone?.configured}
+                onClick={() => void changeAvailability()}
+                className={`h-10 rounded-xl px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                  softphone?.availability === "available"
+                    ? "border border-[var(--border-strong)] bg-[var(--surface-card)]"
+                    : "bg-[var(--accent-primary)] text-[var(--text-on-accent)]"
+                }`}
+              >
+                {working
+                  ? "Updating…"
+                  : softphone?.availability === "available"
+                    ? "Go offline"
+                    : "Go available"}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {incomingCall ? (
+          <div className="border-t border-[var(--border-subtle)] bg-[var(--surface-accent)] p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 animate-pulse items-center justify-center rounded-full bg-[var(--accent-primary)] text-[var(--text-on-accent)]">
+                  <PhoneIncoming className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="font-semibold text-[var(--text-strong)]">
+                    Incoming AI handoff
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--text-muted)]">
+                    {pending?.callerName ??
+                      pending?.fromNumber ??
+                      incomingCall.parameters.From ??
+                      "Voice caller"}
+                  </p>
+                  {handoffSummary ? (
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-base)]">
+                      {handoffSummary}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={rejectIncoming}
+                  className="h-10 rounded-xl border border-[var(--border-strong)] px-4 text-sm"
+                >
+                  Decline
+                </button>
+                <button
+                  type="button"
+                  disabled={working}
+                  onClick={() => void acceptIncoming()}
+                  className="h-10 rounded-xl bg-[var(--success-text)] px-5 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Accept call
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Card>
     </div>
   );
 }
@@ -1192,7 +2326,11 @@ function Endpoint({
           className="inline-flex items-center gap-1 text-[var(--accent-primary)] hover:underline"
           aria-label={`Copy ${label}`}
         >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : (
+            <Copy className="h-3.5 w-3.5" />
+          )}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
@@ -1204,7 +2342,14 @@ function Endpoint({
 }
 
 function CallMetric({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-sm"><p className="text-xs text-[var(--text-muted)]">{label}</p><p className="mt-1 truncate text-base font-semibold text-[var(--text-strong)]">{value}</p></div>;
+  return (
+    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] p-3 shadow-sm">
+      <p className="text-xs text-[var(--text-muted)]">{label}</p>
+      <p className="mt-1 truncate text-base font-semibold text-[var(--text-strong)]">
+        {value}
+      </p>
+    </div>
+  );
 }
 
 function OutcomeBar({
@@ -1259,12 +2404,41 @@ function VoiceEventBubble({ event }: { event: VoiceCallEvent }) {
   const isAgent = event.role === "agent";
   const isInterrupt = event.type === "barge_in";
   return (
-    <div className={`max-w-[88%] rounded-lg border p-3 ${isInterrupt ? "mx-auto border-[var(--warning-text)] bg-[var(--warning-bg)]" : isCaller ? "ml-auto border-[var(--accent-primary)] bg-[var(--surface-accent)]" : isAgent ? "border-[var(--accent-secondary)] bg-[var(--success-bg)]" : "border-[var(--border-subtle)] bg-[var(--surface-card)]"}`}>
-      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[var(--text-muted)]"><span>{isInterrupt ? "Caller interrupted" : event.role}</span><span>{event.type.replaceAll("_", " ")}</span></div>
-      <p className="whitespace-pre-wrap text-sm leading-6">{event.content ?? (isInterrupt ? "Speech interrupted active playback" : "No content")}</p>
-      {event.audioUrl ? <audio controls preload="none" className="mt-2 w-full" src={event.audioUrl} /> : null}
-      {event.confidence !== undefined && event.confidence !== null ? <p className="mt-1 text-xs text-[var(--text-soft)]">Confidence {(event.confidence * 100).toFixed(0)}%</p> : null}
-      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[var(--text-soft)]"><span>{formatDateTime(event.createdAt)}</span>{Object.keys(event.metadata).length ? <details><summary className="cursor-pointer">Metadata</summary><pre className="mt-2 max-w-sm overflow-auto rounded bg-[var(--surface-tint)] p-2 normal-case">{JSON.stringify(event.metadata, null, 2)}</pre></details> : null}</div>
+    <div
+      className={`max-w-[88%] rounded-lg border p-3 ${isInterrupt ? "mx-auto border-[var(--warning-text)] bg-[var(--warning-bg)]" : isCaller ? "ml-auto border-[var(--accent-primary)] bg-[var(--surface-accent)]" : isAgent ? "border-[var(--accent-secondary)] bg-[var(--success-bg)]" : "border-[var(--border-subtle)] bg-[var(--surface-card)]"}`}
+    >
+      <div className="mb-1 flex items-center justify-between gap-3 text-xs font-medium uppercase text-[var(--text-muted)]">
+        <span>{isInterrupt ? "Caller interrupted" : event.role}</span>
+        <span>{event.type.replaceAll("_", " ")}</span>
+      </div>
+      <p className="whitespace-pre-wrap text-sm leading-6">
+        {event.content ??
+          (isInterrupt ? "Speech interrupted active playback" : "No content")}
+      </p>
+      {event.audioUrl ? (
+        <audio
+          controls
+          preload="none"
+          className="mt-2 w-full"
+          src={event.audioUrl}
+        />
+      ) : null}
+      {event.confidence !== undefined && event.confidence !== null ? (
+        <p className="mt-1 text-xs text-[var(--text-soft)]">
+          Confidence {(event.confidence * 100).toFixed(0)}%
+        </p>
+      ) : null}
+      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[var(--text-soft)]">
+        <span>{formatDateTime(event.createdAt)}</span>
+        {Object.keys(event.metadata).length ? (
+          <details>
+            <summary className="cursor-pointer">Metadata</summary>
+            <pre className="mt-2 max-w-sm overflow-auto rounded bg-[var(--surface-tint)] p-2 normal-case">
+              {JSON.stringify(event.metadata, null, 2)}
+            </pre>
+          </details>
+        ) : null}
+      </div>
     </div>
   );
 }
