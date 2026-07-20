@@ -47,6 +47,7 @@ import type {
   AppointmentCalendarConnection,
   AppointmentPolicy,
   AppointmentResource,
+  AppointmentScheduleFeed,
   AppointmentService,
   AppointmentSlot,
   AppointmentStaff,
@@ -1661,6 +1662,40 @@ export default function Home() {
       api<AppointmentBookingList>(`/appointment-booking/bookings?${params}`),
     );
     if (result) setAppointmentBookings(result.data);
+  }
+
+  async function loadAppointmentCalendarBookings(from: Date, to: Date) {
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams({
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+    if (organizationId) params.set("organizationId", organizationId);
+    return api<AppointmentScheduleFeed>(
+      `/appointment-booking/schedule?${params}`,
+    );
+  }
+
+  async function moveAppointmentBooking(
+    booking: AppointmentBooking,
+    startAt: Date,
+  ) {
+    const result = await run(
+      () =>
+        api<AppointmentBooking>(
+          `/appointment-booking/bookings/${booking.id}/reschedule`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              staffId: booking.staffId,
+              startAt: startAt.toISOString(),
+              applyToFuture: false,
+            }),
+          },
+        ),
+      "Booking rescheduled",
+    );
+    if (result) await loadAppointmentBookings();
   }
 
   async function loadAppointmentCalendarConnections() {
@@ -4407,6 +4442,8 @@ export default function Home() {
                   onCreateAvailability={createStaffAvailability}
                   onCreateTimeOff={createStaffTimeOff}
                   onSearchSlots={searchAppointmentSlots}
+                  onLoadCalendarBookings={loadAppointmentCalendarBookings}
+                  onMoveBooking={moveAppointmentBooking}
                   onCreateBooking={createAppointmentBooking}
                   onRescheduleBooking={rescheduleAppointmentBooking}
                   onCancelBooking={cancelAppointmentBooking}

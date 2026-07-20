@@ -21,6 +21,7 @@ import type {
   AppointmentCalendarConnection,
   AppointmentPolicy,
   AppointmentResource,
+  AppointmentScheduleFeed,
   AppointmentService,
   AppointmentSlot,
   AppointmentStaff,
@@ -29,8 +30,9 @@ import type {
 } from "@/lib/types";
 import { Card, CardHeader, EmptyState, Field, StatusPill } from "./ui";
 import { AppointmentOperations } from "./appointment-operations";
+import { AppointmentScheduleCalendar } from "./appointment-schedule-calendar";
 
-type Tab = "bookings" | "services" | "team" | "calendars" | "operations";
+type Tab = "schedule" | "bookings" | "services" | "team" | "calendars" | "operations";
 type Dialog =
   | "booking"
   | "service"
@@ -44,7 +46,8 @@ type Dialog =
   | null;
 
 const tabs: Array<{ id: Tab; label: string; icon: typeof CalendarDays }> = [
-  { id: "bookings", label: "Bookings", icon: CalendarDays },
+  { id: "schedule", label: "Calendar", icon: CalendarDays },
+  { id: "bookings", label: "Booking list", icon: CalendarDays },
   { id: "services", label: "Services", icon: Settings2 },
   { id: "team", label: "Team & availability", icon: Users2 },
   { id: "calendars", label: "Calendar sync", icon: CalendarCheck },
@@ -148,6 +151,8 @@ export function AppointmentsView({
   onCreateAvailability,
   onCreateTimeOff,
   onSearchSlots,
+  onLoadCalendarBookings,
+  onMoveBooking,
   onCreateBooking,
   onRescheduleBooking,
   onCancelBooking,
@@ -177,10 +182,12 @@ export function AppointmentsView({
   onCreateAvailability: FormHandler;
   onCreateTimeOff: FormHandler;
   onSearchSlots: FormHandler;
+  onLoadCalendarBookings: (from: Date, to: Date) => Promise<AppointmentScheduleFeed>;
+  onMoveBooking: (booking: AppointmentBooking, startAt: Date) => Promise<void>;
   onCreateBooking: FormHandler;
   onRescheduleBooking: FormHandler;
-  onCancelBooking: (id: string) => void;
-  onCheckInBooking: (id: string) => void;
+  onCancelBooking: (id: string) => Promise<void> | void;
+  onCheckInBooking: (id: string) => Promise<void> | void;
   onCancelSeries: (seriesId: string, fromOccurrenceIndex?: number) => void;
   onUpdatePolicy: FormHandler;
   onCreateBlackout: FormHandler;
@@ -192,7 +199,7 @@ export function AppointmentsView({
   ) => void;
   onDisconnectCalendar: (id: string) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<Tab>("bookings");
+  const [activeTab, setActiveTab] = useState<Tab>("schedule");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [selectedBooking, setSelectedBooking] = useState<AppointmentBooking | null>(
     null,
@@ -217,8 +224,10 @@ export function AppointmentsView({
     setBookingDefaults(null);
     setSelectedService(null);
   };
-  const submitDialog = (handler: FormHandler): FormHandler => (event) => {
-    handler(event);
+  const [calendarRefreshVersion, setCalendarRefreshVersion] = useState(0);
+  const submitDialog = (handler: FormHandler, refreshCalendar = false): FormHandler => async (event) => {
+    await handler(event);
+    if (refreshCalendar) setCalendarRefreshVersion((value) => value + 1);
     closeDialog();
   };
 
@@ -226,6 +235,8 @@ export function AppointmentsView({
     setDialog(
       activeTab === "bookings"
         ? "booking"
+        : activeTab === "schedule"
+          ? "booking"
         : activeTab === "services"
           ? "service"
           : activeTab === "team"
@@ -237,6 +248,7 @@ export function AppointmentsView({
   };
 
   const primaryLabel = {
+    schedule: "New appointment",
     bookings: "New booking",
     services: "Add service",
     team: "Add team member",
@@ -450,6 +462,35 @@ export function AppointmentsView({
               <EmptyState>No bookings yet. Use “New booking” to schedule one.</EmptyState>
             )}
           </div>
+        ) : null}
+
+        {activeTab === "schedule" ? (
+          <AppointmentScheduleCalendar
+            services={services}
+            staff={staff}
+            onLoadRange={onLoadCalendarBookings}
+            refreshVersion={calendarRefreshVersion}
+            onMoveBooking={onMoveBooking}
+            onCreateAt={(startAt) => {
+              if (startAt) {
+                setBookingDefaults({
+                  staffId: "",
+                  staffName: "",
+                  startAt: startAt.toISOString(),
+                  endAt: new Date(startAt.getTime() + 30 * 60_000).toISOString(),
+                  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+                  seatsRemaining: 1,
+                });
+              }
+              setDialog("booking");
+            }}
+            onReschedule={(booking) => {
+              setSelectedBooking(booking);
+              setDialog("reschedule");
+            }}
+            onCancel={onCancelBooking}
+            onCheckIn={onCheckInBooking}
+          />
         ) : null}
 
         {activeTab === "services" ? (
@@ -883,7 +924,7 @@ export function AppointmentsView({
           ) : null}
 
           {dialog === "booking" ? (
-            <form key={bookingDefaults?.startAt ?? "blank"} onSubmit={submitDialog(onCreateBooking)} className="space-y-4">
+            <form key={bookingDefaults?.startAt ?? "blank"} onSubmit={submitDialog(onCreateBooking, true)} className="space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Service">
                   <select name="serviceId" className="input" required>
@@ -950,7 +991,7 @@ export function AppointmentsView({
           ) : null}
 
           {dialog === "reschedule" && selectedBooking ? (
-            <form onSubmit={submitDialog(onRescheduleBooking)} className="space-y-4">
+            <form onSubmit={submitDialog(onRescheduleBooking, true)} className="space-y-4">
               <input type="hidden" name="bookingId" value={selectedBooking.id} />
               <div className="rounded-2xl bg-[var(--surface-card-muted)] p-4 text-sm">
                 <p className="font-medium text-[var(--text-strong)]">{selectedBooking.customerName}</p>

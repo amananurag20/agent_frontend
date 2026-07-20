@@ -564,6 +564,55 @@ export type AppointmentWaitlistEntry = {
   updatedAt: string;
 };
 
+export type AppointmentScheduleFeed = {
+  bookings: AppointmentBooking[];
+  availability: Array<{
+    id: string;
+    staffId: string;
+    dayOfWeek: number;
+    startTime: string;
+    endTime: string;
+    staff: { name: string; timezone: string };
+  }>;
+  staffTimeOff: Array<{
+    id: string;
+    staffId: string;
+    startAt: string;
+    endAt: string;
+    reason?: string | null;
+    staff: { name: string; timezone: string };
+  }>;
+  resourceTimeOff: Array<{
+    id: string;
+    resourceId: string;
+    startAt: string;
+    endAt: string;
+    reason?: string | null;
+    resource: { name: string; type: string };
+  }>;
+  blackouts: AppointmentBlackout[];
+  waitlist: Array<AppointmentWaitlistEntry & {
+    service: { name: string };
+    staff: { name: string };
+  }>;
+  externalBusy: Array<{
+    id: string;
+    staffId: string;
+    staffName: string;
+    timezone: string;
+    startAt: string;
+    endAt: string;
+  }>;
+  calendarFailures: Array<{
+    id: string;
+    bookingId: string;
+    status: "failed" | "dead_letter";
+    lastError?: string | null;
+    booking: { startAt: string; endAt: string; customerName: string };
+    connection: { provider: "google" | "microsoft"; staffId: string };
+  }>;
+};
+
 export type AppointmentDeadLetterBooking = {
   id: string;
   customerName: string;
@@ -862,7 +911,9 @@ export type ApiState = {
   message: string | null;
 };
 
-export type FormHandler = (event: FormEvent<HTMLFormElement>) => void;
+export type FormHandler = (
+  event: FormEvent<HTMLFormElement>,
+) => void | Promise<void>;
 
 export type ChildrenProps = {
   children: ReactNode;
