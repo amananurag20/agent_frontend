@@ -31,6 +31,8 @@
     socket: null,
     socketReady: false,
     socketClientPromise: null,
+    configRefreshPromise: null,
+    configLoadedAt: 0,
     activeClientMessageId: null,
     streamingContent: "",
     leadCaptureComplete: Boolean(readSession()),
@@ -60,9 +62,10 @@
     ".ac-presence{display:flex;align-items:center;gap:6px;margin:2px 0 0;color:rgba(255,255,255,.82);font-size:11px}",
     ".ac-presence:before{content:\"\";width:6px;height:6px;border-radius:50%;background:#86efac}",
     ".ac-header-actions{display:flex;align-items:center;gap:2px}",
-    ".ac-close,.ac-new-chat{width:34px;height:34px;display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:transparent;color:#fff;cursor:pointer}",
+    ".ac-close,.ac-new-chat{height:34px;display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:transparent;color:#fff;cursor:pointer}",
+    ".ac-close{width:34px}.ac-new-chat{width:auto;grid-auto-flow:column;gap:6px;padding:0 9px;font:650 11px/1 inherit}",
     ".ac-close:hover,.ac-new-chat:hover{background:rgba(255,255,255,.13)}",
-    ".ac-close svg,.ac-new-chat svg{width:19px;height:19px}",
+    ".ac-close svg,.ac-new-chat svg{width:18px;height:18px}",
     ".ac-new-chat:disabled{cursor:not-allowed;opacity:.5}",
     ".ac-messages{overflow-y:auto;padding:16px;background:#f6f8fc;scroll-behavior:smooth}",
     ".ac-row{display:flex;margin:0 0 12px}",
@@ -127,7 +130,7 @@
     '<section class="ac-panel" role="dialog" aria-label="Customer support chat" aria-modal="false">' +
     '<header class="ac-header"><div class="ac-avatar" aria-hidden="true">' + sparkleIcon() + '</div>' +
     '<div class="ac-identity"><p class="ac-name">AI Assistant</p><p class="ac-presence">Online</p></div>' +
-    '<div class="ac-header-actions"><button class="ac-new-chat ac-hidden" type="button" aria-label="Start a new conversation" title="Start a new conversation">' + refreshIcon() + '</button>' +
+    '<div class="ac-header-actions"><button class="ac-new-chat ac-hidden" type="button" aria-label="Start a new conversation" title="Start a new conversation">' + refreshIcon() + '<span>New chat</span></button>' +
     '<button class="ac-close" type="button" aria-label="Close chat">' + closeIcon() + '</button></div></header>' +
     '<main class="ac-messages" role="log" aria-live="polite" aria-relevant="additions"></main>' +
     '<footer class="ac-composer"><form class="ac-form"><textarea class="ac-input" rows="1" maxlength="2000" placeholder="Type your message..." aria-label="Message"></textarea>' +
@@ -194,10 +197,7 @@
 
   async function loadConfig() {
     try {
-      state.config = await apiRequest(
-        "/customer-chat/widget/" + encodeURIComponent(widgetKey) + "/config",
-      );
-      applyConfig();
+      await refreshWidgetConfig();
       await restoreConversation();
       state.leadCaptureComplete = Boolean(state.session) || activeLeadFields().length === 0;
       startRealtime();
@@ -208,6 +208,24 @@
       launcher.disabled = true;
       launcher.title = state.error;
     }
+  }
+
+  function refreshWidgetConfig() {
+    if (state.configRefreshPromise) return state.configRefreshPromise;
+    state.configRefreshPromise = apiRequest(
+      "/customer-chat/widget/" + encodeURIComponent(widgetKey) + "/config",
+      { cache: "no-store" },
+    )
+      .then(function (config) {
+        state.config = config;
+        state.configLoadedAt = Date.now();
+        applyConfig();
+        return config;
+      })
+      .finally(function () {
+        state.configRefreshPromise = null;
+      });
+    return state.configRefreshPromise;
   }
 
   function applyConfig() {
@@ -602,6 +620,18 @@
     root.classList.add("ac-open");
     panel.setAttribute("aria-modal", "true");
     launcher.setAttribute("aria-expanded", "true");
+    if (Date.now() - state.configLoadedAt > 15000) {
+      void refreshWidgetConfig()
+        .then(function () {
+          if (!state.session) {
+            state.leadCaptureComplete = activeLeadFields().length === 0;
+            renderMessages();
+          }
+        })
+        .catch(function () {
+          // Keep the last known working configuration for an active visitor.
+        });
+    }
     window.setTimeout(function () {
       var firstLeadInput = messages.querySelector(".ac-lead-control, .ac-lead-choice input");
       if (firstLeadInput) firstLeadInput.focus();
@@ -638,6 +668,8 @@
     state.error = "";
     setSending(true);
     try {
+      // Lead fields and appearance can change while an embedded page remains open.
+      await refreshWidgetConfig();
       await apiRequest(
         "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/close",
         {
@@ -676,6 +708,7 @@
       method: options.method || "GET",
       headers: headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
+      cache: options.cache || "default",
       mode: "cors",
       credentials: "omit",
     });
