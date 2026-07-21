@@ -2845,6 +2845,7 @@ export default function Home() {
                   widgetConfig.leadFields ?? [],
                   form,
                 ),
+                leadCaptureSubmitted: true,
                 metadata: { source: "console_widget_test" },
               }),
             },

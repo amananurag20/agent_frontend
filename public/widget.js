@@ -315,7 +315,7 @@
     }
   }
 
-  async function ensureConversation(leadCapture) {
+  async function ensureConversation(leadCapture, leadCaptureSubmitted) {
     if (state.session && state.session.conversationId && state.session.visitorToken) return;
 
     var visitorId = createId();
@@ -326,6 +326,7 @@
         body: {
           visitorId: visitorId,
           leadCapture: leadCapture || {},
+          leadCaptureSubmitted: Boolean(leadCaptureSubmitted),
           metadata: {
             source: "embedded_widget",
             pageUrl: window.location.href,
@@ -813,7 +814,7 @@
     submit.textContent = "Starting...";
     Array.prototype.forEach.call(leadForm.elements, function (element) { element.disabled = true; });
     try {
-      await ensureConversation(values);
+      await ensureConversation(values, true);
       renderMessages();
       input.focus();
     } catch (error) {
