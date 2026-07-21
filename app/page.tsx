@@ -29,6 +29,7 @@ import { DashboardView } from "@/components/dashboard-view";
 import { InboxView } from "@/components/inbox-view";
 import { HandoffNotifications } from "@/components/handoff-notifications";
 import { KnowledgeView } from "@/components/knowledge-view";
+import { LeadsView } from "@/components/leads-view";
 import { LoginPanel } from "@/components/login-panel";
 import { OrganizationsView } from "@/components/organizations-view";
 import { ProductsView } from "@/components/products-view";
@@ -70,6 +71,8 @@ import type {
   KnowledgeSourceList,
   KnowledgeSourceQuery,
   KnowledgeSourceVersion,
+  Lead,
+  LeadList,
   ObservabilitySummary,
   Organization,
   PasswordResetRequestResponse,
@@ -99,6 +102,15 @@ import type {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
+
+function parseJsonField<T>(value: FormDataEntryValue | null, fallback: T): T {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
 
 function whatsAppSettingsFromForm(
   form: FormData,
@@ -428,6 +440,7 @@ const navItems: Array<{ id: TabId; label: string }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "organizations", label: "Organizations" },
   { id: "inbox", label: "Inbox" },
+  { id: "leads", label: "Leads" },
   { id: "knowledge", label: "Knowledge" },
   { id: "appointments", label: "Appointments" },
   { id: "whatsapp", label: "WhatsApp" },
@@ -443,6 +456,7 @@ const tabRoutes: Record<TabId, string> = {
   dashboard: "/dashboard",
   organizations: "/organizations",
   inbox: "/inbox",
+  leads: "/leads",
   knowledge: "/knowledge",
   appointments: "/appointments",
   whatsapp: "/whatsapp",
@@ -460,6 +474,7 @@ const routeTabs = new Map<string, TabId>(
 
 function tabFromPathname(pathname: string): TabId | null {
   if (pathname === "/") return "dashboard";
+  if (pathname.startsWith("/leads/")) return "leads";
   return routeTabs.get(pathname.replace(/\/$/, "")) ?? null;
 }
 
@@ -560,6 +575,11 @@ const navMeta: Record<
     mark: "CH",
     description: "Customer conversations and handoff",
   },
+  leads: {
+    icon: Users2,
+    mark: "LD",
+    description: "Captured contacts and conversation activity",
+  },
   knowledge: {
     icon: BookOpenText,
     mark: "KN",
@@ -640,6 +660,16 @@ export default function Home() {
   );
   const [selectedConversation, setSelectedConversation] =
     useState<Conversation | null>(null);
+  const [leads, setLeads] = useState<LeadList | null>(null);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [leadLoading, setLeadLoading] = useState(false);
+  const [leadQuery, setLeadQuery] = useState({
+    page: 1,
+    limit: 25,
+    search: "",
+    status: "",
+    widgetConfigId: "",
+  });
   const [handoffNotifications, setHandoffNotifications] = useState<
     Conversation[]
   >([]);
@@ -815,6 +845,7 @@ export default function Home() {
     isSuperAdminPlatformContext &&
     [
       "inbox",
+      "leads",
       "knowledge",
       "appointments",
       "whatsapp",
@@ -865,7 +896,7 @@ export default function Home() {
         return isSuperAdmin || isOrgAdmin || canManageKnowledge;
       if (["products", "ai", "audit"].includes(item.id))
         return isSuperAdmin || isOrgAdmin;
-      if (item.id === "inbox")
+      if (["inbox", "leads"].includes(item.id))
         return canUse("customer_chat") && canHandleCustomerChat;
       if (item.id === "widget")
         return canUse("customer_chat") && canConfigureChat;
@@ -913,6 +944,13 @@ export default function Home() {
     if (conversationId) void loadConversation(conversationId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeTab]);
+
+  useEffect(() => {
+    if (!token || activeTab !== "leads") return;
+    const detailId = pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1];
+    if (detailId) void loadLead(decodeURIComponent(detailId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeTab, pathname, selectedOrganizationId]);
 
   useEffect(() => {
     if (!token) return;
@@ -1301,6 +1339,7 @@ export default function Home() {
     if (canUse("customer_chat")) {
       baseTasks.push(
         loadConversations(),
+        loadLeads(),
         loadHandoffNotifications(),
         loadWidgetConfig(),
       );
@@ -1333,6 +1372,8 @@ export default function Home() {
     setProducts([]);
     setConversations(null);
     setSelectedConversation(null);
+    setLeads(null);
+    setSelectedLead(null);
     setHandoffNotifications([]);
     setHandoffNotificationTotal(0);
     handoffNotificationIds.current.clear();
@@ -1367,6 +1408,7 @@ export default function Home() {
     if (isEnabled("customer_chat")) {
       tasks.push(
         loadConversations(),
+        loadLeads(),
         loadHandoffNotifications(),
         loadWidgetConfig(),
       );
@@ -1529,6 +1571,87 @@ export default function Home() {
       api<Conversation>(`/customer-chat/conversations/${id}`),
     );
     if (result) setSelectedConversation(result);
+  }
+
+  async function loadLeads(
+    queryOverride?: Partial<typeof leadQuery>,
+  ) {
+    const nextQuery = { ...leadQuery, ...queryOverride };
+    if (queryOverride) setLeadQuery(nextQuery);
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    const params = new URLSearchParams({
+      page: String(nextQuery.page),
+      limit: String(nextQuery.limit),
+      ...(organizationId ? { organizationId } : {}),
+      ...(nextQuery.search ? { search: nextQuery.search } : {}),
+      ...(nextQuery.status ? { status: nextQuery.status } : {}),
+      ...(nextQuery.widgetConfigId
+        ? { widgetConfigId: nextQuery.widgetConfigId }
+        : {}),
+    });
+    setLeadLoading(true);
+    try {
+      const result = await api<LeadList>(`/leads?${params.toString()}`);
+      setLeads(result);
+      return result;
+    } catch (error) {
+      setState({
+        loading: false,
+        error: error instanceof Error ? error.message : "Could not load leads",
+        message: null,
+      });
+      return null;
+    } finally {
+      setLeadLoading(false);
+    }
+  }
+
+  async function loadLead(id: string) {
+    setLeadLoading(true);
+    try {
+      const result = await api<Lead>(`/leads/${encodeURIComponent(id)}`);
+      setSelectedLead(result);
+      return result;
+    } catch (error) {
+      setState({
+        loading: false,
+        error: error instanceof Error ? error.message : "Could not load lead",
+        message: null,
+      });
+      return null;
+    } finally {
+      setLeadLoading(false);
+    }
+  }
+
+  async function updateLead(id: string, input: Partial<Lead>) {
+    setLeadLoading(true);
+    try {
+      const result = await api<Lead>(`/leads/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
+      setSelectedLead(result);
+      setLeads((current) =>
+        current
+          ? {
+              ...current,
+              data: current.data.map((lead) =>
+                lead.id === result.id ? { ...lead, ...result } : lead,
+              ),
+            }
+          : current,
+      );
+      setState({ loading: false, error: null, message: "Lead updated" });
+    } catch (error) {
+      setState({
+        loading: false,
+        error: error instanceof Error ? error.message : "Could not update lead",
+        message: null,
+      });
+    } finally {
+      setLeadLoading(false);
+    }
   }
 
   function navigateToTab(tab: TabId) {
@@ -2634,6 +2757,7 @@ export default function Home() {
             .filter(Boolean),
         ),
       ],
+      leadFields: parseJsonField(form.get("leadFields"), []),
       settings: {
         assistantName: String(form.get("assistantName")),
         primaryColor: String(form.get("primaryColor")),
@@ -2661,7 +2785,8 @@ export default function Home() {
 
     if (!content) return;
 
-    formElement.reset();
+    const messageInput = formElement.elements.namedItem("message");
+    if (messageInput instanceof HTMLInputElement) messageInput.value = "";
     setWidgetTestMessageSending(true);
     try {
       const result = await run(async () => {
@@ -2683,6 +2808,17 @@ export default function Home() {
               body: JSON.stringify({
                 visitorName: "Test Visitor",
                 visitorId: "console-test-visitor",
+                leadCapture: Object.fromEntries(
+                  (widgetConfig.leadFields ?? [])
+                    .filter((field) => field.enabled)
+                    .map((field) => {
+                      const value =
+                        field.type === "checkbox"
+                          ? form.get(`lead:${field.key}`) === "on"
+                          : String(form.get(`lead:${field.key}`) ?? "").trim();
+                      return [field.key, value];
+                    }),
+                ),
                 metadata: { source: "console_widget_test" },
               }),
             },
@@ -4542,6 +4678,28 @@ export default function Home() {
                   onSelectConversation={loadConversation}
                   onSendReply={sendAgentReply}
                   onUpdateStatus={updateConversationStatus}
+                />
+              ) : null}
+              {activeTab === "leads" ? (
+                <LeadsView
+                  list={leads}
+                  selected={pathname.startsWith("/leads/") ? selectedLead : null}
+                  widgets={widgetConfigs}
+                  loading={leadLoading}
+                  onFilter={(next) =>
+                    void loadLeads({
+                      page: 1,
+                      search: next.search ?? "",
+                      status: next.status ?? "",
+                      widgetConfigId: next.widgetConfigId ?? "",
+                    })
+                  }
+                  onPageChange={(page) => void loadLeads({ page })}
+                  onOpen={(id) => {
+                    router.push(`/leads/${encodeURIComponent(id)}`);
+                    void loadLead(id);
+                  }}
+                  onUpdate={updateLead}
                 />
               ) : null}
               {activeTab === "knowledge" ? (

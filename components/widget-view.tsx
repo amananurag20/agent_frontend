@@ -12,6 +12,8 @@ import {
   ExternalLink,
   FolderOpen,
   Globe2,
+  ChevronDown,
+  ChevronUp,
   LoaderCircle,
   MessageCircle,
   MoreHorizontal,
@@ -23,6 +25,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  UserRoundPlus,
   X,
 } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
@@ -31,6 +34,9 @@ import type {
   Conversation,
   FormHandler,
   KnowledgeFolder,
+  LeadCaptureField,
+  LeadCaptureFieldMapping,
+  LeadCaptureFieldType,
   WidgetConfig,
   WidgetPageInfo,
 } from "@/lib/types";
@@ -160,6 +166,9 @@ function WidgetEditor({
     [config],
   );
   const [memoryEnabled, setMemoryEnabled] = useState(memoryPolicy.enabled);
+  const [leadFields, setLeadFields] = useState<LeadCaptureField[]>(
+    config.leadFields ?? [],
+  );
   const frontendOrigin = useSyncExternalStore(
     subscribeToOrigin,
     readBrowserOrigin,
@@ -248,6 +257,11 @@ function WidgetEditor({
             onSubmit={onSubmit}
             className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]"
           >
+            <input
+              type="hidden"
+              name="leadFields"
+              value={JSON.stringify(leadFields.map(stripLeadFieldId))}
+            />
             <div className="flex items-center justify-between gap-4 border-b border-[var(--border-subtle)] px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -379,6 +393,15 @@ function WidgetEditor({
                 selectedFolderIds={config.folderIds}
                 onScopeChange={setKnowledgeScope}
               />
+            </div>
+
+            <div className="border-t border-[var(--border-subtle)] p-5">
+              <SectionHeading
+                icon={UserRoundPlus}
+                title="Lead capture"
+                description="Collect optional or required contact details before a visitor starts chatting."
+              />
+              <LeadCaptureBuilder fields={leadFields} onChange={setLeadFields} />
             </div>
 
             <div className="border-t border-[var(--border-subtle)] p-5">
@@ -712,6 +735,7 @@ function CreateWidgetModal({
 }) {
   const [scope, setScope] = useState<"all" | "folders">("all");
   const [memoryEnabled, setMemoryEnabled] = useState(true);
+  const [leadFields, setLeadFields] = useState<LeadCaptureField[]>([]);
 
   return (
     <div
@@ -727,6 +751,11 @@ function CreateWidgetModal({
         onSubmit={onSubmit}
         className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[0_32px_80px_rgba(15,23,42,0.22)]"
       >
+        <input
+          type="hidden"
+          name="leadFields"
+          value={JSON.stringify(leadFields.map(stripLeadFieldId))}
+        />
         <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-5">
           <div>
             <h2 className="text-lg font-semibold text-[var(--text-strong)]">
@@ -790,6 +819,15 @@ function CreateWidgetModal({
               selectedFolderIds={[]}
               onScopeChange={setScope}
             />
+          </div>
+
+          <div className="border-t border-[var(--border-subtle)] pt-5">
+            <SectionHeading
+              icon={UserRoundPlus}
+              title="Lead capture"
+              description="Ask for contact details before the first customer message."
+            />
+            <LeadCaptureBuilder fields={leadFields} onChange={setLeadFields} />
           </div>
 
           <div className="border-t border-[var(--border-subtle)] pt-5">
@@ -894,6 +932,245 @@ function CreateWidgetModal({
       </form>
     </div>
   );
+}
+
+function LeadCaptureBuilder({
+  fields,
+  onChange,
+}: {
+  fields: LeadCaptureField[];
+  onChange: (fields: LeadCaptureField[]) => void;
+}) {
+  const mappings = new Set(fields.map((field) => field.mapping));
+
+  function addContactField(mapping: "name" | "email" | "phone") {
+    if (mappings.has(mapping)) return;
+    const defaults = {
+      name: {
+        key: "name",
+        label: "Name",
+        type: "text" as const,
+        placeholder: "Your name",
+      },
+      email: {
+        key: "email",
+        label: "Email",
+        type: "email" as const,
+        placeholder: "you@example.com",
+      },
+      phone: {
+        key: "phone",
+        label: "Mobile number",
+        type: "phone" as const,
+        placeholder: "+91 98765 43210",
+      },
+    }[mapping];
+    onChange([
+      ...fields,
+      {
+        ...defaults,
+        mapping,
+        required: false,
+        enabled: true,
+        options: [],
+      },
+    ]);
+  }
+
+  function addCustomField() {
+    const suffix = Date.now().toString(36);
+    onChange([
+      ...fields,
+      {
+        key: `custom_${suffix}`,
+        label: "New field",
+        type: "text",
+        mapping: "custom",
+        required: false,
+        enabled: true,
+        placeholder: "",
+        options: [],
+      },
+    ]);
+  }
+
+  function updateField(index: number, patch: Partial<LeadCaptureField>) {
+    onChange(
+      fields.map((field, fieldIndex) => {
+        if (fieldIndex !== index) return field;
+        const next = { ...field, ...patch };
+        if (
+          patch.type &&
+          !["select", "radio"].includes(patch.type)
+        ) {
+          next.options = [];
+        }
+        if (patch.type && next.mapping === "email" && patch.type !== "email") {
+          next.mapping = "custom";
+        }
+        if (patch.type && next.mapping === "phone" && patch.type !== "phone") {
+          next.mapping = "custom";
+        }
+        return next;
+      }),
+    );
+  }
+
+  function move(index: number, offset: number) {
+    const target = index + offset;
+    if (target < 0 || target >= fields.length) return;
+    const next = [...fields];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => addContactField("name")} disabled={mappings.has("name")} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+          + Name
+        </button>
+        <button type="button" onClick={() => addContactField("email")} disabled={mappings.has("email")} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+          + Email
+        </button>
+        <button type="button" onClick={() => addContactField("phone")} disabled={mappings.has("phone")} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+          + Mobile
+        </button>
+        <button type="button" onClick={addCustomField} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[var(--surface-accent)] px-3 text-xs font-medium text-[var(--accent-primary)] hover:bg-[var(--surface-hover-strong)]">
+          <Plus size={14} /> Custom field
+        </button>
+      </div>
+
+      {fields.length ? (
+        <div className="space-y-2">
+          {fields.map((field, index) => (
+            <div key={field.id ?? `${field.key}-${index}`} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-3">
+              <div className="grid gap-3 lg:grid-cols-[minmax(150px,1fr)_150px_150px_auto]">
+                <Field label="Label">
+                  <input value={field.label} onChange={(event) => updateField(index, { label: event.target.value })} className="input" maxLength={80} required />
+                </Field>
+                <Field label="Field type">
+                  <select value={field.type} onChange={(event) => updateField(index, { type: event.target.value as LeadCaptureFieldType })} className="input">
+                    <option value="text">Text</option>
+                    <option value="email">Email</option>
+                    <option value="phone">Phone</option>
+                    <option value="number">Number</option>
+                    <option value="textarea">Long text</option>
+                    <option value="select">Dropdown</option>
+                    <option value="radio">Radio</option>
+                    <option value="checkbox">Checkbox</option>
+                  </select>
+                </Field>
+                <Field label="Contact mapping">
+                  <select value={field.mapping} onChange={(event) => {
+                    const mapping = event.target.value as LeadCaptureFieldMapping;
+                    updateField(index, {
+                      mapping,
+                      ...(mapping === "email" ? { type: "email" as const } : {}),
+                      ...(mapping === "phone" ? { type: "phone" as const } : {}),
+                    });
+                  }} className="input">
+                    <option value="custom">Custom answer</option>
+                    <option value="name" disabled={mappings.has("name") && field.mapping !== "name"}>Name</option>
+                    <option value="email" disabled={mappings.has("email") && field.mapping !== "email"}>Email</option>
+                    <option value="phone" disabled={mappings.has("phone") && field.mapping !== "phone"}>Phone</option>
+                  </select>
+                </Field>
+                <div className="flex items-end gap-1">
+                  <button type="button" onClick={() => move(index, -1)} disabled={index === 0} className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] disabled:opacity-35" aria-label={`Move ${field.label} up`}><ChevronUp size={15} /></button>
+                  <button type="button" onClick={() => move(index, 1)} disabled={index === fields.length - 1} className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] disabled:opacity-35" aria-label={`Move ${field.label} down`}><ChevronDown size={15} /></button>
+                  <button type="button" onClick={() => onChange(fields.filter((_, fieldIndex) => fieldIndex !== index))} className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--danger-text)] hover:bg-[var(--danger-bg)]" aria-label={`Remove ${field.label}`}><Trash2 size={15} /></button>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 lg:grid-cols-[180px_minmax(180px,1fr)_auto_auto] lg:items-end">
+                <Field label="Field key">
+                  <input value={field.key} onChange={(event) => updateField(index, { key: slugFieldKey(event.target.value) })} className="input font-mono text-xs" maxLength={64} pattern="[a-z][a-z0-9_]*" required />
+                </Field>
+                {["select", "radio"].includes(field.type) ? (
+                  <Field label="Options (comma separated)">
+                    <input value={field.options.join(", ")} onChange={(event) => updateField(index, { options: event.target.value.split(",").map((option) => option.trim()).filter(Boolean) })} className="input" placeholder="Small, Medium, Large" required />
+                  </Field>
+                ) : (
+                  <Field label="Placeholder">
+                    <input value={field.placeholder ?? ""} onChange={(event) => updateField(index, { placeholder: event.target.value })} className="input" maxLength={120} placeholder="Optional hint" />
+                  </Field>
+                )}
+                <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-xs font-medium text-[var(--text-base)]">
+                  <input type="checkbox" checked={field.required} onChange={(event) => updateField(index, { required: event.target.checked })} /> Required
+                </label>
+                <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-xs font-medium text-[var(--text-base)]">
+                  <input type="checkbox" checked={field.enabled} onChange={(event) => updateField(index, { enabled: event.target.checked })} /> Enabled
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-[var(--border-strong)] p-5 text-center text-sm text-[var(--text-muted)]">
+          No pre-chat fields. Visitors can begin a conversation immediately.
+        </div>
+      )}
+      <p className="text-xs text-[var(--text-soft)]">
+        Name, email and phone are searchable lead fields. Other answers are retained as structured custom data.
+      </p>
+    </div>
+  );
+}
+
+function LeadCaptureControl({ field }: { field: LeadCaptureField }) {
+  const name = `lead:${field.key}`;
+  if (field.type === "checkbox") {
+    return (
+      <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-sm text-[var(--text-base)] sm:col-span-2">
+        <input name={name} type="checkbox" required={field.required} />
+        {field.label}{field.required ? " *" : ""}
+      </label>
+    );
+  }
+  if (field.type === "radio") {
+    return (
+      <fieldset className="space-y-2 sm:col-span-2">
+        <legend className="text-xs font-medium text-[var(--text-base)]">{field.label}{field.required ? " *" : ""}</legend>
+        <div className="flex flex-wrap gap-3">
+          {field.options.map((option) => (
+            <label key={option} className="flex items-center gap-2 text-sm text-[var(--text-base)]"><input name={name} type="radio" value={option} required={field.required} /> {option}</label>
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
+  return (
+    <Field label={`${field.label}${field.required ? " *" : ""}`}>
+      {field.type === "textarea" ? (
+        <textarea name={name} required={field.required} maxLength={2000} placeholder={field.placeholder ?? undefined} rows={2} className="input resize-y" />
+      ) : field.type === "select" ? (
+        <select name={name} required={field.required} defaultValue="" className="input">
+          <option value="">Select an option</option>
+          {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+        </select>
+      ) : (
+        <input name={name} type={field.type === "phone" ? "tel" : field.type} required={field.required} maxLength={field.type === "number" ? undefined : 320} placeholder={field.placeholder ?? undefined} className="input" />
+      )}
+    </Field>
+  );
+}
+
+function stripLeadFieldId(field: LeadCaptureField) {
+  return {
+    key: field.key,
+    label: field.label,
+    type: field.type,
+    mapping: field.mapping,
+    required: field.required,
+    enabled: field.enabled,
+    placeholder: field.placeholder,
+    options: field.options,
+  };
+}
+
+function slugFieldKey(value: string) {
+  const slug = value.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  return /^[a-z]/.test(slug) ? slug : `field_${slug || "value"}`;
 }
 
 function DomainInput({ defaultDomains = [] }: { defaultDomains?: string[] }) {
@@ -1288,10 +1565,7 @@ function TestChat({
 
   return (
     <form
-      onSubmit={(event) => {
-        onSubmit(event);
-        event.currentTarget.reset();
-      }}
+      onSubmit={onSubmit}
       className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]"
     >
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-5 py-4">
@@ -1377,6 +1651,19 @@ function TestChat({
           </div>
         ) : null}
       </div>
+
+      {!conversation && config?.leadFields?.some((field) => field.enabled) ? (
+        <div className="grid gap-3 border-t border-[var(--border-subtle)] bg-[var(--surface-card)] p-4 sm:grid-cols-2">
+          {config.leadFields
+            .filter((field) => field.enabled)
+            .map((field) => (
+              <LeadCaptureControl key={field.key} field={field} />
+            ))}
+          <p className="text-xs text-[var(--text-soft)] sm:col-span-2">
+            These details are captured once when the test conversation starts.
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex gap-2 border-t border-[var(--border-subtle)] p-4">
         <input

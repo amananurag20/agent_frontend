@@ -279,6 +279,7 @@ export type Message = {
 export type Conversation = {
   id: string;
   organizationId: string;
+  leadId?: string | null;
   status: "open" | "waiting_for_agent" | "closed";
   version: number;
   assignedAgentId?: string | null;
@@ -308,6 +309,73 @@ export type WidgetConfig = {
   greetingText: string;
   allowedDomains: string[];
   settings: Record<string, unknown>;
+  leadFields: LeadCaptureField[];
+};
+
+export type LeadCaptureFieldType =
+  | "text"
+  | "email"
+  | "phone"
+  | "number"
+  | "textarea"
+  | "select"
+  | "radio"
+  | "checkbox";
+
+export type LeadCaptureFieldMapping = "name" | "email" | "phone" | "custom";
+
+export type LeadCaptureField = {
+  id?: string;
+  key: string;
+  label: string;
+  type: LeadCaptureFieldType;
+  mapping: LeadCaptureFieldMapping;
+  required: boolean;
+  enabled: boolean;
+  placeholder?: string | null;
+  options: string[];
+};
+
+export type LeadStatus =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "converted"
+  | "disqualified"
+  | "archived";
+
+export type Lead = {
+  id: string;
+  organizationId: string;
+  widgetConfigId?: string | null;
+  widgetConfig?: { id: string; name: string } | null;
+  status: LeadStatus;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  visitorId?: string | null;
+  fieldValues: Record<string, string | number | boolean>;
+  metadata: Record<string, unknown>;
+  tags: string[];
+  notes?: string | null;
+  lastActivityAt: string;
+  conversations?: Array<{
+    id: string;
+    status: Conversation["status"];
+    lastMessageAt: string;
+    createdAt: string;
+  }>;
+  _count?: { conversations: number };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type LeadList = {
+  data: Lead[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 };
 
 export type WidgetPageInfo = {
@@ -951,6 +1019,7 @@ export type TabId =
   | "dashboard"
   | "organizations"
   | "inbox"
+  | "leads"
   | "knowledge"
   | "appointments"
   | "whatsapp"

@@ -33,6 +33,7 @@
     socketClientPromise: null,
     activeClientMessageId: null,
     streamingContent: "",
+    leadCaptureComplete: Boolean(readSession()),
     error: "",
   };
 
@@ -77,6 +78,20 @@
     ".ac-typing i:nth-child(2){animation-delay:.15s}.ac-typing i:nth-child(3){animation-delay:.3s}",
     "@keyframes ac-dot{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}",
     ".ac-error{margin:0 0 12px;padding:10px 12px;border:1px solid #fecaca;border-radius:10px;background:#fff1f2;color:#b42318;font-size:11px}",
+    ".ac-lead-card{margin-top:12px;border:1px solid #dbe4f0;border-radius:14px;background:#fff;padding:14px;box-shadow:0 3px 12px rgba(15,23,42,.05)}",
+    ".ac-lead-title{margin:0;color:#172033;font-size:14px;font-weight:700}",
+    ".ac-lead-copy{margin:4px 0 13px;color:#64748b;font-size:11px;line-height:1.5}",
+    ".ac-lead-form{display:grid;gap:11px}",
+    ".ac-lead-label,.ac-lead-legend{display:block;margin:0 0 5px;color:#334155;font-size:11px;font-weight:650}",
+    ".ac-lead-control{width:100%;min-height:38px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:8px 10px;color:#172033;font:400 12px/1.4 inherit;outline:0}",
+    ".ac-lead-control:focus{border-color:var(--ac-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac-color) 14%,transparent)}",
+    "textarea.ac-lead-control{min-height:70px;resize:vertical}",
+    ".ac-lead-options{display:flex;flex-wrap:wrap;gap:8px 12px}",
+    ".ac-lead-choice{display:flex;align-items:flex-start;gap:7px;color:#334155;font-size:12px}",
+    ".ac-lead-choice input{margin-top:2px}",
+    ".ac-lead-submit{min-height:40px;border:0;border-radius:9px;background:var(--ac-color);color:#fff;font:650 12px/1 inherit;cursor:pointer}",
+    ".ac-lead-submit:hover{background:var(--ac-color-dark)}.ac-lead-submit:disabled{cursor:not-allowed;opacity:.55}",
+    ".ac-lead-skip{border:0;background:transparent;color:#64748b;font:600 11px/1.3 inherit;cursor:pointer;text-decoration:underline}",
     ".ac-retry{margin-top:7px;border:0;background:transparent;color:#b42318;font-size:11px;font-weight:700;text-decoration:underline;cursor:pointer}",
     ".ac-composer{border-top:1px solid #e2e8f0;background:#fff;padding:12px}",
     ".ac-form{display:flex;align-items:flex-end;gap:8px}",
@@ -134,6 +149,7 @@
   var confirmCancelButton = root.querySelector(".ac-confirm-cancel");
   var confirmStartButton = root.querySelector(".ac-confirm-start");
   var messages = root.querySelector(".ac-messages");
+  var composer = root.querySelector(".ac-composer");
   var form = root.querySelector(".ac-form");
   var input = root.querySelector(".ac-input");
   var sendButton = root.querySelector(".ac-send");
@@ -183,6 +199,7 @@
       );
       applyConfig();
       await restoreConversation();
+      state.leadCaptureComplete = Boolean(state.session) || activeLeadFields().length === 0;
       startRealtime();
       renderMessages();
     } catch (error) {
@@ -280,7 +297,7 @@
     }
   }
 
-  async function ensureConversation() {
+  async function ensureConversation(leadCapture) {
     if (state.session && state.session.conversationId && state.session.visitorToken) return;
 
     var visitorId = createId();
@@ -290,6 +307,7 @@
         method: "POST",
         body: {
           visitorId: visitorId,
+          leadCapture: leadCapture || {},
           metadata: {
             source: "embedded_widget",
             pageUrl: window.location.href,
@@ -304,6 +322,8 @@
       conversationId: created.conversation.id,
       visitorToken: created.visitorToken,
     };
+    state.conversation = created.conversation;
+    state.leadCaptureComplete = true;
     writeSession(state.session);
     startRealtime();
   }
@@ -476,6 +496,18 @@
   function renderMessages(showTyping) {
     while (messages.firstChild) messages.removeChild(messages.firstChild);
 
+    if (!state.leadCaptureComplete && activeLeadFields().length) {
+      appendBubble("assistant", state.config.greetingText || "Hi! How can I help you today?", []);
+      appendLeadCaptureForm();
+      composer.classList.add("ac-hidden");
+      newChatButton.classList.add("ac-hidden");
+      window.requestAnimationFrame(function () {
+        messages.scrollTop = messages.scrollHeight;
+      });
+      return;
+    }
+
+    composer.classList.remove("ac-hidden");
     var conversationMessages =
       state.conversation && Array.isArray(state.conversation.messages)
         ? state.conversation.messages
@@ -570,7 +602,11 @@
     root.classList.add("ac-open");
     panel.setAttribute("aria-modal", "true");
     launcher.setAttribute("aria-expanded", "true");
-    window.setTimeout(function () { input.focus(); }, 40);
+    window.setTimeout(function () {
+      var firstLeadInput = messages.querySelector(".ac-lead-control, .ac-lead-choice input");
+      if (firstLeadInput) firstLeadInput.focus();
+      else input.focus();
+    }, 40);
   }
 
   function closeWidget() {
@@ -618,7 +654,7 @@
       state.sending = false;
       setSending(false);
       renderMessages();
-      input.focus();
+      if (state.leadCaptureComplete) input.focus();
     }
   }
 
@@ -673,7 +709,155 @@
     state.streamingContent = "";
     state.session = null;
     state.conversation = null;
+    state.leadCaptureComplete = activeLeadFields().length === 0;
     try { localStorage.removeItem(storageKey); } catch {}
+  }
+
+  function activeLeadFields() {
+    return state.config && Array.isArray(state.config.leadFields)
+      ? state.config.leadFields.filter(function (field) { return field && field.enabled; })
+      : [];
+  }
+
+  function appendLeadCaptureForm() {
+    var card = document.createElement("section");
+    card.className = "ac-lead-card";
+    var title = document.createElement("p");
+    title.className = "ac-lead-title";
+    title.textContent = "Before we start";
+    var copy = document.createElement("p");
+    copy.className = "ac-lead-copy";
+    copy.textContent = "Share any details below so the team can identify and follow up with you.";
+    var leadForm = document.createElement("form");
+    leadForm.className = "ac-lead-form";
+    var fields = activeLeadFields();
+    fields.forEach(function (field) {
+      leadForm.appendChild(createLeadField(field));
+    });
+    var submit = document.createElement("button");
+    submit.type = "submit";
+    submit.className = "ac-lead-submit";
+    submit.textContent = "Start conversation";
+    leadForm.appendChild(submit);
+    if (!fields.some(function (field) { return field.required; })) {
+      var skip = document.createElement("button");
+      skip.type = "button";
+      skip.className = "ac-lead-skip";
+      skip.textContent = "Continue without sharing details";
+      skip.addEventListener("click", function () { void submitLeadCapture(leadForm, submit, {}); });
+      leadForm.appendChild(skip);
+    }
+    leadForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var values = {};
+      fields.forEach(function (field) {
+        var control = leadForm.elements.namedItem(field.key);
+        if (field.type === "checkbox") {
+          values[field.key] = Boolean(control && control.checked);
+        } else if (field.type === "radio") {
+          var selected = leadForm.querySelector('input[name="' + cssEscape(field.key) + '"]:checked');
+          values[field.key] = selected ? selected.value : "";
+        } else {
+          values[field.key] = control ? String(control.value || "").trim() : "";
+        }
+      });
+      void submitLeadCapture(leadForm, submit, values);
+    });
+    card.appendChild(title);
+    card.appendChild(copy);
+    card.appendChild(leadForm);
+    messages.appendChild(card);
+  }
+
+  async function submitLeadCapture(leadForm, submit, values) {
+    if (state.sending) return;
+    state.sending = true;
+    state.error = "";
+    submit.disabled = true;
+    submit.textContent = "Starting...";
+    Array.prototype.forEach.call(leadForm.elements, function (element) { element.disabled = true; });
+    try {
+      await ensureConversation(values);
+      renderMessages();
+      input.focus();
+    } catch (error) {
+      state.error = readableError(error, "Your details could not be saved. Please try again.");
+      renderMessages();
+    } finally {
+      state.sending = false;
+      setSending(false);
+    }
+  }
+
+  function createLeadField(field) {
+    var wrapper = document.createElement(field.type === "radio" ? "fieldset" : "div");
+    var label = document.createElement(field.type === "radio" ? "legend" : "label");
+    label.className = field.type === "radio" ? "ac-lead-legend" : "ac-lead-label";
+    label.textContent = field.label + (field.required ? " *" : "");
+    wrapper.appendChild(label);
+
+    if (field.type === "checkbox") {
+      var choice = document.createElement("label");
+      choice.className = "ac-lead-choice";
+      var checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.name = field.key;
+      checkbox.required = Boolean(field.required);
+      choice.appendChild(checkbox);
+      choice.appendChild(document.createTextNode(field.placeholder || "Yes"));
+      wrapper.appendChild(choice);
+      return wrapper;
+    }
+
+    if (field.type === "radio") {
+      var options = document.createElement("div");
+      options.className = "ac-lead-options";
+      (field.options || []).forEach(function (option) {
+        var radioLabel = document.createElement("label");
+        radioLabel.className = "ac-lead-choice";
+        var radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = field.key;
+        radio.value = option;
+        radio.required = Boolean(field.required);
+        radioLabel.appendChild(radio);
+        radioLabel.appendChild(document.createTextNode(option));
+        options.appendChild(radioLabel);
+      });
+      wrapper.appendChild(options);
+      return wrapper;
+    }
+
+    var control;
+    if (field.type === "textarea") control = document.createElement("textarea");
+    else if (field.type === "select") {
+      control = document.createElement("select");
+      var empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Select an option";
+      control.appendChild(empty);
+      (field.options || []).forEach(function (option) {
+        var optionNode = document.createElement("option");
+        optionNode.value = option;
+        optionNode.textContent = option;
+        control.appendChild(optionNode);
+      });
+    } else {
+      control = document.createElement("input");
+      control.type = field.type === "phone" ? "tel" : field.type;
+    }
+    control.name = field.key;
+    control.className = "ac-lead-control";
+    control.required = Boolean(field.required);
+    control.maxLength = field.type === "textarea" ? 2000 : 320;
+    if (field.placeholder && field.type !== "select") control.placeholder = field.placeholder;
+    wrapper.appendChild(control);
+    return wrapper;
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
+    return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
   }
 
   function socketDetails() {

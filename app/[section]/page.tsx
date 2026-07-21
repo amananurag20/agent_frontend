@@ -5,6 +5,7 @@ const consoleSections = new Set([
   "dashboard",
   "organizations",
   "inbox",
+  "leads",
   "knowledge",
   "appointments",
   "whatsapp",
