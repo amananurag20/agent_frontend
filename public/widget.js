@@ -88,6 +88,13 @@
     ".ac-lead-label,.ac-lead-legend{display:block;margin:0 0 5px;color:#334155;font-size:11px;font-weight:650}",
     ".ac-lead-control{width:100%;min-height:38px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:8px 10px;color:#172033;font:400 12px/1.4 inherit;outline:0}",
     ".ac-lead-control:focus{border-color:var(--ac-color);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac-color) 14%,transparent)}",
+    ".ac-phone-grid{display:grid;grid-template-columns:92px minmax(0,1fr);gap:8px}",
+    ".ac-phone-part{min-width:0}",
+    ".ac-phone-caption{display:block;margin:0 0 4px;color:#64748b;font-size:9px;font-weight:600}",
+    ".ac-phone-code-wrap{position:relative}",
+    ".ac-phone-prefix{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#475569;font-size:12px;pointer-events:none}",
+    ".ac-phone-code{padding-left:21px}",
+    ".ac-lead-help{margin:5px 0 0;color:#64748b;font-size:9px;line-height:1.4}",
     "textarea.ac-lead-control{min-height:70px;resize:vertical}",
     ".ac-lead-options{display:flex;flex-wrap:wrap;gap:8px 12px}",
     ".ac-lead-choice{display:flex;align-items:flex-start;gap:7px;color:#334155;font-size:12px}",
@@ -301,9 +308,24 @@
       );
       state.conversation = response.conversation;
     } catch (error) {
-      state.error = readableError(error, "Your message could not be sent. Please try again.");
       removeOptimisticMessages();
-      input.value = content;
+      var recoveredLeadCapture = false;
+      if (error && error.status === 400 && !state.session) {
+        try {
+          await refreshWidgetConfig();
+          if (activeLeadFields().length) {
+            state.leadCaptureComplete = false;
+            state.error = "";
+            recoveredLeadCapture = true;
+          }
+        } catch {
+          // The original request error remains the useful failure to display.
+        }
+      }
+      if (!recoveredLeadCapture) {
+        state.error = readableError(error, "Your message could not be sent. Please try again.");
+        input.value = content;
+      }
       if (error && (error.status === 401 || error.status === 404)) clearSession();
     } finally {
       if (state.socketReady && state.activeClientMessageId) return;
@@ -518,6 +540,7 @@
     if (!state.leadCaptureComplete && activeLeadFields().length) {
       appendBubble("assistant", state.config.greetingText || "Hi! How can I help you today?", []);
       appendLeadCaptureForm();
+      if (state.error) appendError(state.error);
       composer.classList.add("ac-hidden");
       newChatButton.classList.add("ac-hidden");
       window.requestAnimationFrame(function () {
@@ -541,7 +564,7 @@
     }
 
     if (state.streamingContent) appendBubble("assistant", state.streamingContent, []);
-    else if (showTyping || state.sending) appendTyping();
+    else if (showTyping || state.activeClientMessageId) appendTyping();
     if (state.error) appendError(state.error);
     newChatButton.classList.toggle("ac-hidden", !state.session);
     setSending(state.sending);
@@ -717,6 +740,7 @@
     if (!response.ok) {
       var error = new Error(payload.message || "Request failed");
       error.status = response.status;
+      error.code = payload.code;
       throw error;
     }
     return payload;
@@ -749,7 +773,9 @@
 
   function activeLeadFields() {
     return state.config && Array.isArray(state.config.leadFields)
-      ? state.config.leadFields.filter(function (field) { return field && field.enabled; })
+      // The public config contains enabled fields only; `enabled` is deliberately
+      // not exposed as part of the visitor-facing field contract.
+      ? state.config.leadFields.filter(function (field) { return field && field.key; })
       : [];
   }
 
@@ -791,6 +817,11 @@
         } else if (field.type === "radio") {
           var selected = leadForm.querySelector('input[name="' + cssEscape(field.key) + '"]:checked');
           if (selected) values[field.key] = selected.value;
+        } else if (field.type === "phone") {
+          var country = leadForm.elements.namedItem(field.key + "__country");
+          var countryDigits = country ? String(country.value || "").replace(/\D/g, "") : "";
+          var phoneDigits = control ? String(control.value || "").replace(/\D/g, "") : "";
+          if (phoneDigits) values[field.key] = "+" + countryDigits + phoneDigits;
         } else {
           var value = control ? String(control.value || "").trim() : "";
           if (value && !(field.type === "number" && Number(value) === 0)) {
@@ -810,19 +841,21 @@
     if (state.sending) return;
     state.sending = true;
     state.error = "";
+    leadForm.setAttribute("aria-busy", "true");
     submit.disabled = true;
     submit.textContent = "Starting...";
     Array.prototype.forEach.call(leadForm.elements, function (element) { element.disabled = true; });
+    var started = false;
     try {
       await ensureConversation(values, true);
-      renderMessages();
-      input.focus();
+      started = true;
     } catch (error) {
       state.error = readableError(error, "Your details could not be saved. Please try again.");
-      renderMessages();
     } finally {
       state.sending = false;
       setSending(false);
+      renderMessages();
+      if (started) input.focus();
     }
   }
 
@@ -831,7 +864,7 @@
     var label = document.createElement(field.type === "radio" ? "legend" : "label");
     var controlId = "agentcore-lead-" + field.key;
     label.className = field.type === "radio" ? "ac-lead-legend" : "ac-lead-label";
-    label.textContent = field.label + (field.required ? " *" : "");
+    label.textContent = field.label + (field.required ? " *" : " (optional)");
     if (field.type !== "radio") label.htmlFor = controlId;
     wrapper.appendChild(label);
 
@@ -868,6 +901,75 @@
       return wrapper;
     }
 
+    if (field.type === "phone") {
+      var phoneGrid = document.createElement("div");
+      phoneGrid.className = "ac-phone-grid";
+      var codePart = document.createElement("div");
+      codePart.className = "ac-phone-part";
+      var codeCaption = document.createElement("span");
+      codeCaption.className = "ac-phone-caption";
+      codeCaption.textContent = "Country code";
+      var codeWrap = document.createElement("div");
+      codeWrap.className = "ac-phone-code-wrap";
+      var prefix = document.createElement("span");
+      prefix.className = "ac-phone-prefix";
+      prefix.textContent = "+";
+      var countryCode = document.createElement("input");
+      countryCode.type = "text";
+      countryCode.id = controlId + "-country";
+      countryCode.name = field.key + "__country";
+      countryCode.className = "ac-lead-control ac-phone-code";
+      countryCode.inputMode = "numeric";
+      countryCode.autocomplete = "tel-country-code";
+      countryCode.maxLength = 3;
+      countryCode.value = defaultCallingCode(field.placeholder);
+      countryCode.setAttribute("aria-label", field.label + " country calling code");
+      restrictToDigits(countryCode, 3);
+      codeWrap.appendChild(prefix);
+      codeWrap.appendChild(countryCode);
+      codePart.appendChild(codeCaption);
+      codePart.appendChild(codeWrap);
+
+      var numberPart = document.createElement("div");
+      numberPart.className = "ac-phone-part";
+      var numberCaption = document.createElement("span");
+      numberCaption.className = "ac-phone-caption";
+      numberCaption.textContent = "Phone number";
+      var phone = document.createElement("input");
+      phone.type = "tel";
+      phone.id = controlId;
+      phone.name = field.key;
+      phone.className = "ac-lead-control";
+      phone.inputMode = "numeric";
+      phone.autocomplete = "tel-national";
+      phone.required = Boolean(field.required);
+      phone.minLength = 4;
+      phone.maxLength = 14;
+      phone.pattern = "[0-9]{4,14}";
+      phone.placeholder = nationalPhonePlaceholder(field.placeholder);
+      phone.title = "Enter 4 to 14 digits without the country code";
+      restrictToDigits(phone, 14);
+      function validatePhoneParts() {
+        var totalLength = countryCode.value.length + phone.value.length;
+        var invalid = phone.value && (!countryCode.value || totalLength < 7 || totalLength > 15);
+        phone.setCustomValidity(
+          invalid ? "Enter a valid country code and phone number (maximum 15 digits total)" : "",
+        );
+      }
+      countryCode.addEventListener("input", validatePhoneParts);
+      phone.addEventListener("input", validatePhoneParts);
+      phoneGrid.appendChild(codePart);
+      numberPart.appendChild(numberCaption);
+      numberPart.appendChild(phone);
+      phoneGrid.appendChild(numberPart);
+      wrapper.appendChild(phoneGrid);
+      var phoneHelp = document.createElement("p");
+      phoneHelp.className = "ac-lead-help";
+      phoneHelp.textContent = "We will save this as an international number.";
+      wrapper.appendChild(phoneHelp);
+      return wrapper;
+    }
+
     var control;
     if (field.type === "textarea") control = document.createElement("textarea");
     else if (field.type === "select") {
@@ -884,23 +986,45 @@
       });
     } else {
       control = document.createElement("input");
-      control.type = field.type === "phone" ? "tel" : field.type;
+      control.type = field.type;
     }
     control.name = field.key;
     control.id = controlId;
     control.className = "ac-lead-control";
     control.required = Boolean(field.required);
     control.maxLength = field.type === "textarea" ? 2000 : 320;
-    if (field.type === "phone") {
-      control.pattern = "\\+[1-9][0-9 ()-]{7,24}";
-      control.title = "Use an international number including country code, for example +1 650 253 0000";
-      control.autocomplete = "tel";
-    } else if (field.type === "email") {
+    if (field.type === "email") {
       control.autocomplete = "email";
     }
     if (field.placeholder && field.type !== "select") control.placeholder = field.placeholder;
     wrapper.appendChild(control);
     return wrapper;
+  }
+
+  function restrictToDigits(control, maxLength) {
+    control.addEventListener("input", function () {
+      var digits = String(control.value || "").replace(/\D/g, "").slice(0, maxLength);
+      if (control.value !== digits) control.value = digits;
+    });
+  }
+
+  function defaultCallingCode(placeholder) {
+    var configured = String(placeholder || "").match(/^\s*\+(\d{1,3})/);
+    if (configured) return configured[1];
+    var region = String(navigator.language || "").split("-")[1] || "";
+    var common = {
+      AU: "61", BR: "55", CA: "1", DE: "49", ES: "34", FR: "33",
+      GB: "44", ID: "62", IN: "91", IT: "39", JP: "81", MX: "52",
+      NG: "234", NL: "31", NZ: "64", PH: "63", PK: "92", SG: "65",
+      US: "1", ZA: "27",
+    };
+    return common[region.toUpperCase()] || "1";
+  }
+
+  function nationalPhonePlaceholder(placeholder) {
+    var value = String(placeholder || "").replace(/^\s*\+\d{1,3}[\s-]*/, "");
+    var digits = value.replace(/\D/g, "");
+    return digits || "5551234567";
   }
 
   function cssEscape(value) {
