@@ -29,7 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import type {
   Conversation,
   FormHandler,
@@ -169,6 +169,7 @@ function WidgetEditor({
   const [leadFields, setLeadFields] = useState<LeadCaptureField[]>(
     config.leadFields ?? [],
   );
+  const [leadFieldsError, setLeadFieldsError] = useState<string | null>(null);
   const frontendOrigin = useSyncExternalStore(
     subscribeToOrigin,
     readBrowserOrigin,
@@ -190,6 +191,17 @@ function WidgetEditor({
     await navigator.clipboard.writeText(value);
     setCopied(type);
     window.setTimeout(() => setCopied(null), 1800);
+  }
+
+  function submitConfiguration(event: FormEvent<HTMLFormElement>) {
+    const error = validateLeadFields(leadFields);
+    if (error) {
+      event.preventDefault();
+      setLeadFieldsError(error);
+      return;
+    }
+    setLeadFieldsError(null);
+    onSubmit(event);
   }
 
   return (
@@ -254,7 +266,7 @@ function WidgetEditor({
       <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_420px]">
         <div className="space-y-4">
           <form
-            onSubmit={onSubmit}
+            onSubmit={submitConfiguration}
             className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]"
           >
             <input
@@ -401,7 +413,14 @@ function WidgetEditor({
                 title="Lead capture"
                 description="Collect optional or required contact details before a visitor starts chatting."
               />
-              <LeadCaptureBuilder fields={leadFields} onChange={setLeadFields} />
+              <LeadCaptureBuilder
+                fields={leadFields}
+                error={leadFieldsError}
+                onChange={(next) => {
+                  setLeadFields(next);
+                  setLeadFieldsError(null);
+                }}
+              />
             </div>
 
             <div className="border-t border-[var(--border-subtle)] p-5">
@@ -736,6 +755,18 @@ function CreateWidgetModal({
   const [scope, setScope] = useState<"all" | "folders">("all");
   const [memoryEnabled, setMemoryEnabled] = useState(true);
   const [leadFields, setLeadFields] = useState<LeadCaptureField[]>([]);
+  const [leadFieldsError, setLeadFieldsError] = useState<string | null>(null);
+
+  function submitWidget(event: FormEvent<HTMLFormElement>) {
+    const error = validateLeadFields(leadFields);
+    if (error) {
+      event.preventDefault();
+      setLeadFieldsError(error);
+      return;
+    }
+    setLeadFieldsError(null);
+    onSubmit(event);
+  }
 
   return (
     <div
@@ -748,7 +779,7 @@ function CreateWidgetModal({
       }}
     >
       <form
-        onSubmit={onSubmit}
+        onSubmit={submitWidget}
         className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[0_32px_80px_rgba(15,23,42,0.22)]"
       >
         <input
@@ -827,7 +858,14 @@ function CreateWidgetModal({
               title="Lead capture"
               description="Ask for contact details before the first customer message."
             />
-            <LeadCaptureBuilder fields={leadFields} onChange={setLeadFields} />
+            <LeadCaptureBuilder
+              fields={leadFields}
+              error={leadFieldsError}
+              onChange={(next) => {
+                setLeadFields(next);
+                setLeadFieldsError(null);
+              }}
+            />
           </div>
 
           <div className="border-t border-[var(--border-subtle)] pt-5">
@@ -936,9 +974,11 @@ function CreateWidgetModal({
 
 function LeadCaptureBuilder({
   fields,
+  error,
   onChange,
 }: {
   fields: LeadCaptureField[];
+  error?: string | null;
   onChange: (fields: LeadCaptureField[]) => void;
 }) {
   const mappings = new Set(fields.map((field) => field.mapping));
@@ -1011,6 +1051,9 @@ function LeadCaptureBuilder({
         if (patch.type && next.mapping === "phone" && patch.type !== "phone") {
           next.mapping = "custom";
         }
+        if (patch.type && next.mapping === "name" && patch.type !== "text") {
+          next.mapping = "custom";
+        }
         return next;
       }),
     );
@@ -1066,6 +1109,7 @@ function LeadCaptureBuilder({
                     const mapping = event.target.value as LeadCaptureFieldMapping;
                     updateField(index, {
                       mapping,
+                      ...(mapping === "name" ? { type: "text" as const } : {}),
                       ...(mapping === "email" ? { type: "email" as const } : {}),
                       ...(mapping === "phone" ? { type: "phone" as const } : {}),
                     });
@@ -1113,6 +1157,11 @@ function LeadCaptureBuilder({
       <p className="text-xs text-[var(--text-soft)]">
         Name, email and phone are searchable lead fields. Other answers are retained as structured custom data.
       </p>
+      {error ? (
+        <p className="text-sm font-medium text-[var(--danger-text)]" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -1149,7 +1198,17 @@ function LeadCaptureControl({ field }: { field: LeadCaptureField }) {
           {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       ) : (
-        <input name={name} type={field.type === "phone" ? "tel" : field.type} required={field.required} maxLength={field.type === "number" ? undefined : 320} placeholder={field.placeholder ?? undefined} className="input" />
+        <input
+          name={name}
+          type={field.type === "phone" ? "tel" : field.type}
+          required={field.required}
+          maxLength={field.type === "number" ? undefined : 320}
+          pattern={field.type === "phone" ? "\\+[1-9][0-9 ()-]{7,24}" : undefined}
+          title={field.type === "phone" ? "Use an international number including country code, for example +1 650 253 0000" : undefined}
+          autoComplete={field.mapping === "name" ? "name" : field.mapping === "email" ? "email" : field.mapping === "phone" ? "tel" : undefined}
+          placeholder={field.placeholder ?? undefined}
+          className="input"
+        />
       )}
     </Field>
   );
@@ -1166,6 +1225,51 @@ function stripLeadFieldId(field: LeadCaptureField) {
     placeholder: field.placeholder,
     options: field.options,
   };
+}
+
+function validateLeadFields(fields: LeadCaptureField[]): string | null {
+  const seenKeys = new Set<string>();
+  const configuredMappings = new Set(
+    fields
+      .map((field) => field.mapping)
+      .filter((mapping) => mapping !== "custom"),
+  );
+  for (const field of fields) {
+    const key = field.key.trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_]*$/.test(key)) {
+      return `${field.label || "Lead field"} needs a valid field key.`;
+    }
+    if (seenKeys.has(key)) {
+      return `Field key “${key}” is used more than once.`;
+    }
+    seenKeys.add(key);
+    if (!field.label.trim()) return `Field “${key}” needs a label.`;
+    if (
+      field.mapping === "custom" &&
+      ["name", "email", "phone"].includes(key) &&
+      configuredMappings.has(
+        key as Exclude<LeadCaptureFieldMapping, "custom">,
+      )
+    ) {
+      return `Custom field key “${key}” conflicts with the ${key} contact field.`;
+    }
+    if (field.mapping === "name" && field.type !== "text") {
+      return "The Name contact field must use the text type.";
+    }
+    if (field.mapping === "email" && field.type !== "email") {
+      return "The Email contact field must use the email type.";
+    }
+    if (field.mapping === "phone" && field.type !== "phone") {
+      return "The Phone contact field must use the phone type.";
+    }
+    if (
+      ["select", "radio"].includes(field.type) &&
+      !field.options.some((option) => option.trim())
+    ) {
+      return `${field.label} needs at least one option.`;
+    }
+  }
+  return null;
 }
 
 function slugFieldKey(value: string) {

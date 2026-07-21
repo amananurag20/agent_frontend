@@ -753,12 +753,15 @@
       fields.forEach(function (field) {
         var control = leadForm.elements.namedItem(field.key);
         if (field.type === "checkbox") {
-          values[field.key] = Boolean(control && control.checked);
+          if (control && control.checked) values[field.key] = true;
         } else if (field.type === "radio") {
           var selected = leadForm.querySelector('input[name="' + cssEscape(field.key) + '"]:checked');
-          values[field.key] = selected ? selected.value : "";
+          if (selected) values[field.key] = selected.value;
         } else {
-          values[field.key] = control ? String(control.value || "").trim() : "";
+          var value = control ? String(control.value || "").trim() : "";
+          if (value && !(field.type === "number" && Number(value) === 0)) {
+            values[field.key] = value;
+          }
         }
       });
       void submitLeadCapture(leadForm, submit, values);
@@ -792,8 +795,10 @@
   function createLeadField(field) {
     var wrapper = document.createElement(field.type === "radio" ? "fieldset" : "div");
     var label = document.createElement(field.type === "radio" ? "legend" : "label");
+    var controlId = "agentcore-lead-" + field.key;
     label.className = field.type === "radio" ? "ac-lead-legend" : "ac-lead-label";
     label.textContent = field.label + (field.required ? " *" : "");
+    if (field.type !== "radio") label.htmlFor = controlId;
     wrapper.appendChild(label);
 
     if (field.type === "checkbox") {
@@ -801,6 +806,7 @@
       choice.className = "ac-lead-choice";
       var checkbox = document.createElement("input");
       checkbox.type = "checkbox";
+      checkbox.id = controlId;
       checkbox.name = field.key;
       checkbox.required = Boolean(field.required);
       choice.appendChild(checkbox);
@@ -847,9 +853,17 @@
       control.type = field.type === "phone" ? "tel" : field.type;
     }
     control.name = field.key;
+    control.id = controlId;
     control.className = "ac-lead-control";
     control.required = Boolean(field.required);
     control.maxLength = field.type === "textarea" ? 2000 : 320;
+    if (field.type === "phone") {
+      control.pattern = "\\+[1-9][0-9 ()-]{7,24}";
+      control.title = "Use an international number including country code, for example +1 650 253 0000";
+      control.autocomplete = "tel";
+    } else if (field.type === "email") {
+      control.autocomplete = "email";
+    }
     if (field.placeholder && field.type !== "select") control.placeholder = field.placeholder;
     wrapper.appendChild(control);
     return wrapper;

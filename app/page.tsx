@@ -72,6 +72,7 @@ import type {
   KnowledgeSourceQuery,
   KnowledgeSourceVersion,
   Lead,
+  LeadCaptureField,
   LeadList,
   ObservabilitySummary,
   Organization,
@@ -110,6 +111,23 @@ function parseJsonField<T>(value: FormDataEntryValue | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function leadCaptureFromForm(fields: LeadCaptureField[], form: FormData) {
+  const entries: Array<[string, string | boolean]> = [];
+  for (const field of fields) {
+    if (!field.enabled) continue;
+    if (field.type === "checkbox") {
+      if (form.get(`lead:${field.key}`) === "on") {
+        entries.push([field.key, true]);
+      }
+      continue;
+    }
+    const value = String(form.get(`lead:${field.key}`) ?? "").trim();
+    if (!value || (field.type === "number" && Number(value) === 0)) continue;
+    entries.push([field.key, value]);
+  }
+  return Object.fromEntries(entries);
 }
 
 function whatsAppSettingsFromForm(
@@ -663,6 +681,8 @@ export default function Home() {
   const [leads, setLeads] = useState<LeadList | null>(null);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [leadLoading, setLeadLoading] = useState(false);
+  const [leadError, setLeadError] = useState<string | null>(null);
+  const [leadNotFound, setLeadNotFound] = useState(false);
   const [leadQuery, setLeadQuery] = useState({
     page: 1,
     limit: 25,
@@ -948,7 +968,9 @@ export default function Home() {
   useEffect(() => {
     if (!token || activeTab !== "leads") return;
     const detailId = pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1];
-    if (detailId) void loadLead(decodeURIComponent(detailId));
+    if (detailId) {
+      void loadLead(decodeURIComponent(detailId));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, activeTab, pathname, selectedOrganizationId]);
 
@@ -1590,14 +1612,18 @@ export default function Home() {
         : {}),
     });
     setLeadLoading(true);
+    setLeadError(null);
     try {
       const result = await api<LeadList>(`/leads?${params.toString()}`);
       setLeads(result);
       return result;
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load leads";
+      setLeadError(message);
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : "Could not load leads",
+        error: message,
         message: null,
       });
       return null;
@@ -1608,14 +1634,21 @@ export default function Home() {
 
   async function loadLead(id: string) {
     setLeadLoading(true);
+    setSelectedLead(null);
+    setLeadNotFound(false);
+    setLeadError(null);
     try {
       const result = await api<Lead>(`/leads/${encodeURIComponent(id)}`);
       setSelectedLead(result);
       return result;
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not load lead";
+      if (message === "Lead not found") setLeadNotFound(true);
+      else setLeadError(message);
       setState({
         loading: false,
-        error: error instanceof Error ? error.message : "Could not load lead",
+        error: message,
         message: null,
       });
       return null;
@@ -2808,16 +2841,9 @@ export default function Home() {
               body: JSON.stringify({
                 visitorName: "Test Visitor",
                 visitorId: "console-test-visitor",
-                leadCapture: Object.fromEntries(
-                  (widgetConfig.leadFields ?? [])
-                    .filter((field) => field.enabled)
-                    .map((field) => {
-                      const value =
-                        field.type === "checkbox"
-                          ? form.get(`lead:${field.key}`) === "on"
-                          : String(form.get(`lead:${field.key}`) ?? "").trim();
-                      return [field.key, value];
-                    }),
+                leadCapture: leadCaptureFromForm(
+                  widgetConfig.leadFields ?? [],
+                  form,
                 ),
                 metadata: { source: "console_widget_test" },
               }),
@@ -4684,6 +4710,9 @@ export default function Home() {
                 <LeadsView
                   list={leads}
                   selected={pathname.startsWith("/leads/") ? selectedLead : null}
+                  detailId={pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1] ?? null}
+                  notFound={leadNotFound}
+                  error={leadError}
                   widgets={widgetConfigs}
                   loading={leadLoading}
                   onFilter={(next) =>

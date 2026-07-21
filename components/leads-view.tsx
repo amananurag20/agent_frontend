@@ -29,6 +29,9 @@ const statuses: LeadStatus[] = [
 export function LeadsView({
   list,
   selected,
+  detailId,
+  notFound,
+  error,
   widgets,
   loading,
   onFilter,
@@ -38,6 +41,9 @@ export function LeadsView({
 }: {
   list: LeadList | null;
   selected: Lead | null;
+  detailId?: string | null;
+  notFound: boolean;
+  error: string | null;
   widgets: WidgetConfig[];
   loading: boolean;
   onFilter: (filters: { search?: string; status?: string; widgetConfigId?: string }) => void;
@@ -45,8 +51,32 @@ export function LeadsView({
   onOpen: (id: string) => void;
   onUpdate: (id: string, input: Partial<Lead>) => Promise<void>;
 }) {
-  if (selected) {
-    return <LeadDetail lead={selected} loading={loading} onUpdate={onUpdate} />;
+  const router = useRouter();
+  if (detailId) {
+    if (selected) {
+      return <LeadDetail lead={selected} loading={loading} onUpdate={onUpdate} />;
+    }
+    if (notFound) {
+      return (
+        <LeadStatePanel
+          title="Lead not found"
+          description="This lead does not exist or is outside your current workspace."
+          actionLabel="Back to leads"
+          onAction={() => router.push("/leads")}
+        />
+      );
+    }
+    if (error) {
+      return (
+        <LeadStatePanel
+          title="Could not load lead"
+          description={error}
+          actionLabel="Back to leads"
+          onAction={() => router.push("/leads")}
+        />
+      );
+    }
+    return <LeadDetailSkeleton />;
   }
 
   return (
@@ -54,6 +84,7 @@ export function LeadsView({
       list={list}
       widgets={widgets}
       loading={loading}
+      error={error}
       onFilter={onFilter}
       onPageChange={onPageChange}
       onOpen={onOpen}
@@ -65,6 +96,7 @@ function LeadDirectory({
   list,
   widgets,
   loading,
+  error,
   onFilter,
   onPageChange,
   onOpen,
@@ -72,6 +104,7 @@ function LeadDirectory({
   list: LeadList | null;
   widgets: WidgetConfig[];
   loading: boolean;
+  error: string | null;
   onFilter: (filters: { search?: string; status?: string; widgetConfigId?: string }) => void;
   onPageChange: (page: number) => void;
   onOpen: (id: string) => void;
@@ -127,7 +160,20 @@ function LeadDirectory({
           </button>
         </form>
 
-        {data.length ? (
+        {error ? (
+          <div className="grid min-h-72 place-items-center p-8 text-center">
+            <div>
+              <h3 className="font-semibold text-[var(--danger-text)]">Could not load leads</h3>
+              <p className="mt-1 text-sm text-[var(--text-muted)]">{error}</p>
+            </div>
+          </div>
+        ) : loading && !list ? (
+          <div className="space-y-3 p-5" role="status" aria-label="Loading leads">
+            {[0, 1, 2, 3].map((row) => (
+              <div key={row} className="h-16 animate-pulse rounded-md bg-[var(--surface-card-muted)]" />
+            ))}
+          </div>
+        ) : data.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-left">
               <thead className="bg-[var(--surface-card-muted)] text-[11px] uppercase tracking-[0.12em] text-[var(--text-soft)]">
@@ -215,7 +261,7 @@ function LeadDetail({
   onUpdate: (id: string, input: Partial<Lead>) => Promise<void>;
 }) {
   const router = useRouter();
-  const [tags, setTags] = useState(lead.tags.join(", "));
+  const [tags, setTags] = useState((lead.tags ?? []).join(", "));
   return (
     <div className="space-y-4">
       <button type="button" onClick={() => router.push("/leads")} className="inline-flex items-center gap-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-strong)]">
@@ -255,7 +301,7 @@ function LeadDetail({
                 </select>
               </Field>
               <Field label="Email"><input name="email" type="email" className="input" defaultValue={lead.email ?? ""} /></Field>
-              <Field label="Phone"><input name="phone" className="input" defaultValue={lead.phone ?? ""} /></Field>
+              <Field label="Phone"><input name="phone" type="tel" pattern="\+[1-9][0-9 ()-]{7,24}" title="Use an international number including country code, for example +1 650 253 0000" className="input" defaultValue={lead.phone ?? ""} /></Field>
             </div>
             <Field label="Tags">
               <div className="relative"><Tag className="absolute left-3 top-3 h-4 w-4 text-[var(--text-soft)]" /><input className="input pl-9" value={tags} onChange={(event) => setTags(event.target.value)} placeholder="sales, enterprise, follow-up" /></div>
@@ -277,10 +323,10 @@ function LeadDetail({
           <section className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-card)]">
             <h3 className="font-semibold text-[var(--text-strong)]">Captured fields</h3>
             <dl className="mt-4 divide-y divide-[var(--border-subtle)]">
-              {Object.entries(lead.fieldValues).map(([key, value]) => (
+              {Object.entries(lead.fieldValues ?? {}).map(([key, value]) => (
                 <div key={key} className="grid grid-cols-[120px_1fr] gap-3 py-3 text-sm">
                   <dt className="text-[var(--text-muted)]">{formatLabel(key)}</dt>
-                  <dd className="break-words text-[var(--text-strong)]">{String(value)}</dd>
+                  <dd className="break-words text-[var(--text-strong)]">{formatCapturedValue(value)}</dd>
                 </div>
               ))}
             </dl>
@@ -310,6 +356,48 @@ function formatLabel(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+function formatDate(value: string | null | undefined) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "Not available";
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function formatCapturedValue(value: unknown) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (value === null || value === undefined || value === "") return "Not provided";
+  return String(value);
+}
+
+function LeadStatePanel({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <section className="grid min-h-96 place-items-center rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-8 text-center shadow-[var(--shadow-card)]">
+      <div>
+        <UserRound className="mx-auto h-9 w-9 text-[var(--text-soft)]" />
+        <h2 className="mt-3 text-lg font-semibold text-[var(--text-strong)]">{title}</h2>
+        <p className="mt-1 max-w-md text-sm text-[var(--text-muted)]">{description}</p>
+        <button type="button" onClick={onAction} className="mt-5 h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-white">
+          {actionLabel}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function LeadDetailSkeleton() {
+  return (
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]" role="status" aria-label="Loading lead">
+      <div className="h-[560px] animate-pulse rounded-lg bg-[var(--surface-card-muted)]" />
+      <div className="h-[360px] animate-pulse rounded-lg bg-[var(--surface-card-muted)]" />
+    </div>
+  );
 }
