@@ -286,6 +286,10 @@ export type Conversation = {
   visitorId?: string | null;
   visitorName?: string | null;
   visitorEmail?: string | null;
+  handoffRequestedAt?: string | null;
+  lastMessageAt?: string | null;
+  widgetName?: string | null;
+  metadata: Record<string, unknown>;
   messages: Message[];
   createdAt: string;
   updatedAt: string;

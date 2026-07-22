@@ -26,7 +26,7 @@ import { AIProvidersView } from "@/components/ai-providers-view";
 import { AppointmentsView } from "@/components/appointments-view";
 import { AuditView } from "@/components/audit-view";
 import { DashboardView } from "@/components/dashboard-view";
-import { InboxView } from "@/components/inbox-view";
+import { InboxView, type InboxFilters } from "@/components/inbox-view";
 import { HandoffNotifications } from "@/components/handoff-notifications";
 import { KnowledgeView } from "@/components/knowledge-view";
 import { LeadsView } from "@/components/leads-view";
@@ -791,9 +791,13 @@ export default function Home() {
     error: null,
     message: null,
   });
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<InboxFilters>({
     status: "waiting_for_agent",
     search: "",
+    assignedAgentId: "",
+    assignment: "",
+    page: 1,
+    limit: 30,
   });
   const [whatsAppFilters, setWhatsAppFilters] = useState({
     status: "waiting_for_agent",
@@ -1051,6 +1055,11 @@ export default function Home() {
     selectedOrganizationId,
     selectedConversation?.id,
     notificationSoundEnabled,
+    filters.status,
+    filters.search,
+    filters.assignedAgentId,
+    filters.assignment,
+    filters.page,
   ]);
 
   useEffect(() => {
@@ -1536,19 +1545,27 @@ export default function Home() {
     }
   }
 
-  async function loadConversations() {
+  async function loadConversations(nextFilters: InboxFilters = filters) {
     const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({
-      limit: "30",
+      page: String(nextFilters.page),
+      limit: String(nextFilters.limit),
       ...(organizationId ? { organizationId } : {}),
-      ...(filters.status ? { status: filters.status } : {}),
-      ...(filters.search ? { search: filters.search } : {}),
+      ...(nextFilters.status ? { status: nextFilters.status } : {}),
+      ...(nextFilters.search ? { search: nextFilters.search } : {}),
+      ...(nextFilters.assignedAgentId
+        ? { assignedAgentId: nextFilters.assignedAgentId }
+        : {}),
+      ...(nextFilters.assignment
+        ? { assignment: nextFilters.assignment }
+        : {}),
     });
     const result = await run(() =>
       api<ConversationList>(`/customer-chat/conversations?${params}`),
     );
 
     if (result) {
+      setFilters(nextFilters);
       setConversations(result);
       setSelectedConversation((current) =>
         current
@@ -1692,7 +1709,14 @@ export default function Home() {
   }
 
   function openHandoffNotification(conversation: Conversation) {
-    setFilters({ status: "waiting_for_agent", search: "" });
+    setFilters({
+      status: "waiting_for_agent",
+      search: "",
+      assignedAgentId: "",
+      assignment: "",
+      page: 1,
+      limit: 30,
+    });
     setSelectedConversation(conversation);
     setConversations((current) => {
       const existing = current?.data ?? [];
@@ -2283,34 +2307,31 @@ export default function Home() {
     setSelectedVoiceCall(null);
   }
 
-  async function sendAgentReply(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedConversation) return;
+  async function sendAgentReply(content: string) {
+    if (!selectedConversation || !content.trim()) return false;
 
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const content = String(form.get("reply"));
     const result = await run(
       () =>
         api<{ conversation: Conversation }>(
           `/customer-chat/conversations/${selectedConversation.id}/agent-messages`,
           {
             method: "POST",
-            body: JSON.stringify({ content }),
+            body: JSON.stringify({ content: content.trim() }),
           },
         ),
       "Reply sent",
     );
 
     if (result) {
-      formElement.reset();
       setSelectedConversation(result.conversation);
       await loadConversations();
+      return true;
     }
+    return false;
   }
 
   async function updateConversationStatus(status: Conversation["status"]) {
-    if (!selectedConversation) return;
+    if (!selectedConversation) return false;
 
     const result = await run(
       () =>
@@ -2330,7 +2351,35 @@ export default function Home() {
     if (result) {
       setSelectedConversation(result);
       await loadConversations();
+      return true;
     }
+    return false;
+  }
+
+  async function assignConversation(assignedAgentId: string | null) {
+    if (!selectedConversation) return false;
+
+    const result = await run(
+      () =>
+        api<Conversation>(
+          `/customer-chat/conversations/${selectedConversation.id}/assignment`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              assignedAgentId,
+              expectedVersion: selectedConversation.version,
+            }),
+          },
+        ),
+      assignedAgentId ? "Conversation assigned" : "Conversation returned to queue",
+    );
+
+    if (result) {
+      setSelectedConversation(result);
+      await loadConversations();
+      return true;
+    }
+    return false;
   }
 
   async function createKnowledgeSource(event: FormEvent<HTMLFormElement>) {
@@ -2903,7 +2952,14 @@ export default function Home() {
             limit: current?.limit ?? 30,
           };
         });
-        setFilters({ status: "", search: "" });
+        setFilters({
+          status: "",
+          search: "",
+          assignedAgentId: "",
+          assignment: "",
+          page: 1,
+          limit: 30,
+        });
       }
     } finally {
       setWidgetTestMessageSending(false);
@@ -4698,12 +4754,27 @@ export default function Home() {
               {activeTab === "inbox" ? (
                 <InboxView
                   filters={filters}
-                  setFilters={setFilters}
                   conversations={conversations}
                   selectedConversation={selectedConversation}
+                  currentUser={user}
+                  users={users}
+                  canManageAgents={
+                    user.roles.some((role) =>
+                      ["super_admin", "org_admin", "product_admin"].includes(role),
+                    ) ||
+                    [...(user.productAccess ?? []),
+                      ...(user.customRoles ?? []).flatMap(
+                        (role) => role.productAccess,
+                      )].some(
+                      (access) =>
+                        access.productKey === "customer_chat" &&
+                        access.canManageAgents,
+                    )
+                  }
                   onLoadConversations={loadConversations}
                   onSelectConversation={loadConversation}
                   onSendReply={sendAgentReply}
+                  onAssign={assignConversation}
                   onUpdateStatus={updateConversationStatus}
                 />
               ) : null}
