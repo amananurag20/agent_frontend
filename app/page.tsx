@@ -29,7 +29,10 @@ import { DashboardView } from "@/components/dashboard-view";
 import { InboxView, type InboxFilters } from "@/components/inbox-view";
 import { HandoffNotifications } from "@/components/handoff-notifications";
 import { KnowledgeView } from "@/components/knowledge-view";
-import { LeadsView } from "@/components/leads-view";
+import {
+  LeadsView,
+  type LeadAppointmentBookingInput,
+} from "@/components/leads-view";
 import { LoginPanel } from "@/components/login-panel";
 import { OrganizationsView } from "@/components/organizations-view";
 import { ProductsView } from "@/components/products-view";
@@ -47,11 +50,12 @@ import type {
   AppointmentDeadLetters,
   AppointmentCalendarConnection,
   AppointmentPolicy,
-  AppointmentResource,
   AppointmentScheduleFeed,
   AppointmentService,
   AppointmentSlot,
   AppointmentStaff,
+  AppointmentStaffAvailability,
+  AppointmentStaffTimeOff,
   AppointmentWaitlistEntry,
   AuditLog,
   AuthResponse,
@@ -564,7 +568,15 @@ function reminderTemplatesFromForm(form: FormData): Record<string, string> {
     [
       ["confirmation", form.get("confirmationTemplate")],
       ["reminder", form.get("reminderTemplate")],
+      ["emailConfirmation", form.get("emailConfirmationTemplate")],
+      ["emailReminder", form.get("emailReminderTemplate")],
+      ["smsConfirmation", form.get("smsConfirmationTemplate")],
+      ["smsReminder", form.get("smsReminderTemplate")],
+      ["whatsappConfirmation", form.get("whatsappConfirmationTemplate")],
+      ["whatsappReminder", form.get("whatsappReminderTemplate")],
       ["emailSubject", form.get("emailSubjectTemplate")],
+      ["confirmationEmailHtml", form.get("confirmationEmailHtml")],
+      ["reminderEmailHtml", form.get("reminderEmailHtml")],
       ["whatsappTemplateName", form.get("whatsappTemplateName")],
     ]
       .filter((entry): entry is [string, FormDataEntryValue] =>
@@ -739,9 +751,6 @@ export default function Home() {
   const [appointmentStaff, setAppointmentStaff] = useState<AppointmentStaff[]>(
     [],
   );
-  const [appointmentResources, setAppointmentResources] = useState<
-    AppointmentResource[]
-  >([]);
   const [appointmentSlots, setAppointmentSlots] = useState<AppointmentSlot[]>(
     [],
   );
@@ -931,6 +940,9 @@ export default function Home() {
     });
   }, [products, user]);
   const canAccessInbox = visibleNavItems.some((item) => item.id === "inbox");
+  const canAccessAppointments = visibleNavItems.some(
+    (item) => item.id === "appointments",
+  );
 
   useEffect(() => {
     const restoreSession = window.setTimeout(() => {
@@ -1379,7 +1391,6 @@ export default function Home() {
       baseTasks.push(
         loadAppointmentServices(),
         loadAppointmentStaff(),
-        loadAppointmentResources(),
         loadAppointmentBookings(),
         loadAppointmentCalendarConnections(),
         loadAppointmentOperations(),
@@ -1448,7 +1459,6 @@ export default function Home() {
       tasks.push(
         loadAppointmentServices(),
         loadAppointmentStaff(),
-        loadAppointmentResources(),
         loadAppointmentBookings(),
         loadAppointmentCalendarConnections(),
         loadAppointmentOperations(),
@@ -1860,17 +1870,6 @@ export default function Home() {
       api<AppointmentStaff[]>(`/appointment-booking/staff${query}`),
     );
     if (result) setAppointmentStaff(result);
-  }
-
-  async function loadAppointmentResources() {
-    const organizationId = selectedOrganizationId ?? user?.orgId;
-    const query = organizationId
-      ? `?organizationId=${encodeURIComponent(organizationId)}`
-      : "";
-    const result = await run(() =>
-      api<AppointmentResource[]>(`/appointment-booking/resources${query}`),
-    );
-    if (result) setAppointmentResources(result);
   }
 
   async function loadAppointmentBookings() {
@@ -3391,6 +3390,13 @@ export default function Home() {
             bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
             bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
             maxAttendees: Number(form.get("maxAttendees") || 1),
+            defaultAttendeeStaffIds: form.getAll("defaultAttendeeStaffIds").map(String),
+            meetingType: String(form.get("meetingType") || "online"),
+            location: String(form.get("location") || "").trim() || undefined,
+            priceCents: form.get("price")
+              ? Math.round(Number(form.get("price")) * 100)
+              : undefined,
+            currency: String(form.get("currency") || "USD").toUpperCase(),
             cancellationWindowMinutes: form.get("cancellationWindowMinutes")
               ? Number(form.get("cancellationWindowMinutes"))
               : undefined,
@@ -3398,6 +3404,7 @@ export default function Home() {
               ? Number(form.get("rescheduleWindowMinutes"))
               : undefined,
             waitlistEnabled: form.get("waitlistEnabled") === "on",
+            status: String(form.get("status") || "active"),
             reminderOffsetsMinutes: parseMinuteOffsets(
               form.get("reminderOffsetsMinutes"),
             ),
@@ -3418,40 +3425,74 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const serviceId = String(form.get("serviceId"));
+    const payload: Record<string, unknown> = {
+      name: String(form.get("name")),
+      description: String(form.get("description")) || null,
+      durationMinutes: Number(form.get("durationMinutes")),
+      bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
+      bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
+      maxAttendees: Number(form.get("maxAttendees") || 1),
+      defaultAttendeeStaffIds: form.getAll("defaultAttendeeStaffIds").map(String),
+      meetingType: String(form.get("meetingType") || "online"),
+      location: String(form.get("location") || "").trim() || null,
+      cancellationWindowMinutes: form.get("cancellationWindowMinutes")
+        ? Number(form.get("cancellationWindowMinutes"))
+        : null,
+      rescheduleWindowMinutes: form.get("rescheduleWindowMinutes")
+        ? Number(form.get("rescheduleWindowMinutes"))
+        : null,
+      waitlistEnabled: form.get("waitlistEnabled") === "on",
+      status: String(form.get("status") || "active"),
+    };
+    if (form.has("price")) {
+      payload.priceCents = form.get("price")
+        ? Math.round(Number(form.get("price")) * 100)
+        : null;
+      payload.currency = String(form.get("currency") || "USD").toUpperCase();
+    }
+    if (form.has("reminderOffsetsMinutes")) {
+      payload.reminderOffsetsMinutes = parseMinuteOffsets(
+        form.get("reminderOffsetsMinutes"),
+      );
+      payload.reminderTemplates = reminderTemplatesFromForm(form);
+    }
     const result = await run(
       () =>
         api<AppointmentService>(`/appointment-booking/services/${serviceId}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            name: String(form.get("name")),
-            description: String(form.get("description")) || null,
-            durationMinutes: Number(form.get("durationMinutes")),
-            bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
-            bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
-            maxAttendees: Number(form.get("maxAttendees") || 1),
-            cancellationWindowMinutes: form.get("cancellationWindowMinutes")
-              ? Number(form.get("cancellationWindowMinutes"))
-              : null,
-            rescheduleWindowMinutes: form.get("rescheduleWindowMinutes")
-              ? Number(form.get("rescheduleWindowMinutes"))
-              : null,
-            waitlistEnabled: form.get("waitlistEnabled") === "on",
-            reminderOffsetsMinutes: parseMinuteOffsets(
-              form.get("reminderOffsetsMinutes"),
-            ),
-            reminderTemplates: reminderTemplatesFromForm(form),
-          }),
+          body: JSON.stringify(payload),
         }),
       "Appointment service updated",
     );
     if (result) await loadAppointmentServices();
   }
 
+  async function deleteAppointmentService(id: string) {
+    setState({ loading: true, error: null, message: null });
+    try {
+      await api<{ deleted: boolean; id: string }>(
+        `/appointment-booking/services/${id}`,
+        { method: "DELETE" },
+      );
+      await Promise.all([
+        loadAppointmentServices(),
+        loadAppointmentStaff(),
+      ]);
+      setState({ loading: false, error: null, message: "Appointment service deleted" });
+      return null;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not delete service";
+      setState({ loading: false, error: message, message: null });
+      return message;
+    }
+  }
+
   async function createAppointmentStaff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    const serviceId = String(form.get("serviceId"));
+    const serviceIds = form.getAll("serviceIds").map(String);
     const result = await run(
       () =>
         api<AppointmentStaff>("/appointment-booking/staff", {
@@ -3460,8 +3501,9 @@ export default function Home() {
             organizationId: selectedOrganizationId ?? user?.orgId,
             name: String(form.get("name")),
             email: String(form.get("email")) || undefined,
+            phone: String(form.get("phone")) || undefined,
             timezone: String(form.get("timezone")) || "UTC",
-            serviceIds: serviceId ? [serviceId] : undefined,
+            serviceIds,
           }),
         }),
       "Appointment staff created",
@@ -3473,38 +3515,83 @@ export default function Home() {
     }
   }
 
-  async function createAppointmentResource(event: FormEvent<HTMLFormElement>) {
+  async function updateAppointmentStaff(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
-    const form = new FormData(formElement);
-    const serviceId = String(form.get("serviceId") || "");
+    const form = new FormData(event.currentTarget);
+    const staffId = String(form.get("staffId"));
     const result = await run(
       () =>
-        api<AppointmentResource>("/appointment-booking/resources", {
-          method: "POST",
+        api<AppointmentStaff>(`/appointment-booking/staff/${staffId}`, {
+          method: "PATCH",
           body: JSON.stringify({
-            organizationId: selectedOrganizationId ?? user?.orgId,
             name: String(form.get("name")),
-            type: String(form.get("type")) || "generic",
-            capacity: Number(form.get("capacity") || 1),
+            email: String(form.get("email")) || null,
+            phone: String(form.get("phone")) || null,
+            timezone: String(form.get("timezone")),
+            status: String(form.get("status")),
+            serviceIds: form.getAll("serviceIds").map(String),
           }),
         }),
-      "Resource created",
+      "Team member updated",
     );
-    if (result && serviceId) {
-      await run(
-        () =>
-          api(`/appointment-booking/services/${serviceId}/resources`, {
-            method: "POST",
-            body: JSON.stringify({ resourceId: result.id, quantity: 1 }),
-          }),
-        "Resource created and assigned",
-      );
-    }
-    if (result) {
-      formElement.reset();
-      await loadAppointmentResources();
-    }
+    if (!result) return false;
+    await loadAppointmentStaff();
+    return true;
+  }
+
+  async function loadStaffSchedule(staffId: string) {
+    const [availability, timeOff] = await Promise.all([
+      api<AppointmentStaffAvailability[]>(
+        `/appointment-booking/staff/${staffId}/availability`,
+      ),
+      api<AppointmentStaffTimeOff[]>(
+        `/appointment-booking/staff/${staffId}/time-off`,
+      ),
+    ]);
+    return { availability, timeOff };
+  }
+
+  async function addStaffAvailability(
+    staffId: string,
+    input: { dayOfWeek: number; startTime: string; endTime: string },
+  ) {
+    return api<AppointmentStaffAvailability>(
+      `/appointment-booking/staff/${staffId}/availability`,
+      { method: "POST", body: JSON.stringify({ ...input, isActive: true }) },
+    );
+  }
+
+  async function deleteStaffAvailability(
+    staffId: string,
+    availabilityId: string,
+  ) {
+    await api(
+      `/appointment-booking/staff/${staffId}/availability/${availabilityId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async function addStaffTimeOff(
+    staffId: string,
+    input: { startAt: string; endAt: string; reason?: string },
+  ) {
+    return api<AppointmentStaffTimeOff>(
+      `/appointment-booking/staff/${staffId}/time-off`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          startAt: toIsoDateTime(input.startAt),
+          endAt: toIsoDateTime(input.endAt),
+          reason: input.reason,
+        }),
+      },
+    );
+  }
+
+  async function deleteStaffTimeOff(staffId: string, timeOffId: string) {
+    await api(`/appointment-booking/staff/${staffId}/time-off/${timeOffId}`, {
+      method: "DELETE",
+    });
   }
 
   async function createStaffAvailability(event: FormEvent<HTMLFormElement>) {
@@ -3573,6 +3660,7 @@ export default function Home() {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const staffId = String(form.get("staffId"));
+    const leadId = String(form.get("leadId") || "");
     const recurrenceFrequency = String(form.get("recurrenceFrequency") || "");
     const result = await run(
       () =>
@@ -3580,14 +3668,17 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({
             organizationId: selectedOrganizationId ?? user?.orgId,
+            leadId: leadId || undefined,
             serviceId: String(form.get("serviceId")),
             staffId: staffId || undefined,
+            attendeeStaffIds: form.getAll("attendeeStaffIds").map(String),
             customerName: String(form.get("customerName")),
             customerEmail: String(form.get("customerEmail")) || undefined,
             customerPhone: String(form.get("customerPhone")) || undefined,
             partySize: Number(form.get("partySize") || 1),
             startAt: toIsoDateTime(form.get("startAt")),
             notes: String(form.get("notes")) || undefined,
+            metadata: leadId ? { source: "lead", leadId } : undefined,
             recurrence: recurrenceFrequency
               ? {
                   frequency: recurrenceFrequency,
@@ -3602,7 +3693,49 @@ export default function Home() {
 
     if (result) {
       formElement.reset();
-      await loadAppointmentBookings();
+      await Promise.all([
+        loadAppointmentBookings(),
+        ...(leadId ? [loadLead(leadId)] : []),
+      ]);
+    }
+  }
+
+  async function findLeadAppointmentSlots(serviceId: string, date: string) {
+    const params = new URLSearchParams({ serviceId, date });
+    const organizationId = selectedOrganizationId ?? user?.orgId;
+    if (organizationId) params.set("organizationId", organizationId);
+    return api<AppointmentSlot[]>(
+      `/appointment-booking/availability?${params.toString()}`,
+    );
+  }
+
+  async function createLeadAppointmentBooking(
+    input: LeadAppointmentBookingInput,
+  ) {
+    setState({ loading: true, error: null, message: null });
+    try {
+      const booking = await api<AppointmentBooking>(
+        "/appointment-booking/bookings",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            organizationId: selectedOrganizationId ?? user?.orgId,
+            ...input,
+            metadata: { source: "lead", leadId: input.leadId },
+          }),
+        },
+      );
+      await Promise.all([
+        loadAppointmentBookings(),
+        loadLead(input.leadId),
+      ]);
+      setState({ loading: false, error: null, message: "Meeting scheduled" });
+      return booking;
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not schedule meeting";
+      setState({ loading: false, error: message, message: null });
+      throw error;
     }
   }
 
@@ -3690,28 +3823,35 @@ export default function Home() {
     const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams();
     if (organizationId) params.set("organizationId", organizationId);
+    const payload: Record<string, unknown> = {};
+    if (form.has("cancellationWindowMinutes")) {
+      payload.cancellationWindowMinutes = Number(
+        form.get("cancellationWindowMinutes"),
+      );
+      payload.rescheduleWindowMinutes = Number(
+        form.get("rescheduleWindowMinutes"),
+      );
+      payload.noShowGraceMinutes = Number(form.get("noShowGraceMinutes"));
+      payload.waitlistOfferMinutes = Number(form.get("waitlistOfferMinutes"));
+    }
+    if (form.has("notificationSettingsForm")) {
+      payload.reminderChannels = form
+        .getAll("reminderChannels")
+        .map(String);
+      payload.quietHoursEnabled = form.get("quietHoursEnabled") === "on";
+      payload.quietHoursStart = String(form.get("quietHoursStart"));
+      payload.quietHoursEnd = String(form.get("quietHoursEnd"));
+      payload.quietHoursTimezone = String(form.get("quietHoursTimezone"));
+      payload.reminderOffsetsMinutes = parseMinuteOffsets(
+        form.get("reminderOffsetsMinutes"),
+      );
+      payload.reminderTemplates = reminderTemplatesFromForm(form);
+    }
     const result = await run(
       () =>
         api<AppointmentPolicy>(`/appointment-booking/policy?${params}`, {
           method: "PATCH",
-          body: JSON.stringify({
-            cancellationWindowMinutes: Number(
-              form.get("cancellationWindowMinutes"),
-            ),
-            rescheduleWindowMinutes: Number(
-              form.get("rescheduleWindowMinutes"),
-            ),
-            noShowGraceMinutes: Number(form.get("noShowGraceMinutes")),
-            waitlistOfferMinutes: Number(form.get("waitlistOfferMinutes")),
-            quietHoursEnabled: form.get("quietHoursEnabled") === "on",
-            quietHoursStart: String(form.get("quietHoursStart")),
-            quietHoursEnd: String(form.get("quietHoursEnd")),
-            quietHoursTimezone: String(form.get("quietHoursTimezone")),
-            reminderOffsetsMinutes: parseMinuteOffsets(
-              form.get("reminderOffsetsMinutes"),
-            ),
-            reminderTemplates: reminderTemplatesFromForm(form),
-          }),
+          body: JSON.stringify(payload),
         }),
       "Booking policy updated",
     );
@@ -3772,7 +3912,8 @@ export default function Home() {
 
   async function connectAppointmentCalendar(
     provider: "google" | "microsoft",
-    staffId: string,
+    scope: "organization" | "staff",
+    staffId?: string,
   ) {
     const result = await run(
       () =>
@@ -3780,7 +3921,12 @@ export default function Home() {
           "/appointment-booking/calendars/connections",
           {
             method: "POST",
-            body: JSON.stringify({ provider, staffId }),
+            body: JSON.stringify({
+              provider,
+              scope,
+              organizationId: selectedOrganizationId ?? user?.orgId,
+              staffId: scope === "staff" ? staffId : undefined,
+            }),
           },
         ),
       `Opening ${provider === "google" ? "Google" : "Microsoft"} authorization`,
@@ -4801,6 +4947,10 @@ export default function Home() {
                     void loadLead(id);
                   }}
                   onUpdate={updateLead}
+                  canScheduleAppointments={canAccessAppointments}
+                  appointmentServices={appointmentServices}
+                  onFindAppointmentSlots={findLeadAppointmentSlots}
+                  onCreateLeadAppointment={createLeadAppointmentBooking}
                 />
               ) : null}
               {activeTab === "knowledge" ? (
@@ -4850,7 +5000,6 @@ export default function Home() {
                 <AppointmentsView
                   services={appointmentServices}
                   staff={appointmentStaff}
-                  resources={appointmentResources}
                   slots={appointmentSlots}
                   bookings={appointmentBookings}
                   calendarConnections={appointmentCalendarConnections}
@@ -4860,8 +5009,9 @@ export default function Home() {
                   deadLetters={appointmentDeadLetters}
                   onCreateService={createAppointmentService}
                   onUpdateService={updateAppointmentService}
+                  onDeleteService={deleteAppointmentService}
                   onCreateStaff={createAppointmentStaff}
-                  onCreateResource={createAppointmentResource}
+                  onUpdateStaff={updateAppointmentStaff}
                   onCreateAvailability={createStaffAvailability}
                   onCreateTimeOff={createStaffTimeOff}
                   onSearchSlots={searchAppointmentSlots}
@@ -4878,6 +5028,11 @@ export default function Home() {
                   onRetryDeadLetter={retryAppointmentDeadLetter}
                   onConnectCalendar={connectAppointmentCalendar}
                   onDisconnectCalendar={disconnectAppointmentCalendar}
+                  onLoadStaffSchedule={loadStaffSchedule}
+                  onAddStaffAvailability={addStaffAvailability}
+                  onDeleteStaffAvailability={deleteStaffAvailability}
+                  onAddStaffTimeOff={addStaffTimeOff}
+                  onDeleteStaffTimeOff={deleteStaffTimeOff}
                 />
               ) : null}
               {activeTab === "whatsapp" ? (

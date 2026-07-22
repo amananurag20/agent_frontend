@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, Repeat2, ShieldCheck, UsersRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, ExternalLink, Repeat2, ShieldCheck, UsersRound } from "lucide-react";
 import type { AppointmentBooking, AppointmentService, AppointmentSlot } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
@@ -333,6 +333,15 @@ export default function PublicBookingPage() {
                   ? `${result.bookings.length} appointments created. First appointment: ${formatDateTime(result.bookings[0].startAt)}.`
                   : `${formatDateTime(result.startAt)} · ${result.partySize} attendee${result.partySize === 1 ? "" : "s"}.`}
               </p>
+              {recentBooking?.meetingUrl ? (
+                <a href={recentBooking.meetingUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-semibold text-[#065f46] underline">
+                  Join online meeting <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              ) : recentBooking?.meetingType === "online" ? (
+                <p className="mt-2 text-xs text-[#067647]">Your calendar invitation with the join link is being prepared.</p>
+              ) : recentBooking?.location ? (
+                <p className="mt-2 text-xs text-[#067647]">{recentBooking.meetingType === "in_person" ? "Location" : "Call details"}: {recentBooking.location}</p>
+              ) : null}
               <button type="button" onClick={() => setMode("manage")} className="mt-3 text-sm font-semibold text-[#065f46] underline">Manage this booking</button>
             </div>
           </div>
@@ -353,7 +362,7 @@ export default function PublicBookingPage() {
                 <label className="mt-4 block text-sm font-medium text-[#314158]">Service</label>
                 <select name="serviceId" className={`${inputClass} mt-1`} required defaultValue="">
                   <option value="">Select service</option>
-                  {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min · up to {service.maxAttendees}</option>)}
+                  {services.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min · {service.meetingType === "online" ? "Online" : service.meetingType === "in_person" ? "In person" : "Phone"}</option>)}
                 </select>
                 <label className="mt-4 block text-sm font-medium text-[#314158]">Date</label>
                 <input name="date" type="date" min={new Date().toISOString().slice(0, 10)} className={`${inputClass} mt-1`} required />

@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  ExternalLink,
   ListFilter,
   Plus,
   RefreshCw,
@@ -569,6 +570,14 @@ export function AppointmentScheduleCalendar({
               <div><dt className="text-xs text-[var(--text-soft)]">Date and time</dt><dd className="mt-1 font-medium text-[var(--text-strong)]">{formatDateTime(selectedBooking.startAt)}</dd><dd className="mt-1 text-xs text-[var(--text-muted)]">Timezone: {selectedBooking.timezone}</dd></div>
               <div><dt className="text-xs text-[var(--text-soft)]">Service</dt><dd className="mt-1 text-[var(--text-strong)]">{serviceName(selectedBooking.serviceId)}</dd></div>
               <div><dt className="text-xs text-[var(--text-soft)]">Team member</dt><dd className="mt-1 text-[var(--text-strong)]">{staffName(selectedBooking.staffId)}</dd></div>
+              <div>
+                <dt className="text-xs text-[var(--text-soft)]">Meeting</dt>
+                <dd className="mt-1 text-[var(--text-strong)]">
+                  {selectedBooking.meetingUrl ? (
+                    <a href={selectedBooking.meetingUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-[var(--accent-primary)] hover:underline">Join online meeting <ExternalLink className="h-3.5 w-3.5" /></a>
+                  ) : selectedBooking.meetingType === "online" ? "Meeting link is being prepared" : selectedBooking.location ?? (selectedBooking.meetingType === "phone" ? "Phone call" : "In person")}
+                </dd>
+              </div>
               <div><dt className="text-xs text-[var(--text-soft)]">Customer contact</dt><dd className="mt-1 text-[var(--text-strong)]">{selectedBooking.customerEmail ?? selectedBooking.customerPhone ?? "No contact provided"}</dd></div>
               <div><dt className="text-xs text-[var(--text-soft)]">Attendance</dt><dd className="mt-1 flex items-center gap-2 text-[var(--text-strong)]"><UsersRound className="h-4 w-4" /> Party of {selectedBooking.partySize}{selectedBooking.checkedInAt ? " · Checked in" : ""}</dd></div>
               {selectedBooking.seriesId ? <div><dt className="text-xs text-[var(--text-soft)]">Recurring series</dt><dd className="mt-1 text-[var(--text-strong)]">Occurrence {(selectedBooking.occurrenceIndex ?? 0) + 1}</dd></div> : null}

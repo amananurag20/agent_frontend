@@ -2,19 +2,32 @@
 
 import {
   ArrowLeft,
+  CalendarCheck,
+  CalendarDays,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   Mail,
   MessageSquare,
   Phone,
   Search,
   Tag,
   UserRound,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import type { Lead, LeadList, LeadStatus, WidgetConfig } from "@/lib/types";
+import type {
+  AppointmentBooking,
+  AppointmentService,
+  AppointmentSlot,
+  Lead,
+  LeadList,
+  LeadStatus,
+  WidgetConfig,
+} from "@/lib/types";
 import { Field, StatusPill } from "./ui";
 
 const statuses: LeadStatus[] = [
@@ -25,6 +38,19 @@ const statuses: LeadStatus[] = [
   "disqualified",
   "archived",
 ];
+
+export type LeadAppointmentBookingInput = {
+  leadId: string;
+  serviceId: string;
+  staffId: string;
+  customerName: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  partySize: number;
+  startAt: string;
+  timezone: string;
+  notes?: string;
+};
 
 export function LeadsView({
   list,
@@ -38,6 +64,10 @@ export function LeadsView({
   onPageChange,
   onOpen,
   onUpdate,
+  canScheduleAppointments,
+  appointmentServices,
+  onFindAppointmentSlots,
+  onCreateLeadAppointment,
 }: {
   list: LeadList | null;
   selected: Lead | null;
@@ -50,11 +80,25 @@ export function LeadsView({
   onPageChange: (page: number) => void;
   onOpen: (id: string) => void;
   onUpdate: (id: string, input: Partial<Lead>) => Promise<void>;
+  canScheduleAppointments: boolean;
+  appointmentServices: AppointmentService[];
+  onFindAppointmentSlots: (serviceId: string, date: string) => Promise<AppointmentSlot[]>;
+  onCreateLeadAppointment: (input: LeadAppointmentBookingInput) => Promise<AppointmentBooking>;
 }) {
   const router = useRouter();
   if (detailId) {
     if (selected) {
-      return <LeadDetail lead={selected} loading={loading} onUpdate={onUpdate} />;
+      return (
+        <LeadDetail
+          lead={selected}
+          loading={loading}
+          onUpdate={onUpdate}
+          canScheduleAppointments={canScheduleAppointments}
+          appointmentServices={appointmentServices}
+          onFindAppointmentSlots={onFindAppointmentSlots}
+          onCreateLeadAppointment={onCreateLeadAppointment}
+        />
+      );
     }
     if (notFound) {
       return (
@@ -255,13 +299,22 @@ function LeadDetail({
   lead,
   loading,
   onUpdate,
+  canScheduleAppointments,
+  appointmentServices,
+  onFindAppointmentSlots,
+  onCreateLeadAppointment,
 }: {
   lead: Lead;
   loading: boolean;
   onUpdate: (id: string, input: Partial<Lead>) => Promise<void>;
+  canScheduleAppointments: boolean;
+  appointmentServices: AppointmentService[];
+  onFindAppointmentSlots: (serviceId: string, date: string) => Promise<AppointmentSlot[]>;
+  onCreateLeadAppointment: (input: LeadAppointmentBookingInput) => Promise<AppointmentBooking>;
 }) {
   const router = useRouter();
   const [tags, setTags] = useState((lead.tags ?? []).join(", "));
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
   return (
     <div className="space-y-4">
       <button type="button" onClick={() => router.push("/leads")} className="inline-flex items-center gap-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-strong)]">
@@ -275,7 +328,18 @@ function LeadDetail({
                 <h2 className="text-xl font-semibold text-[var(--text-strong)]">{lead.name || "Anonymous lead"}</h2>
                 <p className="mt-1 text-sm text-[var(--text-muted)]">Captured by {lead.widgetConfig?.name ?? "a deleted widget"}</p>
               </div>
-              <StatusPill status={lead.status} />
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusPill status={lead.status} />
+                {canScheduleAppointments ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAppointmentModal(true)}
+                    className="inline-flex h-10 items-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-white hover:bg-[var(--accent-primary-strong)]"
+                  >
+                    <CalendarPlus size={16} /> Schedule meeting
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
           <form
@@ -332,6 +396,36 @@ function LeadDetail({
             </dl>
           </section>
           <section className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-card)]">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-semibold text-[var(--text-strong)]">Appointments</h3>
+              <span className="text-xs text-[var(--text-muted)]">{lead._count?.appointments ?? lead.appointments?.length ?? 0} total</span>
+            </div>
+            <div className="mt-3 space-y-2">
+              {(lead.appointments ?? []).map((appointment) => (
+                <button
+                  key={appointment.id}
+                  type="button"
+                  onClick={() => router.push("/appointments")}
+                  className="flex w-full items-start justify-between gap-3 rounded-md border border-[var(--border-subtle)] px-3 py-3 text-left hover:bg-[var(--surface-hover)]"
+                >
+                  <span className="flex min-w-0 gap-3">
+                    <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-primary)]" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-[var(--text-strong)]">{appointment.service.name}</span>
+                      <span className="mt-1 block text-xs text-[var(--text-muted)]">{formatDate(appointment.startAt)} · {appointment.staff.name}</span>
+                    </span>
+                  </span>
+                  <StatusPill status={appointment.status} />
+                </button>
+              ))}
+              {!lead.appointments?.length ? (
+                <p className="rounded-md border border-dashed border-[var(--border-subtle)] px-3 py-4 text-sm text-[var(--text-muted)]">
+                  No meetings scheduled for this lead yet.
+                </p>
+              ) : null}
+            </div>
+          </section>
+          <section className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-card)]">
             <h3 className="font-semibold text-[var(--text-strong)]">Conversation history</h3>
             <div className="mt-3 space-y-2">
               {(lead.conversations ?? []).map((conversation) => (
@@ -342,6 +436,186 @@ function LeadDetail({
               ))}
             </div>
           </section>
+        </div>
+      </div>
+      {showAppointmentModal ? (
+        <LeadAppointmentModal
+          lead={lead}
+          services={appointmentServices}
+          onFindSlots={onFindAppointmentSlots}
+          onCreate={onCreateLeadAppointment}
+          onClose={() => setShowAppointmentModal(false)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function LeadAppointmentModal({
+  lead,
+  services,
+  onFindSlots,
+  onCreate,
+  onClose,
+}: {
+  lead: Lead;
+  services: AppointmentService[];
+  onFindSlots: (serviceId: string, date: string) => Promise<AppointmentSlot[]>;
+  onCreate: (input: LeadAppointmentBookingInput) => Promise<AppointmentBooking>;
+  onClose: () => void;
+}) {
+  const activeServices = services.filter((service) => service.status === "active");
+  const [serviceId, setServiceId] = useState("");
+  const [slots, setSlots] = useState<AppointmentSlot[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<AppointmentSlot | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [createdBooking, setCreatedBooking] = useState<AppointmentBooking | null>(null);
+  const selectedService = activeServices.find((service) => service.id === serviceId);
+
+  async function findSlots(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const date = String(form.get("date") || "");
+    setSearching(true);
+    setError(null);
+    setSelectedSlot(null);
+    setHasSearched(true);
+    try {
+      setSlots(await onFindSlots(serviceId, date));
+    } catch (searchError) {
+      setSlots([]);
+      setError(searchError instanceof Error ? searchError.message : "Could not load available times");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function createBooking(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedSlot || !selectedService) return;
+    const form = new FormData(event.currentTarget);
+    setSaving(true);
+    setError(null);
+    try {
+      const booking = await onCreate({
+        leadId: lead.id,
+        serviceId: selectedService.id,
+        staffId: selectedSlot.staffId,
+        customerName: String(form.get("customerName") || "").trim(),
+        customerEmail: String(form.get("customerEmail") || "").trim() || undefined,
+        customerPhone: String(form.get("customerPhone") || "").trim() || undefined,
+        partySize: Number(form.get("partySize") || 1),
+        startAt: selectedSlot.startAt,
+        timezone: selectedSlot.timezone,
+        notes: String(form.get("notes") || "").trim() || undefined,
+      });
+      setCreatedBooking(booking);
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Could not schedule the meeting");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const step = createdBooking ? 3 : selectedSlot ? 2 : 1;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--border-subtle)] px-6 py-5">
+          <div>
+            <h2 className="text-lg font-semibold text-[var(--text-strong)]">Schedule meeting</h2>
+            <p className="mt-1 text-sm text-[var(--text-muted)]">{lead.name || lead.email || lead.phone || "Lead"}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close schedule meeting" className="grid h-9 w-9 place-items-center rounded-lg border border-[var(--border-strong)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)]">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="max-h-[calc(92vh-86px)] overflow-y-auto px-6 py-5">
+          <div className="mb-5 grid grid-cols-3 gap-2 text-xs">
+            {["Find a time", "Meeting details", "Confirmed"].map((label, index) => (
+              <div key={label} className={`rounded-lg px-3 py-2 text-center font-medium ${step === index + 1 ? "bg-[var(--accent-primary)] text-white" : step > index + 1 ? "bg-[var(--success-bg)] text-[var(--success-text)]" : "bg-[var(--surface-card-muted)] text-[var(--text-muted)]"}`}>
+                {index + 1}. {label}
+              </div>
+            ))}
+          </div>
+
+          {createdBooking ? (
+            <div className="py-8 text-center">
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[var(--success-bg)] text-[var(--success-text)]"><CalendarCheck size={28} /></div>
+              <h3 className="mt-4 text-lg font-semibold text-[var(--text-strong)]">Meeting scheduled</h3>
+              <p className="mt-2 text-sm text-[var(--text-muted)]">{selectedService?.name} with {selectedSlot?.staffName}</p>
+              <p className="mt-1 text-sm font-medium text-[var(--text-strong)]">{formatDate(createdBooking.startAt)}</p>
+              {createdBooking.meetingUrl ? (
+                <a href={createdBooking.meetingUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-[var(--accent-primary)] hover:underline">Join online meeting <ExternalLink size={14} /></a>
+              ) : createdBooking.meetingType === "online" ? (
+                <p className="mt-2 text-xs text-[var(--text-muted)]">The calendar invitation with the join link is being prepared.</p>
+              ) : createdBooking.location ? (
+                <p className="mt-2 text-xs text-[var(--text-muted)]">{createdBooking.meetingType === "in_person" ? "Location" : "Call details"}: {createdBooking.location}</p>
+              ) : null}
+              <p className="mx-auto mt-4 max-w-md text-xs text-[var(--text-muted)]">The booking is linked to this lead and now appears in its appointment history. Confirmation, reminders, and calendar synchronization will run normally.</p>
+              <button type="button" onClick={onClose} className="mt-6 h-10 rounded-md bg-[var(--accent-primary)] px-5 text-sm font-medium text-white hover:bg-[var(--accent-primary-strong)]">Done</button>
+            </div>
+          ) : selectedSlot && selectedService ? (
+            <form onSubmit={createBooking} className="space-y-4">
+              <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-[var(--text-strong)]">{selectedService.name}</p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">{formatDate(selectedSlot.startAt)} · {selectedSlot.staffName}</p>
+                  </div>
+                  <button type="button" onClick={() => setSelectedSlot(null)} className="text-sm font-medium text-[var(--accent-primary)] hover:underline">Change</button>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Customer name"><input name="customerName" className="input" minLength={2} defaultValue={lead.name ?? ""} required /></Field>
+                <Field label="Customer email"><input name="customerEmail" type="email" className="input" defaultValue={lead.email ?? ""} /></Field>
+                <Field label="Customer phone"><input name="customerPhone" type="tel" className="input" defaultValue={lead.phone ?? ""} /></Field>
+                <Field label="Party size"><input name="partySize" type="number" min="1" max={selectedService.maxAttendees} defaultValue="1" className="input" required /></Field>
+              </div>
+              <Field label="Notes"><textarea name="notes" rows={3} className="input resize-y" placeholder="Purpose, preparation, or internal context…" /></Field>
+              {error ? <p className="text-sm text-[var(--danger-text)]">{error}</p> : null}
+              <div className="flex justify-end gap-3 border-t border-[var(--border-subtle)] pt-4">
+                <button type="button" onClick={onClose} className="h-10 rounded-md border border-[var(--border-strong)] px-4 text-sm font-medium">Cancel</button>
+                <button disabled={saving} className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-white disabled:opacity-60">{saving ? "Scheduling…" : "Confirm meeting"}</button>
+              </div>
+            </form>
+          ) : (
+            <div className="space-y-4">
+              <form onSubmit={findSlots} className="grid gap-4 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+                <Field label="Service">
+                  <select value={serviceId} onChange={(event) => { setServiceId(event.target.value); setSlots([]); setHasSearched(false); }} className="input" required>
+                    <option value="">Choose a service</option>
+                    {activeServices.map((service) => <option key={service.id} value={service.id}>{service.name} · {service.durationMinutes} min</option>)}
+                  </select>
+                </Field>
+                <Field label="Date"><input name="date" type="date" min={new Date().toISOString().slice(0, 10)} className="input" required /></Field>
+                <button disabled={searching || !activeServices.length} className="h-10 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-white disabled:opacity-60">{searching ? "Checking…" : "Find times"}</button>
+              </form>
+              {!activeServices.length ? <p className="rounded-lg border border-dashed border-[var(--border-subtle)] p-4 text-sm text-[var(--text-muted)]">No active appointment services are configured for this workspace.</p> : null}
+              {error ? <p className="text-sm text-[var(--danger-text)]">{error}</p> : null}
+              {slots.length ? (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-soft)]">Available times</p>
+                  <div className="grid max-h-72 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {slots.map((slot) => (
+                      <button key={`${slot.staffId}-${slot.startAt}`} type="button" onClick={() => { setSelectedSlot(slot); setError(null); }} className="rounded-lg border border-[var(--border-subtle)] p-3 text-left hover:border-[var(--accent-primary)] hover:bg-[var(--surface-hover)]">
+                        <p className="text-sm font-medium text-[var(--text-strong)]">{formatDate(slot.startAt)}</p>
+                        <p className="mt-1 text-xs text-[var(--text-muted)]">{slot.staffName} · {slot.seatsRemaining} seat{slot.seatsRemaining === 1 ? "" : "s"} left</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : hasSearched && !searching && !error ? <p className="rounded-lg border border-dashed border-[var(--border-subtle)] p-4 text-sm text-[var(--text-muted)]">No available times were found for that date. Try another date or service.</p> : serviceId ? <p className="text-sm text-[var(--text-muted)]">Choose a date and search to see available times.</p> : null}
+            </div>
+          )}
         </div>
       </div>
     </div>

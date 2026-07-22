@@ -369,7 +369,16 @@ export type Lead = {
     lastMessageAt: string;
     createdAt: string;
   }>;
-  _count?: { conversations: number };
+  appointments?: Array<{
+    id: string;
+    status: AppointmentBooking["status"];
+    startAt: string;
+    endAt: string;
+    timezone: string;
+    service: { id: string; name: string };
+    staff: { id: string; name: string };
+  }>;
+  _count?: { conversations: number; appointments?: number };
   createdAt: string;
   updatedAt: string;
 };
@@ -525,11 +534,14 @@ export type AppointmentService = {
   priceCents?: number | null;
   currency: string;
   maxAttendees: number;
+  meetingType: "online" | "in_person" | "phone";
+  location?: string | null;
   cancellationWindowMinutes?: number | null;
   rescheduleWindowMinutes?: number | null;
   waitlistEnabled: boolean;
   reminderOffsetsMinutes: number[];
   reminderTemplates: Record<string, string>;
+  defaultAttendeeStaffIds: string[];
   status: "active" | "inactive";
   metadata: Record<string, unknown>;
 };
@@ -544,7 +556,31 @@ export type AppointmentStaff = {
   timezone: string;
   status: "active" | "inactive";
   services: AppointmentService[];
+  resources: AppointmentResource[];
   metadata: Record<string, unknown>;
+};
+
+export type AppointmentStaffAvailability = {
+  id: string;
+  organizationId: string;
+  staffId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type AppointmentStaffTimeOff = {
+  id: string;
+  organizationId: string;
+  staffId: string;
+  startAt: string;
+  endAt: string;
+  reason?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type AppointmentResource = {
@@ -569,6 +605,7 @@ export type AppointmentSlot = {
 export type AppointmentBooking = {
   id: string;
   organizationId: string;
+  leadId?: string | null;
   serviceId: string;
   staffId: string;
   status: "pending" | "confirmed" | "cancelled" | "completed" | "no_show";
@@ -584,6 +621,12 @@ export type AppointmentBooking = {
   endAt: string;
   timezone: string;
   notes?: string | null;
+  meetingType: "online" | "in_person" | "phone";
+  meetingProvider?: "google" | "microsoft" | null;
+  meetingUrl?: string | null;
+  location?: string | null;
+  attendeeStaffIds: string[];
+  attendeeEmails: string[];
   cancellationReason?: string | null;
   metadata: Record<string, unknown>;
   manageToken?: string;
@@ -599,6 +642,12 @@ export type AppointmentPolicy = {
   quietHoursStart: string;
   quietHoursEnd: string;
   quietHoursTimezone: string;
+  reminderChannels: Array<"email" | "sms" | "whatsapp">;
+  notificationReadiness?: {
+    email: boolean;
+    sms: boolean;
+    whatsapp: boolean;
+  };
   reminderOffsetsMinutes: number[];
   reminderTemplates: Record<string, string>;
   createdAt?: string;
@@ -735,7 +784,8 @@ export type AppointmentBookingList = {
 export type AppointmentCalendarConnection = {
   id: string;
   organizationId: string;
-  staffId: string;
+  staffId: string | null;
+  scope: "organization" | "staff";
   provider: "google" | "microsoft";
   status: "pending" | "active" | "error" | "disconnected";
   accountEmail?: string | null;
@@ -744,7 +794,7 @@ export type AppointmentCalendarConnection = {
   lastSyncedAt?: string | null;
   lastError?: string | null;
   createdAt: string;
-  staff?: { id: string; name: string; timezone: string };
+  staff?: { id: string; name: string; timezone: string } | null;
 };
 
 export type WhatsAppConfig = {
