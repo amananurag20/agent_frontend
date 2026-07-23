@@ -341,19 +341,60 @@ export type LeadCaptureField = {
 };
 
 export type LeadStatus =
-  | "new"
-  | "contacted"
-  | "qualified"
-  | "converted"
-  | "disqualified"
-  | "archived";
+  "new" | "contacted" | "qualified" | "converted" | "disqualified" | "archived";
+
+export type LeadPriority = "low" | "medium" | "high" | "hot";
+
+export type LeadScoreReason = {
+  key: string;
+  points: number;
+};
+
+export type LeadSignalEvidence = {
+  signal: string;
+  source: "rules" | "ai";
+  confidence: number;
+  evidence?: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+};
 
 export type Lead = {
   id: string;
   organizationId: string;
   widgetConfigId?: string | null;
   widgetConfig?: { id: string; name: string } | null;
+  ownerId?: string | null;
+  owner?: { id: string; name: string; email: string } | null;
+  assignedAt?: string | null;
+  firstResponseDueAt?: string | null;
+  firstRespondedAt?: string | null;
+  slaBreachedAt?: string | null;
+  consentStatus?: "unknown" | "granted" | "denied" | "withdrawn";
+  consentSource?: string | null;
+  consentedAt?: string | null;
+  retentionExpiresAt?: string | null;
   status: LeadStatus;
+  priority: LeadPriority;
+  score: number;
+  automaticScore: number;
+  scoreOverride?: number | null;
+  manualScoreAdjustment?: number | null;
+  scoreChangeReason?: string;
+  scoreUpdatedAt?: string | null;
+  qualification: {
+    signals?: string[];
+    reasons?: LeadScoreReason[];
+    signalEvidence?: LeadSignalEvidence[];
+    manualScoreAdjustment?: number;
+    manualScoreReason?: string;
+    aiIntent?: "low" | "medium" | "high";
+    aiConfidence?: number;
+    aiSummary?: string;
+    scoreVersion?: string;
+    evaluatedAt?: string;
+    [key: string]: unknown;
+  };
   name?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -377,6 +418,21 @@ export type Lead = {
     timezone: string;
     service: { id: string; name: string };
     staff: { id: string; name: string };
+  }>;
+  lifecycleEvents?: Array<{
+    id: string;
+    type: string;
+    actorUserId?: string | null;
+    metadata: Record<string, unknown>;
+    createdAt: string;
+  }>;
+  alerts?: Array<{
+    id: string;
+    type: "hot_lead" | "sla_breach" | "assignment";
+    message: string;
+    metadata: Record<string, unknown>;
+    readAt?: string | null;
+    createdAt: string;
   }>;
   _count?: { conversations: number; appointments?: number };
   createdAt: string;

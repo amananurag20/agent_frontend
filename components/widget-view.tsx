@@ -54,8 +54,23 @@ type WidgetAppearance = {
 type WidgetMemoryPolicy = {
   enabled: boolean;
   recentMessageLimit: number;
-  lowConfidenceAction: 'clarify' | 'handoff';
+  lowConfidenceAction: "clarify" | "handoff";
   maxClarificationAttempts: number;
+};
+
+type WidgetLeadScoringPolicy = {
+  enabled: boolean;
+  aiEnabled: boolean;
+  aiConfidenceThreshold: number;
+  signalDecayDays: number;
+  thresholds: { medium: number; high: number; hot: number };
+};
+
+type WidgetLeadOperationsPolicy = {
+  autoAssign: "none" | "round_robin";
+  firstResponseMinutes: number;
+  alertPriority: "high" | "hot";
+  retentionDays: number;
 };
 
 export function WidgetView({
@@ -165,7 +180,21 @@ function WidgetEditor({
     () => readMemoryPolicy(config.settings),
     [config],
   );
+  const leadScoringPolicy = useMemo(
+    () => readLeadScoringPolicy(config.settings),
+    [config],
+  );
+  const leadOperationsPolicy = useMemo(
+    () => readLeadOperationsPolicy(config.settings),
+    [config],
+  );
   const [memoryEnabled, setMemoryEnabled] = useState(memoryPolicy.enabled);
+  const [leadScoringEnabled, setLeadScoringEnabled] = useState(
+    leadScoringPolicy.enabled,
+  );
+  const [leadScoringAiEnabled, setLeadScoringAiEnabled] = useState(
+    leadScoringPolicy.aiEnabled,
+  );
   const [leadFields, setLeadFields] = useState<LeadCaptureField[]>(
     config.leadFields ?? [],
   );
@@ -233,7 +262,11 @@ function WidgetEditor({
           <button
             type="button"
             onClick={() => {
-              if (window.confirm(`Delete ${config.name}? Existing conversations will be preserved.`)) {
+              if (
+                window.confirm(
+                  `Delete ${config.name}? Existing conversations will be preserved.`,
+                )
+              ) {
                 onDelete();
               }
             }}
@@ -243,22 +276,22 @@ function WidgetEditor({
             <Trash2 size={16} />
           </button>
           <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] px-3 py-2">
-          <div className="min-w-0">
-            <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-soft)]">
-              Widget key
-            </p>
-            <p className="max-w-72 truncate font-mono text-xs text-[var(--text-base)]">
-              {config.widgetKey}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-hover-strong)] hover:text-[var(--text-strong)] disabled:opacity-40"
-            title="Copy widget key"
-            onClick={() => copy(config.widgetKey, "key")}
-          >
-            {copied === "key" ? <Check size={16} /> : <Clipboard size={16} />}
-          </button>
+            <div className="min-w-0">
+              <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--text-soft)]">
+                Widget key
+              </p>
+              <p className="max-w-72 truncate font-mono text-xs text-[var(--text-base)]">
+                {config.widgetKey}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--surface-hover-strong)] hover:text-[var(--text-strong)] disabled:opacity-40"
+              title="Copy widget key"
+              onClick={() => copy(config.widgetKey, "key")}
+            >
+              {copied === "key" ? <Check size={16} /> : <Clipboard size={16} />}
+            </button>
           </div>
         </div>
       </section>
@@ -277,7 +310,10 @@ function WidgetEditor({
             <div className="flex items-center justify-between gap-4 border-b border-[var(--border-subtle)] px-5 py-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <Settings2 size={17} className="text-[var(--accent-primary)]" />
+                  <Settings2
+                    size={17}
+                    className="text-[var(--accent-primary)]"
+                  />
                   <h2 className="font-semibold text-[var(--text-strong)]">
                     Configuration
                   </h2>
@@ -386,8 +422,8 @@ function WidgetEditor({
                     </select>
                   </Field>
                   <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-3 text-xs text-[var(--text-muted)]">
-                    The installed widget uses an isolated Shadow DOM, so your site
-                    styles cannot override its layout.
+                    The installed widget uses an isolated Shadow DOM, so your
+                    site styles cannot override its layout.
                   </div>
                 </div>
               </section>
@@ -423,6 +459,19 @@ function WidgetEditor({
               />
             </div>
 
+            <LeadScoringFields
+              className="border-t border-[var(--border-subtle)] p-5"
+              policy={leadScoringPolicy}
+              enabled={leadScoringEnabled}
+              aiEnabled={leadScoringAiEnabled}
+              onEnabledChange={setLeadScoringEnabled}
+              onAiEnabledChange={setLeadScoringAiEnabled}
+            />
+            <LeadOperationsFields
+              className="border-t border-[var(--border-subtle)] p-5"
+              policy={leadOperationsPolicy}
+            />
+
             <div className="border-t border-[var(--border-subtle)] p-5">
               <SectionHeading
                 icon={BrainCircuit}
@@ -448,7 +497,8 @@ function WidgetEditor({
                   >
                     {[4, 6, 8, 10, 12, 16, 20].map((limit) => (
                       <option key={limit} value={limit}>
-                        Last {limit} messages{limit === 8 ? ' (recommended)' : ''}
+                        Last {limit} messages
+                        {limit === 8 ? " (recommended)" : ""}
                       </option>
                     ))}
                   </select>
@@ -478,7 +528,8 @@ function WidgetEditor({
                 </div>
               </div>
               <p className="mt-3 text-xs text-[var(--text-soft)]">
-                Full history stays in the Inbox. Only this bounded window and the active grounded topic are sent to the AI provider.
+                Full history stays in the Inbox. Only this bounded window and
+                the active grounded topic are sent to the AI provider.
               </p>
             </div>
 
@@ -500,8 +551,8 @@ function WidgetEditor({
                 </button>
               </div>
               <p className="mt-2 flex items-center gap-1.5 text-xs text-[var(--text-soft)]">
-                <Globe2 size={13} /> Paste a website link and press Enter. Paths are
-                normalized to their exact origin.
+                <Globe2 size={13} /> Paste a website link and press Enter. Paths
+                are normalized to their exact origin.
               </p>
             </div>
           </form>
@@ -517,10 +568,7 @@ function WidgetEditor({
         </div>
 
         <div className="space-y-4">
-          <WidgetPreview
-            config={config}
-            appearance={appearance}
-          />
+          <WidgetPreview config={config} appearance={appearance} />
 
           <TestChat
             config={config}
@@ -566,7 +614,8 @@ function WidgetList({
             Website widgets
           </h2>
           <p className="mt-1 text-sm text-[var(--text-muted)]">
-            Create assistants for different websites, audiences and knowledge areas.
+            Create assistants for different websites, audiences and knowledge
+            areas.
           </p>
         </div>
         <button
@@ -626,11 +675,14 @@ function WidgetList({
                           : "Any domain"}
                       </p>
                       <p className="mt-1 max-w-56 truncate text-xs text-[var(--text-soft)]">
-                        {widget.allowedDomains[0] ?? "Add domains before production"}
+                        {widget.allowedDomains[0] ??
+                          "Add domains before production"}
                       </p>
                     </td>
                     <td className="px-4 py-4">
-                      <StatusPill status={widget.enabled ? "active" : "disabled"} />
+                      <StatusPill
+                        status={widget.enabled ? "active" : "disabled"}
+                      />
                     </td>
                     <td className="px-5 py-4 text-right">
                       <WidgetRowActions
@@ -681,8 +733,8 @@ function WidgetList({
               Create your first website widget
             </h3>
             <p className="mt-2 max-w-md text-sm leading-6 text-[var(--text-muted)]">
-              Assign all knowledge or selected folders, test the answers, then add
-              one script to your website.
+              Assign all knowledge or selected folders, test the answers, then
+              add one script to your website.
             </p>
             <button
               type="button"
@@ -743,6 +795,185 @@ function WidgetRowActions({
   );
 }
 
+function LeadScoringFields({
+  className,
+  policy,
+  enabled,
+  aiEnabled,
+  onEnabledChange,
+  onAiEnabledChange,
+}: {
+  className: string;
+  policy: WidgetLeadScoringPolicy;
+  enabled: boolean;
+  aiEnabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  onAiEnabledChange: (enabled: boolean) => void;
+}) {
+  return (
+    <div className={className}>
+      <SectionHeading
+        icon={Sparkles}
+        title="Lead scoring"
+        description="Combine profile data, attributed intent, and optional AI qualification into a 0–100 score."
+      />
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-sm font-medium text-[var(--text-base)]">
+          <input
+            name="leadScoringEnabled"
+            type="checkbox"
+            checked={enabled}
+            onChange={(event) => onEnabledChange(event.target.checked)}
+          />
+          Calculate lead scores
+        </label>
+        <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-sm font-medium text-[var(--text-base)]">
+          <input
+            name="leadScoringAiEnabled"
+            type="checkbox"
+            checked={aiEnabled}
+            disabled={!enabled}
+            onChange={(event) => onAiEnabledChange(event.target.checked)}
+          />
+          Use AI intent qualification
+        </label>
+        <Field label="AI confidence required">
+          <select
+            name="leadScoringAiConfidence"
+            defaultValue={policy.aiConfidenceThreshold}
+            disabled={!enabled || !aiEnabled}
+            className="input disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <option value={0.55}>55% (more sensitive)</option>
+            <option value={0.65}>65% (recommended)</option>
+            <option value={0.75}>75% (more precise)</option>
+            <option value={0.85}>85% (strict)</option>
+          </select>
+        </Field>
+        <Field label="Intent signal half-life">
+          <select
+            name="leadSignalDecayDays"
+            defaultValue={policy.signalDecayDays}
+            disabled={!enabled}
+            className="input disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {[7, 14, 30, 60, 90, 180].map((days) => (
+              <option key={days} value={days}>
+                {days} days{days === 30 ? " (recommended)" : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Medium score starts at">
+          <input
+            name="leadMediumThreshold"
+            type="number"
+            min={1}
+            max={98}
+            defaultValue={policy.thresholds.medium}
+            disabled={!enabled}
+            className="input disabled:opacity-50"
+          />
+        </Field>
+        <Field label="High score starts at">
+          <input
+            name="leadHighThreshold"
+            type="number"
+            min={2}
+            max={99}
+            defaultValue={policy.thresholds.high}
+            disabled={!enabled}
+            className="input disabled:opacity-50"
+          />
+        </Field>
+        <Field label="Hot score starts at">
+          <input
+            name="leadHotThreshold"
+            type="number"
+            min={3}
+            max={100}
+            defaultValue={policy.thresholds.hot}
+            disabled={!enabled}
+            className="input disabled:opacity-50"
+          />
+        </Field>
+      </div>
+      <p className="mt-3 text-xs text-[var(--text-soft)]">
+        AI is optional and uses one additional provider request per visitor
+        message. Rule evidence remains available if AI is disabled or
+        unavailable.
+      </p>
+    </div>
+  );
+}
+
+function LeadOperationsFields({
+  className,
+  policy,
+}: {
+  className: string;
+  policy: WidgetLeadOperationsPolicy;
+}) {
+  return (
+    <div className={className}>
+      <SectionHeading
+        icon={UserRoundPlus}
+        title="Lead operations"
+        description="Route new leads, enforce first-response targets, and control data retention."
+      />
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Field label="Automatic assignment">
+          <select
+            name="leadAutoAssign"
+            defaultValue={policy.autoAssign}
+            className="input"
+          >
+            <option value="none">Leave unassigned</option>
+            <option value="round_robin">Least-loaded round robin</option>
+          </select>
+        </Field>
+        <Field label="First response target">
+          <select
+            name="leadFirstResponseMinutes"
+            defaultValue={policy.firstResponseMinutes}
+            className="input"
+          >
+            <option value={5}>5 minutes</option>
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={60}>1 hour</option>
+            <option value={240}>4 hours</option>
+            <option value={1440}>1 day</option>
+          </select>
+        </Field>
+        <Field label="Priority alert threshold">
+          <select
+            name="leadAlertPriority"
+            defaultValue={policy.alertPriority}
+            className="input"
+          >
+            <option value="hot">Hot leads only</option>
+            <option value="high">High and hot leads</option>
+          </select>
+        </Field>
+        <Field label="Lead retention">
+          <select
+            name="leadRetentionDays"
+            defaultValue={policy.retentionDays}
+            className="input"
+          >
+            <option value={0}>Keep until manually deleted</option>
+            <option value={90}>90 days</option>
+            <option value={180}>180 days</option>
+            <option value={365}>1 year</option>
+            <option value={730}>2 years</option>
+          </select>
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 function CreateWidgetModal({
   folders,
   onClose,
@@ -754,6 +985,8 @@ function CreateWidgetModal({
 }) {
   const [scope, setScope] = useState<"all" | "folders">("all");
   const [memoryEnabled, setMemoryEnabled] = useState(true);
+  const [leadScoringEnabled, setLeadScoringEnabled] = useState(true);
+  const [leadScoringAiEnabled, setLeadScoringAiEnabled] = useState(false);
   const [leadFields, setLeadFields] = useState<LeadCaptureField[]>([]);
   const [leadFieldsError, setLeadFieldsError] = useState<string | null>(null);
 
@@ -868,6 +1101,19 @@ function CreateWidgetModal({
             />
           </div>
 
+          <LeadScoringFields
+            className="border-t border-[var(--border-subtle)] pt-5"
+            policy={readLeadScoringPolicy()}
+            enabled={leadScoringEnabled}
+            aiEnabled={leadScoringAiEnabled}
+            onEnabledChange={setLeadScoringEnabled}
+            onAiEnabledChange={setLeadScoringAiEnabled}
+          />
+          <LeadOperationsFields
+            className="border-t border-[var(--border-subtle)] pt-5"
+            policy={readLeadOperationsPolicy()}
+          />
+
           <div className="border-t border-[var(--border-subtle)] pt-5">
             <SectionHeading
               icon={BrainCircuit}
@@ -893,7 +1139,7 @@ function CreateWidgetModal({
                 >
                   {[4, 6, 8, 10, 12, 16, 20].map((limit) => (
                     <option key={limit} value={limit}>
-                      Last {limit} messages{limit === 8 ? ' (recommended)' : ''}
+                      Last {limit} messages{limit === 8 ? " (recommended)" : ""}
                     </option>
                   ))}
                 </select>
@@ -939,7 +1185,11 @@ function CreateWidgetModal({
               />
             </Field>
             <Field label="Widget position">
-              <select name="position" defaultValue="bottom-right" className="input">
+              <select
+                name="position"
+                defaultValue="bottom-right"
+                className="input"
+              >
                 <option value="bottom-right">Bottom right</option>
                 <option value="bottom-left">Bottom left</option>
               </select>
@@ -1039,10 +1289,7 @@ function LeadCaptureBuilder({
       fields.map((field, fieldIndex) => {
         if (fieldIndex !== index) return field;
         const next = { ...field, ...patch };
-        if (
-          patch.type &&
-          !["select", "radio"].includes(patch.type)
-        ) {
+        if (patch.type && !["select", "radio"].includes(patch.type)) {
           next.options = [];
         }
         if (patch.type && next.mapping === "email" && patch.type !== "email") {
@@ -1070,16 +1317,35 @@ function LeadCaptureBuilder({
   return (
     <div className="mt-4 space-y-3">
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => addContactField("name")} disabled={mappings.has("name")} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+        <button
+          type="button"
+          onClick={() => addContactField("name")}
+          disabled={mappings.has("name")}
+          className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+        >
           + Name
         </button>
-        <button type="button" onClick={() => addContactField("email")} disabled={mappings.has("email")} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+        <button
+          type="button"
+          onClick={() => addContactField("email")}
+          disabled={mappings.has("email")}
+          className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+        >
           + Email
         </button>
-        <button type="button" onClick={() => addContactField("phone")} disabled={mappings.has("phone")} className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45">
+        <button
+          type="button"
+          onClick={() => addContactField("phone")}
+          disabled={mappings.has("phone")}
+          className="h-9 rounded-md border border-[var(--border-strong)] px-3 text-xs font-medium text-[var(--text-base)] hover:bg-[var(--surface-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+        >
           + Mobile
         </button>
-        <button type="button" onClick={addCustomField} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[var(--surface-accent)] px-3 text-xs font-medium text-[var(--accent-primary)] hover:bg-[var(--surface-hover-strong)]">
+        <button
+          type="button"
+          onClick={addCustomField}
+          className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[var(--surface-accent)] px-3 text-xs font-medium text-[var(--accent-primary)] hover:bg-[var(--surface-hover-strong)]"
+        >
           <Plus size={14} /> Custom field
         </button>
       </div>
@@ -1087,13 +1353,32 @@ function LeadCaptureBuilder({
       {fields.length ? (
         <div className="space-y-2">
           {fields.map((field, index) => (
-            <div key={field.id ?? `${field.key}-${index}`} className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-3">
+            <div
+              key={field.id ?? `${field.key}-${index}`}
+              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] p-3"
+            >
               <div className="grid gap-3 lg:grid-cols-[minmax(150px,1fr)_150px_150px_auto]">
                 <Field label="Label">
-                  <input value={field.label} onChange={(event) => updateField(index, { label: event.target.value })} className="input" maxLength={80} required />
+                  <input
+                    value={field.label}
+                    onChange={(event) =>
+                      updateField(index, { label: event.target.value })
+                    }
+                    className="input"
+                    maxLength={80}
+                    required
+                  />
                 </Field>
                 <Field label="Field type">
-                  <select value={field.type} onChange={(event) => updateField(index, { type: event.target.value as LeadCaptureFieldType })} className="input">
+                  <select
+                    value={field.type}
+                    onChange={(event) =>
+                      updateField(index, {
+                        type: event.target.value as LeadCaptureFieldType,
+                      })
+                    }
+                    className="input"
+                  >
                     <option value="text">Text</option>
                     <option value="email">Email</option>
                     <option value="phone">Phone</option>
@@ -1105,45 +1390,150 @@ function LeadCaptureBuilder({
                   </select>
                 </Field>
                 <Field label="Contact mapping">
-                  <select value={field.mapping} onChange={(event) => {
-                    const mapping = event.target.value as LeadCaptureFieldMapping;
-                    updateField(index, {
-                      mapping,
-                      ...(mapping === "name" ? { type: "text" as const } : {}),
-                      ...(mapping === "email" ? { type: "email" as const } : {}),
-                      ...(mapping === "phone" ? { type: "phone" as const } : {}),
-                    });
-                  }} className="input">
+                  <select
+                    value={field.mapping}
+                    onChange={(event) => {
+                      const mapping = event.target
+                        .value as LeadCaptureFieldMapping;
+                      updateField(index, {
+                        mapping,
+                        ...(mapping === "name"
+                          ? { type: "text" as const }
+                          : {}),
+                        ...(mapping === "email"
+                          ? { type: "email" as const }
+                          : {}),
+                        ...(mapping === "phone"
+                          ? { type: "phone" as const }
+                          : {}),
+                      });
+                    }}
+                    className="input"
+                  >
                     <option value="custom">Custom answer</option>
-                    <option value="name" disabled={mappings.has("name") && field.mapping !== "name"}>Name</option>
-                    <option value="email" disabled={mappings.has("email") && field.mapping !== "email"}>Email</option>
-                    <option value="phone" disabled={mappings.has("phone") && field.mapping !== "phone"}>Phone</option>
+                    <option
+                      value="name"
+                      disabled={
+                        mappings.has("name") && field.mapping !== "name"
+                      }
+                    >
+                      Name
+                    </option>
+                    <option
+                      value="email"
+                      disabled={
+                        mappings.has("email") && field.mapping !== "email"
+                      }
+                    >
+                      Email
+                    </option>
+                    <option
+                      value="phone"
+                      disabled={
+                        mappings.has("phone") && field.mapping !== "phone"
+                      }
+                    >
+                      Phone
+                    </option>
                   </select>
                 </Field>
                 <div className="flex items-end gap-1">
-                  <button type="button" onClick={() => move(index, -1)} disabled={index === 0} className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] disabled:opacity-35" aria-label={`Move ${field.label} up`}><ChevronUp size={15} /></button>
-                  <button type="button" onClick={() => move(index, 1)} disabled={index === fields.length - 1} className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] disabled:opacity-35" aria-label={`Move ${field.label} down`}><ChevronDown size={15} /></button>
-                  <button type="button" onClick={() => onChange(fields.filter((_, fieldIndex) => fieldIndex !== index))} className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--danger-text)] hover:bg-[var(--danger-bg)]" aria-label={`Remove ${field.label}`}><Trash2 size={15} /></button>
+                  <button
+                    type="button"
+                    onClick={() => move(index, -1)}
+                    disabled={index === 0}
+                    className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] disabled:opacity-35"
+                    aria-label={`Move ${field.label} up`}
+                  >
+                    <ChevronUp size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => move(index, 1)}
+                    disabled={index === fields.length - 1}
+                    className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--text-muted)] disabled:opacity-35"
+                    aria-label={`Move ${field.label} down`}
+                  >
+                    <ChevronDown size={15} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange(
+                        fields.filter((_, fieldIndex) => fieldIndex !== index),
+                      )
+                    }
+                    className="grid h-10 w-9 place-items-center rounded-md border border-[var(--border-strong)] text-[var(--danger-text)] hover:bg-[var(--danger-bg)]"
+                    aria-label={`Remove ${field.label}`}
+                  >
+                    <Trash2 size={15} />
+                  </button>
                 </div>
               </div>
               <div className="mt-3 grid gap-3 lg:grid-cols-[180px_minmax(180px,1fr)_auto_auto] lg:items-end">
                 <Field label="Field key">
-                  <input value={field.key} onChange={(event) => updateField(index, { key: slugFieldKey(event.target.value) })} className="input font-mono text-xs" maxLength={64} pattern="[a-z][a-z0-9_]*" required />
+                  <input
+                    value={field.key}
+                    onChange={(event) =>
+                      updateField(index, {
+                        key: slugFieldKey(event.target.value),
+                      })
+                    }
+                    className="input font-mono text-xs"
+                    maxLength={64}
+                    pattern="[a-z][a-z0-9_]*"
+                    required
+                  />
                 </Field>
                 {["select", "radio"].includes(field.type) ? (
                   <Field label="Options (comma separated)">
-                    <input value={field.options.join(", ")} onChange={(event) => updateField(index, { options: event.target.value.split(",").map((option) => option.trim()).filter(Boolean) })} className="input" placeholder="Small, Medium, Large" required />
+                    <input
+                      value={field.options.join(", ")}
+                      onChange={(event) =>
+                        updateField(index, {
+                          options: event.target.value
+                            .split(",")
+                            .map((option) => option.trim())
+                            .filter(Boolean),
+                        })
+                      }
+                      className="input"
+                      placeholder="Small, Medium, Large"
+                      required
+                    />
                   </Field>
                 ) : (
                   <Field label="Placeholder">
-                    <input value={field.placeholder ?? ""} onChange={(event) => updateField(index, { placeholder: event.target.value })} className="input" maxLength={120} placeholder="Optional hint" />
+                    <input
+                      value={field.placeholder ?? ""}
+                      onChange={(event) =>
+                        updateField(index, { placeholder: event.target.value })
+                      }
+                      className="input"
+                      maxLength={120}
+                      placeholder="Optional hint"
+                    />
                   </Field>
                 )}
                 <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-xs font-medium text-[var(--text-base)]">
-                  <input type="checkbox" checked={field.required} onChange={(event) => updateField(index, { required: event.target.checked })} /> Required
+                  <input
+                    type="checkbox"
+                    checked={field.required}
+                    onChange={(event) =>
+                      updateField(index, { required: event.target.checked })
+                    }
+                  />{" "}
+                  Required
                 </label>
                 <label className="flex h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-xs font-medium text-[var(--text-base)]">
-                  <input type="checkbox" checked={field.enabled} onChange={(event) => updateField(index, { enabled: event.target.checked })} /> Enabled
+                  <input
+                    type="checkbox"
+                    checked={field.enabled}
+                    onChange={(event) =>
+                      updateField(index, { enabled: event.target.checked })
+                    }
+                  />{" "}
+                  Enabled
                 </label>
               </div>
             </div>
@@ -1155,10 +1545,14 @@ function LeadCaptureBuilder({
         </div>
       )}
       <p className="text-xs text-[var(--text-soft)]">
-        Name, email and phone are searchable lead fields. Other answers are retained as structured custom data.
+        Name, email and phone are searchable lead fields. Other answers are
+        retained as structured custom data.
       </p>
       {error ? (
-        <p className="text-sm font-medium text-[var(--danger-text)]" role="alert">
+        <p
+          className="text-sm font-medium text-[var(--danger-text)]"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
@@ -1172,17 +1566,32 @@ function LeadCaptureControl({ field }: { field: LeadCaptureField }) {
     return (
       <label className="flex min-h-10 items-center gap-2 rounded-md border border-[var(--border-strong)] bg-[var(--input-background)] px-3 text-sm text-[var(--text-base)] sm:col-span-2">
         <input name={name} type="checkbox" required={field.required} />
-        {field.label}{field.required ? " *" : ""}
+        {field.label}
+        {field.required ? " *" : ""}
       </label>
     );
   }
   if (field.type === "radio") {
     return (
       <fieldset className="space-y-2 sm:col-span-2">
-        <legend className="text-xs font-medium text-[var(--text-base)]">{field.label}{field.required ? " *" : ""}</legend>
+        <legend className="text-xs font-medium text-[var(--text-base)]">
+          {field.label}
+          {field.required ? " *" : ""}
+        </legend>
         <div className="flex flex-wrap gap-3">
           {field.options.map((option) => (
-            <label key={option} className="flex items-center gap-2 text-sm text-[var(--text-base)]"><input name={name} type="radio" value={option} required={field.required} /> {option}</label>
+            <label
+              key={option}
+              className="flex items-center gap-2 text-sm text-[var(--text-base)]"
+            >
+              <input
+                name={name}
+                type="radio"
+                value={option}
+                required={field.required}
+              />{" "}
+              {option}
+            </label>
           ))}
         </div>
       </fieldset>
@@ -1191,11 +1600,27 @@ function LeadCaptureControl({ field }: { field: LeadCaptureField }) {
   return (
     <Field label={`${field.label}${field.required ? " *" : ""}`}>
       {field.type === "textarea" ? (
-        <textarea name={name} required={field.required} maxLength={2000} placeholder={field.placeholder ?? undefined} rows={2} className="input resize-y" />
+        <textarea
+          name={name}
+          required={field.required}
+          maxLength={2000}
+          placeholder={field.placeholder ?? undefined}
+          rows={2}
+          className="input resize-y"
+        />
       ) : field.type === "select" ? (
-        <select name={name} required={field.required} defaultValue="" className="input">
+        <select
+          name={name}
+          required={field.required}
+          defaultValue=""
+          className="input"
+        >
           <option value="">Select an option</option>
-          {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+          {field.options.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
         </select>
       ) : (
         <input
@@ -1203,9 +1628,23 @@ function LeadCaptureControl({ field }: { field: LeadCaptureField }) {
           type={field.type === "phone" ? "tel" : field.type}
           required={field.required}
           maxLength={field.type === "number" ? undefined : 320}
-          pattern={field.type === "phone" ? "\\+[1-9][0-9 ()-]{7,24}" : undefined}
-          title={field.type === "phone" ? "Use an international number including country code, for example +1 650 253 0000" : undefined}
-          autoComplete={field.mapping === "name" ? "name" : field.mapping === "email" ? "email" : field.mapping === "phone" ? "tel" : undefined}
+          pattern={
+            field.type === "phone" ? "\\+[1-9][0-9 ()-]{7,24}" : undefined
+          }
+          title={
+            field.type === "phone"
+              ? "Use an international number including country code, for example +1 650 253 0000"
+              : undefined
+          }
+          autoComplete={
+            field.mapping === "name"
+              ? "name"
+              : field.mapping === "email"
+                ? "email"
+                : field.mapping === "phone"
+                  ? "tel"
+                  : undefined
+          }
           placeholder={field.placeholder ?? undefined}
           className="input"
         />
@@ -1247,9 +1686,7 @@ function validateLeadFields(fields: LeadCaptureField[]): string | null {
     if (
       field.mapping === "custom" &&
       ["name", "email", "phone"].includes(key) &&
-      configuredMappings.has(
-        key as Exclude<LeadCaptureFieldMapping, "custom">,
-      )
+      configuredMappings.has(key as Exclude<LeadCaptureFieldMapping, "custom">)
     ) {
       return `Custom field key “${key}” conflicts with the ${key} contact field.`;
     }
@@ -1273,13 +1710,19 @@ function validateLeadFields(fields: LeadCaptureField[]): string | null {
 }
 
 function slugFieldKey(value: string) {
-  const slug = value.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  const slug = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "");
   return /^[a-z]/.test(slug) ? slug : `field_${slug || "value"}`;
 }
 
 function DomainInput({ defaultDomains = [] }: { defaultDomains?: string[] }) {
-  const [domains, setDomains] = useState(() =>
-    [...new Set(defaultDomains.map(normalizeOrigin).filter(Boolean))] as string[],
+  const [domains, setDomains] = useState(
+    () =>
+      [
+        ...new Set(defaultDomains.map(normalizeOrigin).filter(Boolean)),
+      ] as string[],
   );
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1309,7 +1752,9 @@ function DomainInput({ defaultDomains = [] }: { defaultDomains?: string[] }) {
     <div>
       <div
         className={`rounded-lg border bg-[var(--input-background)] p-2 transition focus-within:ring-2 focus-within:ring-[var(--focus-ring)] ${
-          error ? "border-[var(--danger-text)]" : "border-[var(--border-strong)]"
+          error
+            ? "border-[var(--danger-text)]"
+            : "border-[var(--border-strong)]"
         }`}
       >
         {domains.length ? (
@@ -1319,7 +1764,10 @@ function DomainInput({ defaultDomains = [] }: { defaultDomains?: string[] }) {
                 key={domain}
                 className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--surface-accent)] px-2.5 py-1 font-mono text-xs text-[var(--text-base)]"
               >
-                <Globe2 size={12} className="shrink-0 text-[var(--accent-primary)]" />
+                <Globe2
+                  size={12}
+                  className="shrink-0 text-[var(--accent-primary)]"
+                />
                 <span className="truncate">{domain}</span>
                 <button
                   type="button"
@@ -1403,9 +1851,7 @@ function normalizeOrigin(value: string): string | null {
 
   try {
     const url = new URL(
-      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
-        ? trimmed
-        : `https://${trimmed}`,
+      /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
     );
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     return url.origin;
@@ -1493,7 +1939,10 @@ function KnowledgeScopeFields({
                   value={folder.id}
                   defaultChecked={selectedFolderIds.includes(folder.id)}
                 />
-                <FolderOpen size={15} className="text-[var(--accent-primary)]" />
+                <FolderOpen
+                  size={15}
+                  className="text-[var(--accent-primary)]"
+                />
                 <span className="min-w-0 flex-1 truncate text-sm text-[var(--text-base)]">
                   {folder.name}
                 </span>
@@ -1513,10 +1962,7 @@ function KnowledgeScopeFields({
   );
 }
 
-function knowledgeScopeLabel(
-  widget: WidgetConfig,
-  folders: KnowledgeFolder[],
-) {
+function knowledgeScopeLabel(widget: WidgetConfig, folders: KnowledgeFolder[]) {
   if (widget.knowledgeScope === "all") return "All knowledge";
   const names = widget.folderIds
     .map((id) => folders.find((folder) => folder.id === id)?.name)
@@ -1563,7 +2009,9 @@ function SectionHeading({
         <Icon size={16} />
       </div>
       <div>
-        <h3 className="text-sm font-semibold text-[var(--text-strong)]">{title}</h3>
+        <h3 className="text-sm font-semibold text-[var(--text-strong)]">
+          {title}
+        </h3>
         <p className="mt-0.5 text-xs text-[var(--text-muted)]">{description}</p>
       </div>
     </div>
@@ -1581,7 +2029,9 @@ function WidgetPreview({
     <section className="overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-card)] shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-5 py-4">
         <div>
-          <h2 className="font-semibold text-[var(--text-strong)]">Live preview</h2>
+          <h2 className="font-semibold text-[var(--text-strong)]">
+            Live preview
+          </h2>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
             Desktop visitor experience
           </p>
@@ -1609,8 +2059,12 @@ function WidgetPreview({
               <Sparkles size={17} />
             </div>
             <div>
-              <p className="text-sm font-semibold">{appearance.assistantName}</p>
-              <p className="text-[11px] text-white/80">Typically replies instantly</p>
+              <p className="text-sm font-semibold">
+                {appearance.assistantName}
+              </p>
+              <p className="text-[11px] text-white/80">
+                Typically replies instantly
+              </p>
             </div>
           </div>
           <div className="min-h-40 bg-[#f8fafc] p-4">
@@ -1662,8 +2116,8 @@ function TestChat({
   const lastMessage = conversation?.messages.at(-1);
   const hasVisibleStreamingReply = Boolean(
     lastMessage?.role === "assistant" &&
-      lastMessage.metadata?.streaming &&
-      lastMessage.content,
+    lastMessage.metadata?.streaming &&
+    lastMessage.content,
   );
   const showThinking = isSending && !hasVisibleStreamingReply;
 
@@ -1675,7 +2129,9 @@ function TestChat({
       <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-5 py-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-[var(--text-strong)]">Test chat</h2>
+            <h2 className="font-semibold text-[var(--text-strong)]">
+              Test chat
+            </h2>
             {conversation ? <StatusPill status={conversation.status} /> : null}
           </div>
           <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -1707,7 +2163,11 @@ function TestChat({
                     ? "ml-auto text-white"
                     : "border border-[var(--border-subtle)] bg-[var(--surface-card)] text-[var(--text-base)]"
                 }`}
-                style={isVisitor ? { backgroundColor: appearance.primaryColor } : undefined}
+                style={
+                  isVisitor
+                    ? { backgroundColor: appearance.primaryColor }
+                    : undefined
+                }
               >
                 {isVisitor ? (
                   <p className="whitespace-pre-wrap">{message.content}</p>
@@ -1735,8 +2195,8 @@ function TestChat({
               Start a visitor conversation
             </p>
             <p className="mt-1 max-w-64 text-xs text-[var(--text-muted)]">
-              Ask something covered by a ready knowledge source to verify the full
-              RAG flow.
+              Ask something covered by a ready knowledge source to verify the
+              full RAG flow.
             </p>
           </div>
         )}
@@ -1877,7 +2337,11 @@ function parseMarkdown(content: string): MarkdownBlock[] {
     list = null;
     const heading = line.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
-      blocks.push({ type: "heading", level: heading[1].length, content: heading[2] });
+      blocks.push({
+        type: "heading",
+        level: heading[1].length,
+        content: heading[2],
+      });
     } else if (line.trim()) {
       blocks.push({ type: "paragraph", content: line });
     }
@@ -1893,7 +2357,10 @@ function renderInlineMarkdown(value: string): ReactNode[] {
     }
     if (part.startsWith("`") && part.endsWith("`")) {
       return (
-        <code key={index} className="rounded bg-[var(--surface-hover-strong)] px-1 py-0.5 text-xs">
+        <code
+          key={index}
+          className="rounded bg-[var(--surface-hover-strong)] px-1 py-0.5 text-xs"
+        >
           {part.slice(1, -1)}
         </code>
       );
@@ -1925,7 +2392,9 @@ function InstallPanel({
             <Code2 size={17} />
           </div>
           <div>
-            <h2 className="font-semibold text-[var(--text-strong)]">Install widget</h2>
+            <h2 className="font-semibold text-[var(--text-strong)]">
+              Install widget
+            </h2>
             <p className="mt-1 text-xs text-[var(--text-muted)]">
               Paste this once before the closing body tag on your website.
             </p>
@@ -1946,7 +2415,10 @@ function InstallPanel({
           <code>{snippet}</code>
         </pre>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <InstallCheck label="Script available" value={scriptUrl.endsWith("/widget.js")} />
+          <InstallCheck
+            label="Script available"
+            value={scriptUrl.endsWith("/widget.js")}
+          />
           <InstallCheck label="Widget configured" value={enabled} />
           <InstallCheck label="Domain protected" value={domainProtected} />
         </div>
@@ -1968,7 +2440,9 @@ function InstallCheck({ label, value }: { label: string; value: boolean }) {
     <div className="flex items-center gap-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)] px-3 py-2 text-xs text-[var(--text-base)]">
       <CheckCircle2
         size={15}
-        className={value ? "text-[var(--success-text)]" : "text-[var(--text-soft)]"}
+        className={
+          value ? "text-[var(--success-text)]" : "text-[var(--text-soft)]"
+        }
       />
       {label}
     </div>
@@ -2006,7 +2480,9 @@ function AiStatus({ metadata }: { metadata: Record<string, unknown> }) {
 function readAppearance(settings?: Record<string, unknown>): WidgetAppearance {
   return {
     assistantName: readString(settings, "assistantName", "AgentCore Assistant"),
-    primaryColor: normalizeColor(readString(settings, "primaryColor", "#2563eb")),
+    primaryColor: normalizeColor(
+      readString(settings, "primaryColor", "#2563eb"),
+    ),
     launcherLabel: readString(settings, "launcherLabel", "Chat with us"),
     position:
       settings?.position === "bottom-left" ? "bottom-left" : "bottom-right",
@@ -2027,13 +2503,90 @@ function readMemoryPolicy(
         ? recentMessageLimit
         : 8,
     lowConfidenceAction:
-      settings?.lowConfidenceAction === 'handoff' ? 'handoff' : 'clarify',
+      settings?.lowConfidenceAction === "handoff" ? "handoff" : "clarify",
     maxClarificationAttempts:
       Number.isInteger(maxClarificationAttempts) &&
       maxClarificationAttempts >= 1 &&
       maxClarificationAttempts <= 3
         ? maxClarificationAttempts
         : 2,
+  };
+}
+
+function readLeadScoringPolicy(
+  settings?: Record<string, unknown>,
+): WidgetLeadScoringPolicy {
+  const configured =
+    settings?.leadScoring &&
+    typeof settings.leadScoring === "object" &&
+    !Array.isArray(settings.leadScoring)
+      ? (settings.leadScoring as Record<string, unknown>)
+      : {};
+  const configuredThresholds =
+    configured.thresholds &&
+    typeof configured.thresholds === "object" &&
+    !Array.isArray(configured.thresholds)
+      ? (configured.thresholds as Record<string, unknown>)
+      : {};
+  const bounded = (
+    value: unknown,
+    fallback: number,
+    min: number,
+    max: number,
+  ) =>
+    typeof value === "number" && value >= min && value <= max
+      ? value
+      : fallback;
+  return {
+    enabled: configured.enabled !== false,
+    aiEnabled: configured.aiEnabled === true,
+    aiConfidenceThreshold: bounded(
+      configured.aiConfidenceThreshold,
+      0.65,
+      0.5,
+      1,
+    ),
+    signalDecayDays: bounded(configured.signalDecayDays, 30, 1, 365),
+    thresholds: {
+      medium: bounded(configuredThresholds.medium, 35, 1, 98),
+      high: bounded(configuredThresholds.high, 60, 2, 99),
+      hot: bounded(configuredThresholds.hot, 80, 3, 100),
+    },
+  };
+}
+
+function readLeadOperationsPolicy(
+  settings?: Record<string, unknown>,
+): WidgetLeadOperationsPolicy {
+  const configured =
+    settings?.leadOperations &&
+    typeof settings.leadOperations === "object" &&
+    !Array.isArray(settings.leadOperations)
+      ? (settings.leadOperations as Record<string, unknown>)
+      : {};
+  const boundedInteger = (
+    value: unknown,
+    fallback: number,
+    minimum: number,
+    maximum: number,
+  ) =>
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= minimum &&
+    value <= maximum
+      ? value
+      : fallback;
+  return {
+    autoAssign:
+      configured.autoAssign === "round_robin" ? "round_robin" : "none",
+    firstResponseMinutes: boundedInteger(
+      configured.firstResponseMinutes,
+      30,
+      1,
+      10_080,
+    ),
+    alertPriority: configured.alertPriority === "high" ? "high" : "hot",
+    retentionDays: boundedInteger(configured.retentionDays, 0, 0, 3_650),
   };
 }
 

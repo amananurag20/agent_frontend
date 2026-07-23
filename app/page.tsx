@@ -386,10 +386,7 @@ function streamPublicWidgetMessage(input: {
     );
     socket.on(
       "message.discarded",
-      (frame: {
-        clientMessageId?: string;
-        conversation?: Conversation;
-      }) => {
+      (frame: { clientMessageId?: string; conversation?: Conversation }) => {
         if (frame.clientMessageId !== clientMessageId) return;
         settled = true;
         cleanup();
@@ -700,6 +697,9 @@ export default function Home() {
     limit: 25,
     search: "",
     status: "",
+    priority: "",
+    minScore: "",
+    sort: "score",
     widgetConfigId: "",
   });
   const [handoffNotifications, setHandoffNotifications] = useState<
@@ -1566,9 +1566,7 @@ export default function Home() {
       ...(nextFilters.assignedAgentId
         ? { assignedAgentId: nextFilters.assignedAgentId }
         : {}),
-      ...(nextFilters.assignment
-        ? { assignment: nextFilters.assignment }
-        : {}),
+      ...(nextFilters.assignment ? { assignment: nextFilters.assignment } : {}),
     });
     const result = await run(() =>
       api<ConversationList>(`/customer-chat/conversations?${params}`),
@@ -1622,9 +1620,7 @@ export default function Home() {
     if (result) setSelectedConversation(result);
   }
 
-  async function loadLeads(
-    queryOverride?: Partial<typeof leadQuery>,
-  ) {
+  async function loadLeads(queryOverride?: Partial<typeof leadQuery>) {
     const nextQuery = { ...leadQuery, ...queryOverride };
     if (queryOverride) setLeadQuery(nextQuery);
     const organizationId = selectedOrganizationId ?? user?.orgId;
@@ -1634,6 +1630,9 @@ export default function Home() {
       ...(organizationId ? { organizationId } : {}),
       ...(nextQuery.search ? { search: nextQuery.search } : {}),
       ...(nextQuery.status ? { status: nextQuery.status } : {}),
+      ...(nextQuery.priority ? { priority: nextQuery.priority } : {}),
+      ...(nextQuery.minScore ? { minScore: nextQuery.minScore } : {}),
+      ...(nextQuery.sort ? { sort: nextQuery.sort } : {}),
       ...(nextQuery.widgetConfigId
         ? { widgetConfigId: nextQuery.widgetConfigId }
         : {}),
@@ -1707,6 +1706,68 @@ export default function Home() {
       setState({
         loading: false,
         error: error instanceof Error ? error.message : "Could not update lead",
+        message: null,
+      });
+    } finally {
+      setLeadLoading(false);
+    }
+  }
+
+  async function assignLead(id: string, ownerId: string | null) {
+    setLeadLoading(true);
+    try {
+      const result = await api<Lead>(
+        `/leads/${encodeURIComponent(id)}/assignment`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ ownerId }),
+        },
+      );
+      setSelectedLead(result);
+      setLeads((current) =>
+        current
+          ? {
+              ...current,
+              data: current.data.map((lead) =>
+                lead.id === result.id ? { ...lead, ...result } : lead,
+              ),
+            }
+          : current,
+      );
+      setState({ loading: false, error: null, message: "Lead assigned" });
+    } catch (error) {
+      setState({
+        loading: false,
+        error: error instanceof Error ? error.message : "Could not assign lead",
+        message: null,
+      });
+    } finally {
+      setLeadLoading(false);
+    }
+  }
+
+  async function updateLeadConsent(
+    id: string,
+    status: NonNullable<Lead["consentStatus"]>,
+  ) {
+    setLeadLoading(true);
+    try {
+      const result = await api<Lead>(
+        `/leads/${encodeURIComponent(id)}/consent`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ status, source: "manual_console_update" }),
+        },
+      );
+      setSelectedLead((current) =>
+        current?.id === id ? { ...current, ...result } : current,
+      );
+      setState({ loading: false, error: null, message: "Consent updated" });
+    } catch (error) {
+      setState({
+        loading: false,
+        error:
+          error instanceof Error ? error.message : "Could not update consent",
         message: null,
       });
     } finally {
@@ -2370,7 +2431,9 @@ export default function Home() {
             }),
           },
         ),
-      assignedAgentId ? "Conversation assigned" : "Conversation returned to queue",
+      assignedAgentId
+        ? "Conversation assigned"
+        : "Conversation returned to queue",
     );
 
     if (result) {
@@ -2852,6 +2915,27 @@ export default function Home() {
         maxClarificationAttempts: Number(
           form.get("maxClarificationAttempts") || 2,
         ),
+        leadScoring: {
+          enabled: form.get("leadScoringEnabled") === "on",
+          aiEnabled: form.get("leadScoringAiEnabled") === "on",
+          aiConfidenceThreshold: Number(
+            form.get("leadScoringAiConfidence") || 0.65,
+          ),
+          signalDecayDays: Number(form.get("leadSignalDecayDays") || 30),
+          thresholds: {
+            medium: Number(form.get("leadMediumThreshold") || 35),
+            high: Number(form.get("leadHighThreshold") || 60),
+            hot: Number(form.get("leadHotThreshold") || 80),
+          },
+        },
+        leadOperations: {
+          autoAssign: String(form.get("leadAutoAssign") || "none"),
+          firstResponseMinutes: Number(
+            form.get("leadFirstResponseMinutes") || 30,
+          ),
+          alertPriority: String(form.get("leadAlertPriority") || "hot"),
+          retentionDays: Number(form.get("leadRetentionDays") || 0),
+        },
       },
     };
   }
@@ -3390,7 +3474,9 @@ export default function Home() {
             bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
             bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
             maxAttendees: Number(form.get("maxAttendees") || 1),
-            defaultAttendeeStaffIds: form.getAll("defaultAttendeeStaffIds").map(String),
+            defaultAttendeeStaffIds: form
+              .getAll("defaultAttendeeStaffIds")
+              .map(String),
             meetingType: String(form.get("meetingType") || "online"),
             location: String(form.get("location") || "").trim() || undefined,
             priceCents: form.get("price")
@@ -3432,7 +3518,9 @@ export default function Home() {
       bufferBeforeMinutes: Number(form.get("bufferBeforeMinutes") || 0),
       bufferAfterMinutes: Number(form.get("bufferAfterMinutes") || 0),
       maxAttendees: Number(form.get("maxAttendees") || 1),
-      defaultAttendeeStaffIds: form.getAll("defaultAttendeeStaffIds").map(String),
+      defaultAttendeeStaffIds: form
+        .getAll("defaultAttendeeStaffIds")
+        .map(String),
       meetingType: String(form.get("meetingType") || "online"),
       location: String(form.get("location") || "").trim() || null,
       cancellationWindowMinutes: form.get("cancellationWindowMinutes")
@@ -3474,11 +3562,12 @@ export default function Home() {
         `/appointment-booking/services/${id}`,
         { method: "DELETE" },
       );
-      await Promise.all([
-        loadAppointmentServices(),
-        loadAppointmentStaff(),
-      ]);
-      setState({ loading: false, error: null, message: "Appointment service deleted" });
+      await Promise.all([loadAppointmentServices(), loadAppointmentStaff()]);
+      setState({
+        loading: false,
+        error: null,
+        message: "Appointment service deleted",
+      });
       return null;
     } catch (error) {
       const message =
@@ -3725,10 +3814,7 @@ export default function Home() {
           }),
         },
       );
-      await Promise.all([
-        loadAppointmentBookings(),
-        loadLead(input.leadId),
-      ]);
+      await Promise.all([loadAppointmentBookings(), loadLead(input.leadId)]);
       setState({ loading: false, error: null, message: "Meeting scheduled" });
       return booking;
     } catch (error) {
@@ -3835,9 +3921,7 @@ export default function Home() {
       payload.waitlistOfferMinutes = Number(form.get("waitlistOfferMinutes"));
     }
     if (form.has("notificationSettingsForm")) {
-      payload.reminderChannels = form
-        .getAll("reminderChannels")
-        .map(String);
+      payload.reminderChannels = form.getAll("reminderChannels").map(String);
       payload.quietHoursEnabled = form.get("quietHoursEnabled") === "on";
       payload.quietHoursStart = String(form.get("quietHoursStart"));
       payload.quietHoursEnd = String(form.get("quietHoursEnd"));
@@ -4906,12 +4990,16 @@ export default function Home() {
                   users={users}
                   canManageAgents={
                     user.roles.some((role) =>
-                      ["super_admin", "org_admin", "product_admin"].includes(role),
+                      ["super_admin", "org_admin", "product_admin"].includes(
+                        role,
+                      ),
                     ) ||
-                    [...(user.productAccess ?? []),
+                    [
+                      ...(user.productAccess ?? []),
                       ...(user.customRoles ?? []).flatMap(
                         (role) => role.productAccess,
-                      )].some(
+                      ),
+                    ].some(
                       (access) =>
                         access.productKey === "customer_chat" &&
                         access.canManageAgents,
@@ -4927,17 +5015,25 @@ export default function Home() {
               {activeTab === "leads" ? (
                 <LeadsView
                   list={leads}
-                  selected={pathname.startsWith("/leads/") ? selectedLead : null}
-                  detailId={pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1] ?? null}
+                  selected={
+                    pathname.startsWith("/leads/") ? selectedLead : null
+                  }
+                  detailId={
+                    pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1] ?? null
+                  }
                   notFound={leadNotFound}
                   error={leadError}
                   widgets={widgetConfigs}
+                  users={users}
                   loading={leadLoading}
                   onFilter={(next) =>
                     void loadLeads({
                       page: 1,
                       search: next.search ?? "",
                       status: next.status ?? "",
+                      priority: next.priority ?? "",
+                      minScore: next.minScore ?? "",
+                      sort: next.sort ?? "score",
                       widgetConfigId: next.widgetConfigId ?? "",
                     })
                   }
@@ -4947,6 +5043,8 @@ export default function Home() {
                     void loadLead(id);
                   }}
                   onUpdate={updateLead}
+                  onAssign={assignLead}
+                  onUpdateConsent={updateLeadConsent}
                   canScheduleAppointments={canAccessAppointments}
                   appointmentServices={appointmentServices}
                   onFindAppointmentSlots={findLeadAppointmentSlots}

@@ -7,14 +7,20 @@
   if (!script) return;
 
   var widgetKey = script.getAttribute("data-widget-key");
-  var apiBase = (script.getAttribute("data-api-base") || "").replace(/\/+$/, "");
+  var apiBase = (script.getAttribute("data-api-base") || "").replace(
+    /\/+$/,
+    "",
+  );
 
   if (!widgetKey || !apiBase) {
-    console.error("AgentCore widget requires data-widget-key and data-api-base.");
+    console.error(
+      "AgentCore widget requires data-widget-key and data-api-base.",
+    );
     return;
   }
 
   var storageKey = "agentcore_widget_session_" + widgetKey;
+  var attributionStorageKey = "agentcore_widget_attribution_" + widgetKey;
   var rootHost = document.createElement("div");
   rootHost.id = "agentcore-widget-root";
   rootHost.setAttribute("data-agentcore-widget", widgetKey);
@@ -43,7 +49,7 @@
   style.textContent = [
     ":host{all:initial}",
     "*,*:before,*:after{box-sizing:border-box}",
-    ".ac-root{--ac-color:#2563eb;--ac-color-dark:#1d4ed8;position:fixed;right:24px;bottom:24px;z-index:2147483000;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif;color:#172033;line-height:1.45}",
+    '.ac-root{--ac-color:#2563eb;--ac-color-dark:#1d4ed8;position:fixed;right:24px;bottom:24px;z-index:2147483000;font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#172033;line-height:1.45}',
     ".ac-root.ac-left{right:auto;left:24px}",
     ".ac-launcher{height:56px;display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:0 20px;background:var(--ac-color);color:#fff;font:600 14px/1 inherit;box-shadow:0 14px 38px rgba(15,23,42,.24);cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background .16s ease}",
     ".ac-launcher:hover{background:var(--ac-color-dark);transform:translateY(-1px);box-shadow:0 17px 42px rgba(15,23,42,.28)}",
@@ -60,7 +66,7 @@
     ".ac-identity{min-width:0;flex:1}",
     ".ac-name{margin:0;overflow:hidden;font-size:14px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}",
     ".ac-presence{display:flex;align-items:center;gap:6px;margin:2px 0 0;color:rgba(255,255,255,.82);font-size:11px}",
-    ".ac-presence:before{content:\"\";width:6px;height:6px;border-radius:50%;background:#86efac}",
+    '.ac-presence:before{content:"";width:6px;height:6px;border-radius:50%;background:#86efac}',
     ".ac-header-actions{display:flex;align-items:center;gap:2px}",
     ".ac-close,.ac-new-chat{height:34px;display:grid;place-items:center;flex:none;border:0;border-radius:9px;background:transparent;color:#fff;cursor:pointer}",
     ".ac-close{width:34px}.ac-new-chat{width:auto;grid-auto-flow:column;gap:6px;padding:0 9px;font:650 11px/1 inherit}",
@@ -135,20 +141,30 @@
   root.className = "ac-root";
   root.innerHTML =
     '<section class="ac-panel" role="dialog" aria-label="Customer support chat" aria-modal="false">' +
-    '<header class="ac-header"><div class="ac-avatar" aria-hidden="true">' + sparkleIcon() + '</div>' +
+    '<header class="ac-header"><div class="ac-avatar" aria-hidden="true">' +
+    sparkleIcon() +
+    "</div>" +
     '<div class="ac-identity"><p class="ac-name">AI Assistant</p><p class="ac-presence">Online</p></div>' +
-    '<div class="ac-header-actions"><button class="ac-new-chat ac-hidden" type="button" aria-label="Start a new conversation" title="Start a new conversation">' + refreshIcon() + '<span>New chat</span></button>' +
-    '<button class="ac-close" type="button" aria-label="Close chat">' + closeIcon() + '</button></div></header>' +
+    '<div class="ac-header-actions"><button class="ac-new-chat ac-hidden" type="button" aria-label="Start a new conversation" title="Start a new conversation">' +
+    refreshIcon() +
+    "<span>New chat</span></button>" +
+    '<button class="ac-close" type="button" aria-label="Close chat">' +
+    closeIcon() +
+    "</button></div></header>" +
     '<main class="ac-messages" role="log" aria-live="polite" aria-relevant="additions"></main>' +
     '<footer class="ac-composer"><form class="ac-form"><textarea class="ac-input" rows="1" maxlength="2000" placeholder="Type your message..." aria-label="Message"></textarea>' +
-    '<button class="ac-send" type="submit" aria-label="Send message">' + sendIcon() + '</button></form>' +
+    '<button class="ac-send" type="submit" aria-label="Send message">' +
+    sendIcon() +
+    "</button></form>" +
     '<div class="ac-actions"><button class="ac-handoff" type="button">Talk to a human</button><span class="ac-footer">Powered by AgentCore</span></div></footer>' +
     '<div class="ac-confirm ac-hidden" role="alertdialog" aria-modal="true" aria-labelledby="ac-confirm-title"><div class="ac-confirm-card">' +
     '<p class="ac-confirm-title" id="ac-confirm-title">Start a new conversation?</p>' +
     '<p class="ac-confirm-copy">This conversation will be closed and kept in support history. Your new chat will start with a clean context.</p>' +
     '<div class="ac-confirm-actions"><button class="ac-confirm-button ac-confirm-cancel" type="button">Cancel</button>' +
     '<button class="ac-confirm-button ac-confirm-primary ac-confirm-start" type="button">Start new</button></div></div></div></section>' +
-    '<button class="ac-launcher" type="button" aria-label="Open support chat">' + chatIcon() + '<span>Chat with us</span></button>';
+    '<button class="ac-launcher" type="button" aria-label="Open support chat">' +
+    chatIcon() +
+    "<span>Chat with us</span></button>";
   shadow.appendChild(root);
 
   var panel = root.querySelector(".ac-panel");
@@ -175,7 +191,8 @@
   });
   panel.addEventListener("keydown", function (event) {
     if (event.key !== "Escape") return;
-    if (!confirmDialog.classList.contains("ac-hidden")) hideNewChatConfirmation();
+    if (!confirmDialog.classList.contains("ac-hidden"))
+      hideNewChatConfirmation();
     else closeWidget();
   });
   form.addEventListener("submit", onSubmit);
@@ -206,7 +223,8 @@
     try {
       await refreshWidgetConfig();
       await restoreConversation();
-      state.leadCaptureComplete = Boolean(state.session) || activeLeadFields().length === 0;
+      state.leadCaptureComplete =
+        Boolean(state.session) || activeLeadFields().length === 0;
       startRealtime();
       renderMessages();
     } catch (error) {
@@ -236,9 +254,13 @@
   }
 
   function applyConfig() {
-    var settings = state.config && state.config.settings ? state.config.settings : {};
-    var primaryColor = validColor(settings.primaryColor) ? settings.primaryColor : "#2563eb";
-    var position = settings.position === "bottom-left" ? "bottom-left" : "bottom-right";
+    var settings =
+      state.config && state.config.settings ? state.config.settings : {};
+    var primaryColor = validColor(settings.primaryColor)
+      ? settings.primaryColor
+      : "#2563eb";
+    var position =
+      settings.position === "bottom-left" ? "bottom-left" : "bottom-right";
     var name = validText(settings.assistantName, "AgentCore Assistant");
     var label = validText(settings.launcherLabel, "Chat with us");
 
@@ -251,15 +273,22 @@
   }
 
   async function restoreConversation() {
-    if (!state.session || !state.session.conversationId || !state.session.visitorToken) return;
+    if (
+      !state.session ||
+      !state.session.conversationId ||
+      !state.session.visitorToken
+    )
+      return;
 
     try {
       state.conversation = await apiRequest(
-        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId),
+        "/customer-chat/widget/conversations/" +
+          encodeURIComponent(state.session.conversationId),
         { headers: { "x-visitor-token": state.session.visitorToken } },
       );
     } catch (error) {
-      if (error && (error.status === 401 || error.status === 404)) clearSession();
+      if (error && (error.status === 401 || error.status === 404))
+        clearSession();
     }
   }
 
@@ -289,7 +318,8 @@
       await ensureConversation();
       var clientMessageId = createId();
       state.activeClientMessageId = clientMessageId;
-      state.conversation.messages[state.conversation.messages.length - 1].id = "optimistic-" + clientMessageId;
+      state.conversation.messages[state.conversation.messages.length - 1].id =
+        "optimistic-" + clientMessageId;
       var socketReady = await ensureSocket(1500);
       if (socketReady) {
         state.socket.emit("message.send", {
@@ -299,7 +329,9 @@
         return;
       }
       var response = await apiRequest(
-        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/messages",
+        "/customer-chat/widget/conversations/" +
+          encodeURIComponent(state.session.conversationId) +
+          "/messages",
         {
           method: "POST",
           headers: { "x-visitor-token": state.session.visitorToken },
@@ -323,10 +355,14 @@
         }
       }
       if (!recoveredLeadCapture) {
-        state.error = readableError(error, "Your message could not be sent. Please try again.");
+        state.error = readableError(
+          error,
+          "Your message could not be sent. Please try again.",
+        );
         input.value = content;
       }
-      if (error && (error.status === 401 || error.status === 404)) clearSession();
+      if (error && (error.status === 401 || error.status === 404))
+        clearSession();
     } finally {
       if (state.socketReady && state.activeClientMessageId) return;
       state.sending = false;
@@ -338,11 +374,18 @@
   }
 
   async function ensureConversation(leadCapture, leadCaptureSubmitted) {
-    if (state.session && state.session.conversationId && state.session.visitorToken) return;
+    if (
+      state.session &&
+      state.session.conversationId &&
+      state.session.visitorToken
+    )
+      return;
 
     var visitorId = createId();
     var created = await apiRequest(
-      "/customer-chat/widget/" + encodeURIComponent(widgetKey) + "/conversations",
+      "/customer-chat/widget/" +
+        encodeURIComponent(widgetKey) +
+        "/conversations",
       {
         method: "POST",
         body: {
@@ -354,6 +397,7 @@
             pageUrl: window.location.href,
             pageTitle: document.title,
             referrer: document.referrer || undefined,
+            ...collectAttribution(),
           },
         },
       },
@@ -376,7 +420,9 @@
     try {
       await ensureConversation();
       state.conversation = await apiRequest(
-        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/handoff",
+        "/customer-chat/widget/conversations/" +
+          encodeURIComponent(state.session.conversationId) +
+          "/handoff",
         {
           method: "PATCH",
           headers: { "x-visitor-token": state.session.visitorToken },
@@ -384,7 +430,10 @@
       );
       renderMessages();
     } catch (error) {
-      state.error = readableError(error, "A human agent could not be requested right now.");
+      state.error = readableError(
+        error,
+        "A human agent could not be requested right now.",
+      );
       renderMessages();
     } finally {
       state.sending = false;
@@ -393,11 +442,18 @@
   }
 
   function startRealtime() {
-    if (!state.session || !state.session.conversationId || !state.session.visitorToken) return;
+    if (
+      !state.session ||
+      !state.session.conversationId ||
+      !state.session.visitorToken
+    )
+      return;
     if (state.socket && (state.socket.connected || state.socket.active)) return;
-    void loadSocketClient().then(connectSocket).catch(function () {
-      state.socketReady = false;
-    });
+    void loadSocketClient()
+      .then(connectSocket)
+      .catch(function () {
+        state.socketReady = false;
+      });
   }
 
   function connectSocket() {
@@ -426,7 +482,15 @@
     socket.on("conversation.event", function (event) {
       handleSocketEvent(socket, "conversation.event", event);
     });
-    ["message.started", "message.delta", "message.replace", "message.completed", "message.discarded", "message.cancelled", "message.error"].forEach(function (eventName) {
+    [
+      "message.started",
+      "message.delta",
+      "message.replace",
+      "message.completed",
+      "message.discarded",
+      "message.cancelled",
+      "message.error",
+    ].forEach(function (eventName) {
       socket.on(eventName, function (payload) {
         handleSocketEvent(socket, eventName, payload || {});
       });
@@ -452,7 +516,11 @@
       void refreshConversation();
       return;
     }
-    if (frame.clientMessageId && frame.clientMessageId !== state.activeClientMessageId) return;
+    if (
+      frame.clientMessageId &&
+      frame.clientMessageId !== state.activeClientMessageId
+    )
+      return;
     if (eventName === "message.started") {
       state.streamingContent = "";
       renderMessages(true);
@@ -469,7 +537,10 @@
       return;
     }
     if (eventName === "message.completed") {
-      state.conversation = frame.result && frame.result.conversation ? frame.result.conversation : state.conversation;
+      state.conversation =
+        frame.result && frame.result.conversation
+          ? frame.result.conversation
+          : state.conversation;
       finishGeneration();
       return;
     }
@@ -525,7 +596,8 @@
     state.refreshing = true;
     try {
       state.conversation = await apiRequest(
-        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId),
+        "/customer-chat/widget/conversations/" +
+          encodeURIComponent(state.session.conversationId),
         { headers: { "x-visitor-token": state.session.visitorToken } },
       );
       renderMessages();
@@ -538,7 +610,11 @@
     while (messages.firstChild) messages.removeChild(messages.firstChild);
 
     if (!state.leadCaptureComplete && activeLeadFields().length) {
-      appendBubble("assistant", state.config.greetingText || "Hi! How can I help you today?", []);
+      appendBubble(
+        "assistant",
+        state.config.greetingText || "Hi! How can I help you today?",
+        [],
+      );
       appendLeadCaptureForm();
       if (state.error) appendError(state.error);
       composer.classList.add("ac-hidden");
@@ -556,14 +632,19 @@
         : [];
 
     if (!conversationMessages.length && state.config) {
-      appendBubble("assistant", state.config.greetingText || "Hi! How can I help you today?", []);
+      appendBubble(
+        "assistant",
+        state.config.greetingText || "Hi! How can I help you today?",
+        [],
+      );
     } else {
       conversationMessages.forEach(function (message) {
         appendBubble(message.role, message.content, message.citations || []);
       });
     }
 
-    if (state.streamingContent) appendBubble("assistant", state.streamingContent, []);
+    if (state.streamingContent)
+      appendBubble("assistant", state.streamingContent, []);
     else if (showTyping || state.activeClientMessageId) appendTyping();
     if (state.error) appendError(state.error);
     newChatButton.classList.toggle("ac-hidden", !state.session);
@@ -574,7 +655,13 @@
   }
 
   function appendBubble(role, content, citations) {
-    if (role !== "visitor" && role !== "assistant" && role !== "agent" && role !== "system") return;
+    if (
+      role !== "visitor" &&
+      role !== "assistant" &&
+      role !== "agent" &&
+      role !== "system"
+    )
+      return;
     var row = document.createElement("div");
     var isUser = role === "visitor";
     row.className = "ac-row " + (isUser ? "ac-row-user" : "ac-row-assistant");
@@ -588,7 +675,10 @@
       var citation = document.createElement("div");
       citation.className = "ac-citations";
       citation.textContent =
-        "Grounded in " + citations.length + " knowledge source" + (citations.length === 1 ? "" : "s");
+        "Grounded in " +
+        citations.length +
+        " knowledge source" +
+        (citations.length === 1 ? "" : "s");
       bubble.appendChild(citation);
     }
     row.appendChild(bubble);
@@ -601,7 +691,8 @@
     var bubble = document.createElement("div");
     bubble.className = "ac-bubble ac-typing";
     bubble.setAttribute("aria-label", "Assistant is thinking");
-    bubble.innerHTML = '<span class="ac-thinking-label">Thinking</span><i></i><i></i><i></i>';
+    bubble.innerHTML =
+      '<span class="ac-thinking-label">Thinking</span><i></i><i></i><i></i>';
     row.appendChild(bubble);
     messages.appendChild(row);
   }
@@ -620,12 +711,18 @@
     confirmStartButton.disabled = sending;
     confirmDialog.setAttribute("aria-busy", sending ? "true" : "false");
     confirmStartButton.textContent =
-      sending && !confirmDialog.classList.contains("ac-hidden") ? "Starting..." : "Start new";
+      sending && !confirmDialog.classList.contains("ac-hidden")
+        ? "Starting..."
+        : "Start new";
     sendButton.classList.toggle("ac-stop", sending);
-    sendButton.setAttribute("aria-label", sending ? "Stop generating" : "Send message");
+    sendButton.setAttribute(
+      "aria-label",
+      sending ? "Stop generating" : "Send message",
+    );
     sendButton.innerHTML = sending ? stopIcon() : sendIcon();
     handoffButton.disabled =
-      sending || (state.conversation && state.conversation.status === "waiting_for_agent");
+      sending ||
+      (state.conversation && state.conversation.status === "waiting_for_agent");
     handoffButton.textContent =
       state.conversation && state.conversation.status === "waiting_for_agent"
         ? "Human agent requested"
@@ -633,10 +730,13 @@
   }
 
   function removeOptimisticMessages() {
-    if (!state.conversation || !Array.isArray(state.conversation.messages)) return;
-    state.conversation.messages = state.conversation.messages.filter(function (message) {
-      return String(message.id || "").indexOf("optimistic-") !== 0;
-    });
+    if (!state.conversation || !Array.isArray(state.conversation.messages))
+      return;
+    state.conversation.messages = state.conversation.messages.filter(
+      function (message) {
+        return String(message.id || "").indexOf("optimistic-") !== 0;
+      },
+    );
   }
 
   function openWidget() {
@@ -657,7 +757,9 @@
         });
     }
     window.setTimeout(function () {
-      var firstLeadInput = messages.querySelector(".ac-lead-control, .ac-lead-choice input");
+      var firstLeadInput = messages.querySelector(
+        ".ac-lead-control, .ac-lead-choice input",
+      );
       if (firstLeadInput) firstLeadInput.focus();
       else input.focus();
     }, 40);
@@ -681,7 +783,9 @@
   function hideNewChatConfirmation(force) {
     if (state.sending && force !== true) return;
     var shouldRestoreFocus =
-      force !== true && !confirmDialog.classList.contains("ac-hidden") && state.open;
+      force !== true &&
+      !confirmDialog.classList.contains("ac-hidden") &&
+      state.open;
     confirmDialog.classList.add("ac-hidden");
     if (shouldRestoreFocus) newChatButton.focus();
   }
@@ -695,7 +799,9 @@
       // Lead fields and appearance can change while an embedded page remains open.
       await refreshWidgetConfig();
       await apiRequest(
-        "/customer-chat/widget/conversations/" + encodeURIComponent(state.session.conversationId) + "/close",
+        "/customer-chat/widget/conversations/" +
+          encodeURIComponent(state.session.conversationId) +
+          "/close",
         {
           method: "PATCH",
           headers: { "x-visitor-token": state.session.visitorToken },
@@ -704,7 +810,10 @@
       hideNewChatConfirmation(true);
       clearSession();
     } catch (error) {
-      state.error = readableError(error, "A new conversation could not be started. Please try again.");
+      state.error = readableError(
+        error,
+        "A new conversation could not be started. Please try again.",
+      );
       hideNewChatConfirmation(true);
     } finally {
       state.sending = false;
@@ -717,7 +826,11 @@
   function destroyWidget() {
     if (state.socket) state.socket.disconnect();
     rootHost.remove();
-    try { delete window.AgentCoreWidget; } catch { window.AgentCoreWidget = undefined; }
+    try {
+      delete window.AgentCoreWidget;
+    } catch {
+      window.AgentCoreWidget = undefined;
+    }
   }
 
   function autoSizeInput() {
@@ -727,7 +840,10 @@
 
   async function apiRequest(path, options) {
     options = options || {};
-    var headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
+    var headers = Object.assign(
+      { "Content-Type": "application/json" },
+      options.headers || {},
+    );
     var response = await fetch(apiBase + path, {
       method: options.method || "GET",
       headers: headers,
@@ -736,7 +852,9 @@
       mode: "cors",
       credentials: "omit",
     });
-    var payload = await response.json().catch(function () { return {}; });
+    var payload = await response.json().catch(function () {
+      return {};
+    });
     if (!response.ok) {
       var error = new Error(payload.message || "Request failed");
       error.status = response.status;
@@ -756,7 +874,43 @@
   }
 
   function writeSession(session) {
-    try { localStorage.setItem(storageKey, JSON.stringify(session)); } catch {}
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(session));
+    } catch {}
+  }
+
+  function collectAttribution() {
+    var currentUrl = new URL(window.location.href);
+    var stored = {};
+    try {
+      stored = JSON.parse(localStorage.getItem(attributionStorageKey) || "{}");
+    } catch {}
+    var firstTouch =
+      stored && stored.landingPageUrl
+        ? stored
+        : {
+            landingPageUrl: window.location.href,
+            firstReferrer: document.referrer || undefined,
+            firstSeenAt: new Date().toISOString(),
+          };
+    var queryMappings = {
+      utm_source: "utmSource",
+      utm_medium: "utmMedium",
+      utm_campaign: "utmCampaign",
+      utm_term: "utmTerm",
+      utm_content: "utmContent",
+      gclid: "gclid",
+      fbclid: "fbclid",
+      msclkid: "msclkid",
+    };
+    Object.keys(queryMappings).forEach(function (queryKey) {
+      var value = currentUrl.searchParams.get(queryKey);
+      if (value) firstTouch[queryMappings[queryKey]] = value.slice(0, 500);
+    });
+    try {
+      localStorage.setItem(attributionStorageKey, JSON.stringify(firstTouch));
+    } catch {}
+    return firstTouch;
   }
 
   function clearSession() {
@@ -768,14 +922,18 @@
     state.session = null;
     state.conversation = null;
     state.leadCaptureComplete = activeLeadFields().length === 0;
-    try { localStorage.removeItem(storageKey); } catch {}
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {}
   }
 
   function activeLeadFields() {
     return state.config && Array.isArray(state.config.leadFields)
-      // The public config contains enabled fields only; `enabled` is deliberately
-      // not exposed as part of the visitor-facing field contract.
-      ? state.config.leadFields.filter(function (field) { return field && field.key; })
+      ? // The public config contains enabled fields only; `enabled` is deliberately
+        // not exposed as part of the visitor-facing field contract.
+        state.config.leadFields.filter(function (field) {
+          return field && field.key;
+        })
       : [];
   }
 
@@ -787,7 +945,8 @@
     title.textContent = "Before we start";
     var copy = document.createElement("p");
     copy.className = "ac-lead-copy";
-    copy.textContent = "Share any details below so the team can identify and follow up with you.";
+    copy.textContent =
+      "Share any details below so the team can identify and follow up with you.";
     var leadForm = document.createElement("form");
     leadForm.className = "ac-lead-form";
     var fields = activeLeadFields();
@@ -799,12 +958,18 @@
     submit.className = "ac-lead-submit";
     submit.textContent = "Start conversation";
     leadForm.appendChild(submit);
-    if (!fields.some(function (field) { return field.required; })) {
+    if (
+      !fields.some(function (field) {
+        return field.required;
+      })
+    ) {
       var skip = document.createElement("button");
       skip.type = "button";
       skip.className = "ac-lead-skip";
       skip.textContent = "Continue without sharing details";
-      skip.addEventListener("click", function () { void submitLeadCapture(leadForm, submit, {}); });
+      skip.addEventListener("click", function () {
+        void submitLeadCapture(leadForm, submit, {});
+      });
       leadForm.appendChild(skip);
     }
     leadForm.addEventListener("submit", function (event) {
@@ -815,13 +980,20 @@
         if (field.type === "checkbox") {
           if (control && control.checked) values[field.key] = true;
         } else if (field.type === "radio") {
-          var selected = leadForm.querySelector('input[name="' + cssEscape(field.key) + '"]:checked');
+          var selected = leadForm.querySelector(
+            'input[name="' + cssEscape(field.key) + '"]:checked',
+          );
           if (selected) values[field.key] = selected.value;
         } else if (field.type === "phone") {
           var country = leadForm.elements.namedItem(field.key + "__country");
-          var countryDigits = country ? String(country.value || "").replace(/\D/g, "") : "";
-          var phoneDigits = control ? String(control.value || "").replace(/\D/g, "") : "";
-          if (phoneDigits) values[field.key] = "+" + countryDigits + phoneDigits;
+          var countryDigits = country
+            ? String(country.value || "").replace(/\D/g, "")
+            : "";
+          var phoneDigits = control
+            ? String(control.value || "").replace(/\D/g, "")
+            : "";
+          if (phoneDigits)
+            values[field.key] = "+" + countryDigits + phoneDigits;
         } else {
           var value = control ? String(control.value || "").trim() : "";
           if (value && !(field.type === "number" && Number(value) === 0)) {
@@ -844,13 +1016,18 @@
     leadForm.setAttribute("aria-busy", "true");
     submit.disabled = true;
     submit.textContent = "Starting...";
-    Array.prototype.forEach.call(leadForm.elements, function (element) { element.disabled = true; });
+    Array.prototype.forEach.call(leadForm.elements, function (element) {
+      element.disabled = true;
+    });
     var started = false;
     try {
       await ensureConversation(values, true);
       started = true;
     } catch (error) {
-      state.error = readableError(error, "Your details could not be saved. Please try again.");
+      state.error = readableError(
+        error,
+        "Your details could not be saved. Please try again.",
+      );
     } finally {
       state.sending = false;
       setSending(false);
@@ -860,10 +1037,15 @@
   }
 
   function createLeadField(field) {
-    var wrapper = document.createElement(field.type === "radio" ? "fieldset" : "div");
-    var label = document.createElement(field.type === "radio" ? "legend" : "label");
+    var wrapper = document.createElement(
+      field.type === "radio" ? "fieldset" : "div",
+    );
+    var label = document.createElement(
+      field.type === "radio" ? "legend" : "label",
+    );
     var controlId = "agentcore-lead-" + field.key;
-    label.className = field.type === "radio" ? "ac-lead-legend" : "ac-lead-label";
+    label.className =
+      field.type === "radio" ? "ac-lead-legend" : "ac-lead-label";
     label.textContent = field.label + (field.required ? " *" : " (optional)");
     if (field.type !== "radio") label.htmlFor = controlId;
     wrapper.appendChild(label);
@@ -923,7 +1105,10 @@
       countryCode.autocomplete = "tel-country-code";
       countryCode.maxLength = 3;
       countryCode.value = defaultCallingCode(field.placeholder);
-      countryCode.setAttribute("aria-label", field.label + " country calling code");
+      countryCode.setAttribute(
+        "aria-label",
+        field.label + " country calling code",
+      );
       restrictToDigits(countryCode, 3);
       codeWrap.appendChild(prefix);
       codeWrap.appendChild(countryCode);
@@ -951,9 +1136,13 @@
       restrictToDigits(phone, 14);
       function validatePhoneParts() {
         var totalLength = countryCode.value.length + phone.value.length;
-        var invalid = phone.value && (!countryCode.value || totalLength < 7 || totalLength > 15);
+        var invalid =
+          phone.value &&
+          (!countryCode.value || totalLength < 7 || totalLength > 15);
         phone.setCustomValidity(
-          invalid ? "Enter a valid country code and phone number (maximum 15 digits total)" : "",
+          invalid
+            ? "Enter a valid country code and phone number (maximum 15 digits total)"
+            : "",
         );
       }
       countryCode.addEventListener("input", validatePhoneParts);
@@ -996,14 +1185,17 @@
     if (field.type === "email") {
       control.autocomplete = "email";
     }
-    if (field.placeholder && field.type !== "select") control.placeholder = field.placeholder;
+    if (field.placeholder && field.type !== "select")
+      control.placeholder = field.placeholder;
     wrapper.appendChild(control);
     return wrapper;
   }
 
   function restrictToDigits(control, maxLength) {
     control.addEventListener("input", function () {
-      var digits = String(control.value || "").replace(/\D/g, "").slice(0, maxLength);
+      var digits = String(control.value || "")
+        .replace(/\D/g, "")
+        .slice(0, maxLength);
       if (control.value !== digits) control.value = digits;
     });
   }
@@ -1013,10 +1205,26 @@
     if (configured) return configured[1];
     var region = String(navigator.language || "").split("-")[1] || "";
     var common = {
-      AU: "61", BR: "55", CA: "1", DE: "49", ES: "34", FR: "33",
-      GB: "44", ID: "62", IN: "91", IT: "39", JP: "81", MX: "52",
-      NG: "234", NL: "31", NZ: "64", PH: "63", PK: "92", SG: "65",
-      US: "1", ZA: "27",
+      AU: "61",
+      BR: "55",
+      CA: "1",
+      DE: "49",
+      ES: "34",
+      FR: "33",
+      GB: "44",
+      ID: "62",
+      IN: "91",
+      IT: "39",
+      JP: "81",
+      MX: "52",
+      NG: "234",
+      NL: "31",
+      NZ: "64",
+      PH: "63",
+      PK: "92",
+      SG: "65",
+      US: "1",
+      ZA: "27",
     };
     return common[region.toUpperCase()] || "1";
   }
@@ -1028,7 +1236,8 @@
   }
 
   function cssEscape(value) {
-    if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(value);
+    if (window.CSS && typeof window.CSS.escape === "function")
+      return window.CSS.escape(value);
     return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
   }
 
@@ -1036,8 +1245,12 @@
     var url = new URL(apiBase, window.location.href);
     return {
       origin: url.origin,
-      path: url.pathname.replace(/\/+$/, "") + "/customer-chat/widget/socket.io",
-      scriptUrl: url.origin + url.pathname.replace(/\/+$/, "") + "/customer-chat/widget/socket.io/socket.io.js",
+      path:
+        url.pathname.replace(/\/+$/, "") + "/customer-chat/widget/socket.io",
+      scriptUrl:
+        url.origin +
+        url.pathname.replace(/\/+$/, "") +
+        "/customer-chat/widget/socket.io/socket.io.js",
     };
   }
 
@@ -1071,7 +1284,9 @@
   }
 
   function validText(value, fallback) {
-    return typeof value === "string" && value.trim() ? value.trim().slice(0, 60) : fallback;
+    return typeof value === "string" && value.trim()
+      ? value.trim().slice(0, 60)
+      : fallback;
   }
 
   function validColor(value) {
@@ -1081,14 +1296,26 @@
   function darken(hex) {
     var value = hex.replace("#", "");
     var channels = [0, 2, 4].map(function (index) {
-      return Math.max(0, Math.round(parseInt(value.slice(index, index + 2), 16) * 0.82));
+      return Math.max(
+        0,
+        Math.round(parseInt(value.slice(index, index + 2), 16) * 0.82),
+      );
     });
-    return "#" + channels.map(function (channel) { return channel.toString(16).padStart(2, "0"); }).join("");
+    return (
+      "#" +
+      channels
+        .map(function (channel) {
+          return channel.toString(16).padStart(2, "0");
+        })
+        .join("")
+    );
   }
 
   function readableError(error, fallback) {
-    if (error && error.status === 403) return "This website is not authorized to use the chat widget.";
-    if (error && error.status === 429) return "Too many requests. Please wait a moment and try again.";
+    if (error && error.status === 403)
+      return "This website is not authorized to use the chat widget.";
+    if (error && error.status === 429)
+      return "Too many requests. Please wait a moment and try again.";
     return fallback;
   }
 
@@ -1115,8 +1342,10 @@
     var list = null;
     lines.forEach(function (line) {
       if (/^```/.test(line.trim())) {
-        if (code) { container.appendChild(code.pre); code = null; }
-        else {
+        if (code) {
+          container.appendChild(code.pre);
+          code = null;
+        } else {
           var pre = document.createElement("pre");
           var codeNode = document.createElement("code");
           pre.appendChild(codeNode);
@@ -1126,7 +1355,9 @@
         return;
       }
       if (code) {
-        code.node.appendChild(document.createTextNode((code.node.textContent ? "\n" : "") + line));
+        code.node.appendChild(
+          document.createTextNode((code.node.textContent ? "\n" : "") + line),
+        );
         return;
       }
       var listMatch = line.match(/^\s*([-*]|\d+\.)\s+(.+)$/);
@@ -1143,7 +1374,9 @@
       }
       list = null;
       var heading = line.match(/^(#{1,3})\s+(.+)$/);
-      var node = document.createElement(heading ? "h" + heading[1].length : "p");
+      var node = document.createElement(
+        heading ? "h" + heading[1].length : "p",
+      );
       appendInlineMarkdown(node, heading ? heading[2] : line);
       if (line || heading) container.appendChild(node);
     });
@@ -1155,8 +1388,13 @@
     var last = 0;
     String(value).replace(pattern, function (match, offset) {
       container.appendChild(document.createTextNode(value.slice(last, offset)));
-      var node = document.createElement(match.slice(0, 2) === "**" ? "strong" : "code");
-      node.textContent = match.slice(match.slice(0, 2) === "**" ? 2 : 1, match.slice(0, 2) === "**" ? -2 : -1);
+      var node = document.createElement(
+        match.slice(0, 2) === "**" ? "strong" : "code",
+      );
+      node.textContent = match.slice(
+        match.slice(0, 2) === "**" ? 2 : 1,
+        match.slice(0, 2) === "**" ? -2 : -1,
+      );
       container.appendChild(node);
       last = offset + match.length;
       return match;
