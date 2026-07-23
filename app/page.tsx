@@ -108,6 +108,33 @@ import type {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
+const GET_CACHE_TTL_MS = 15_000;
+
+type CachedGetResponse = {
+  expiresAt: number;
+  value: unknown;
+};
+
+const getResponseCache = new Map<string, CachedGetResponse>();
+const pendingGetRequests = new Map<string, Promise<unknown>>();
+let getCacheGeneration = 0;
+
+function clearGetResponseCache(accessToken?: string | null) {
+  getCacheGeneration += 1;
+  if (!accessToken) {
+    getResponseCache.clear();
+    pendingGetRequests.clear();
+    return;
+  }
+
+  const prefix = `${accessToken}:`;
+  for (const key of getResponseCache.keys()) {
+    if (key.startsWith(prefix)) getResponseCache.delete(key);
+  }
+  for (const key of pendingGetRequests.keys()) {
+    if (key.startsWith(prefix)) pendingGetRequests.delete(key);
+  }
+}
 
 function parseJsonField<T>(value: FormDataEntryValue | null, fallback: T): T {
   if (typeof value !== "string" || !value.trim()) return fallback;
@@ -664,6 +691,12 @@ export default function Home() {
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const activeTab = tabFromPathname(pathname) ?? "dashboard";
+  const encodedLeadDetailId =
+    pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1] ?? null;
+  const leadDetailId = encodedLeadDetailId
+    ? decodeURIComponent(encodedLeadDetailId)
+    : null;
+  const isLeadDetail = Boolean(leadDetailId);
   const [health, setHealth] = useState<Health | null>(null);
   const [observability, setObservability] =
     useState<ObservabilitySummary | null>(null);
@@ -824,6 +857,10 @@ export default function Home() {
     page: 1,
     limit: 30,
   });
+  const activeTabRef = useRef(activeTab);
+  const selectedConversationIdRef = useRef<string | null>(null);
+  const inboxFiltersRef = useRef(filters);
+  const notificationSoundEnabledRef = useRef(notificationSoundEnabled);
 
   const authHeaders = useMemo(
     () => ({
@@ -964,6 +1001,22 @@ export default function Home() {
   );
 
   useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    selectedConversationIdRef.current = selectedConversation?.id ?? null;
+  }, [selectedConversation?.id]);
+
+  useEffect(() => {
+    inboxFiltersRef.current = filters;
+  }, [filters]);
+
+  useEffect(() => {
+    notificationSoundEnabledRef.current = notificationSoundEnabled;
+  }, [notificationSoundEnabled]);
+
+  useEffect(() => {
     const restoreSession = window.setTimeout(() => {
       try {
         const storedUser = window.localStorage.getItem("agentcore_user");
@@ -976,13 +1029,13 @@ export default function Home() {
         setUser(storedUser ? (JSON.parse(storedUser) as User) : null);
         setTheme(storedTheme === "dark" ? "dark" : "light");
         setNotificationSoundEnabled(storedNotificationSound !== "off");
+        if (!storedUser || activeTab === "dashboard") void loadHealth();
       } catch {
         clearSession();
       } finally {
         setIsSessionReady(true);
       }
     }, 0);
-    void loadHealth();
     return () => window.clearTimeout(restoreSession);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1002,18 +1055,15 @@ export default function Home() {
 
   useEffect(() => {
     if (!token || activeTab !== "leads") return;
-    const detailId = pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1];
-    if (detailId) {
-      void loadLead(decodeURIComponent(detailId));
-    }
+    if (leadDetailId) void loadLead(leadDetailId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, activeTab, pathname, selectedOrganizationId]);
+  }, [token, activeTab, leadDetailId, selectedOrganizationId]);
 
   useEffect(() => {
     if (!token) return;
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, user?.id, activeTab, isLeadDetail]);
 
   useEffect(() => {
     if (
@@ -1029,7 +1079,6 @@ export default function Home() {
   useEffect(() => {
     if (!token || !canAccessInbox) return;
     const controller = new AbortController();
-    const selectedId = selectedConversation?.id;
     const organizationId = selectedOrganizationId ?? user?.orgId;
 
     async function connect() {
@@ -1061,9 +1110,10 @@ export default function Home() {
                 ? event.conversationId
                 : undefined,
             );
-            if (activeTab === "inbox") {
-              await loadConversations();
-              if (selectedId) await loadConversation(selectedId);
+            if (activeTabRef.current === "inbox") {
+              await loadConversations(inboxFiltersRef.current, true);
+              const selectedId = selectedConversationIdRef.current;
+              if (selectedId) await loadConversation(selectedId, true);
             }
           }
         }
@@ -1082,15 +1132,8 @@ export default function Home() {
   }, [
     token,
     canAccessInbox,
-    activeTab,
     selectedOrganizationId,
-    selectedConversation?.id,
-    notificationSoundEnabled,
-    filters.status,
-    filters.search,
-    filters.assignedAgentId,
-    filters.assignment,
-    filters.page,
+    user?.orgId,
   ]);
 
   useEffect(() => {
@@ -1158,38 +1201,78 @@ export default function Home() {
   ]);
 
   async function api<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await axios.request<T>({
-      url: `${API_BASE_URL}${path}`,
-      method: (init?.method ?? "GET") as AxiosRequestConfig["method"],
-      headers: {
-        ...authHeaders,
-        ...normalizeHeaders(init?.headers),
-      },
-      data: parseRequestBody(init?.body),
-      validateStatus: () => true,
-    });
+    const method = (init?.method ?? "GET").toUpperCase();
+    const cacheKey = `${token ?? "anonymous"}:${path}`;
+    const shouldCache = method === "GET" && init?.cache !== "no-store";
 
-    if (response.status === 401 && !path.startsWith("/auth/")) {
-      const refreshed = await refreshSession();
-
-      if (refreshed) {
-        const retry = await axios.request<T>({
-          url: `${API_BASE_URL}${path}`,
-          method: (init?.method ?? "GET") as AxiosRequestConfig["method"],
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${refreshed.accessToken}`,
-            ...normalizeHeaders(init?.headers),
-          },
-          data: parseRequestBody(init?.body),
-          validateStatus: () => true,
-        });
-
-        return handleAxiosResponse(retry);
+    if (shouldCache) {
+      const cached = getResponseCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        return cached.value as T;
       }
+
+      if (cached) getResponseCache.delete(cacheKey);
+      const pending = pendingGetRequests.get(cacheKey);
+      if (pending) return pending as Promise<T>;
+    } else if (method !== "GET") {
+      clearGetResponseCache(token);
     }
 
-    return handleAxiosResponse(response);
+    const request = async () => {
+      const response = await axios.request<T>({
+        url: `${API_BASE_URL}${path}`,
+        method: method as AxiosRequestConfig["method"],
+        headers: {
+          ...authHeaders,
+          ...normalizeHeaders(init?.headers),
+        },
+        data: parseRequestBody(init?.body),
+        validateStatus: () => true,
+      });
+
+      if (response.status === 401 && !path.startsWith("/auth/")) {
+        const refreshed = await refreshSession();
+
+        if (refreshed) {
+          const retry = await axios.request<T>({
+            url: `${API_BASE_URL}${path}`,
+            method: method as AxiosRequestConfig["method"],
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${refreshed.accessToken}`,
+              ...normalizeHeaders(init?.headers),
+            },
+            data: parseRequestBody(init?.body),
+            validateStatus: () => true,
+          });
+
+          return handleAxiosResponse(retry);
+        }
+      }
+
+      return handleAxiosResponse(response);
+    };
+
+    if (!shouldCache) return request();
+
+    const requestGeneration = getCacheGeneration;
+    const pendingRequest = request()
+      .then((value) => {
+        if (requestGeneration === getCacheGeneration) {
+          getResponseCache.set(cacheKey, {
+            expiresAt: Date.now() + GET_CACHE_TTL_MS,
+            value,
+          });
+        }
+        return value;
+      })
+      .finally(() => {
+        if (pendingGetRequests.get(cacheKey) === pendingRequest) {
+          pendingGetRequests.delete(cacheKey);
+        }
+      });
+    pendingGetRequests.set(cacheKey, pendingRequest);
+    return pendingRequest;
   }
 
   async function publicApi<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1208,6 +1291,7 @@ export default function Home() {
   }
 
   async function uploadApi<T>(path: string, body: FormData): Promise<T> {
+    clearGetResponseCache(token);
     const response = await axios.request<T>({
       url: `${API_BASE_URL}${path}`,
       method: "POST",
@@ -1354,6 +1438,22 @@ export default function Home() {
   async function loadAll() {
     if (!user) return;
     const isSuperAdmin = user.roles.includes("super_admin");
+    const shellTasks: Array<Promise<unknown>> = [loadOrganization()];
+    if (isSuperAdmin) shellTasks.push(loadOrganizations());
+
+    const [loadedProducts] = await Promise.all([
+      loadProducts(),
+      Promise.all(shellTasks),
+    ]);
+    if (!loadedProducts) return;
+    await loadActivePageData(loadedProducts);
+  }
+
+  async function loadActivePageData(
+    loadedProducts: ProductEntitlement[],
+  ): Promise<void> {
+    if (!user) return;
+    const isSuperAdmin = user.roles.includes("super_admin");
     const isOrgAdmin = user.roles.includes("org_admin");
     const grants = [
       ...(user.productAccess ?? []),
@@ -1363,13 +1463,10 @@ export default function Home() {
     const canManageKnowledge = grants.some(
       (access) => access.canManageKnowledge || access.canConfigure,
     );
-    const loadedProducts = await loadProducts();
     const isEnabled = (productKey: ProductKey) =>
-      Boolean(
-        loadedProducts?.some(
-          (item) =>
-            item.product.key === productKey && item.status === "enabled",
-        ),
+      loadedProducts.some(
+        (item) =>
+          item.product.key === productKey && item.status === "enabled",
       );
     const canUse = (productKey: ProductKey) =>
       isEnabled(productKey) &&
@@ -1379,54 +1476,86 @@ export default function Home() {
           (access) => access.productKey === productKey && access.canUse,
         ));
 
-    const baseTasks: Array<Promise<unknown>> = [
-      loadHealth(),
-      loadOrganization(),
-    ];
-    if (isSuperAdmin) baseTasks.push(loadOrganizations());
-    if (isSuperAdmin || isOrgAdmin) {
-      baseTasks.push(
-        loadObservability(),
-        loadAIProviders(),
-        loadKnowledgeSettings(),
-        loadAuditLogs(),
-      );
+    const tasks: Array<Promise<unknown>> = [];
+    const canListUsers = isSuperAdmin || isOrgAdmin || canManageAgents;
+
+    switch (activeTab) {
+      case "dashboard":
+        tasks.push(loadHealth());
+        if (isSuperAdmin || isOrgAdmin) {
+          tasks.push(loadObservability(), loadAIProviders());
+        }
+        if (canListUsers) tasks.push(loadUsers());
+        break;
+      case "inbox":
+        if (canUse("customer_chat")) tasks.push(loadConversations());
+        if (canListUsers) tasks.push(loadUsers());
+        break;
+      case "leads":
+        if (canUse("customer_chat") && !leadDetailId) {
+          tasks.push(loadLeads(), loadWidgetConfig());
+        }
+        if (leadDetailId && canListUsers) tasks.push(loadUsers());
+        break;
+      case "knowledge":
+        if (isSuperAdmin || isOrgAdmin || canManageKnowledge) {
+          tasks.push(loadKnowledgeSources());
+        }
+        if (isSuperAdmin || isOrgAdmin) {
+          tasks.push(loadAIProviders(), loadKnowledgeSettings());
+        }
+        break;
+      case "appointments":
+        if (canUse("appointment_booking")) {
+          tasks.push(
+            loadAppointmentServices(),
+            loadAppointmentStaff(),
+            loadAppointmentBookings(),
+            loadAppointmentCalendarConnections(),
+            loadAppointmentOperations(),
+          );
+        }
+        break;
+      case "whatsapp":
+        if (canUse("whatsapp_assistant")) {
+          tasks.push(
+            loadWhatsAppConfigs(),
+            loadWhatsAppConversations(),
+            loadKnowledgeSources(),
+          );
+          if (canListUsers) tasks.push(loadUsers());
+        }
+        break;
+      case "voice":
+        if (canUse("voice_receptionist")) {
+          tasks.push(
+            loadVoiceConfigs(),
+            loadVoiceCalls(),
+            loadVoiceOperations(),
+            loadVoiceSoftphone(),
+          );
+          if (canListUsers) tasks.push(loadUsers());
+        }
+        break;
+      case "widget":
+        if (canUse("customer_chat")) {
+          tasks.push(loadWidgetConfig(), loadKnowledgeSources());
+        }
+        break;
+      case "users":
+        if (canListUsers) tasks.push(loadUsers());
+        break;
+      case "ai":
+        if (isSuperAdmin || isOrgAdmin) tasks.push(loadAIProviders());
+        break;
+      case "audit":
+        if (isSuperAdmin || isOrgAdmin) tasks.push(loadAuditLogs());
+        break;
+      default:
+        break;
     }
-    if (isSuperAdmin || isOrgAdmin || canManageAgents) {
-      baseTasks.push(loadUsers());
-    }
-    if (isSuperAdmin || isOrgAdmin || canManageKnowledge) {
-      baseTasks.push(loadKnowledgeSources());
-    }
-    if (canUse("customer_chat")) {
-      baseTasks.push(
-        loadConversations(),
-        loadLeads(),
-        loadHandoffNotifications(),
-        loadWidgetConfig(),
-      );
-    }
-    if (canUse("appointment_booking")) {
-      baseTasks.push(
-        loadAppointmentServices(),
-        loadAppointmentStaff(),
-        loadAppointmentBookings(),
-        loadAppointmentCalendarConnections(),
-        loadAppointmentOperations(),
-      );
-    }
-    if (canUse("whatsapp_assistant")) {
-      baseTasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
-    }
-    if (canUse("voice_receptionist")) {
-      baseTasks.push(
-        loadVoiceConfigs(),
-        loadVoiceCalls(),
-        loadVoiceOperations(),
-        loadVoiceSoftphone(),
-      );
-    }
-    await Promise.all(baseTasks);
+
+    await Promise.all(tasks);
   }
 
   async function loadSelectedOrganizationData() {
@@ -1451,50 +1580,7 @@ export default function Home() {
     setSelectedWhatsAppConfigId(null);
     setWhatsAppConversations(null);
     setSelectedWhatsAppConversation(null);
-    const loadedProducts = await loadProducts();
-    const isEnabled = (productKey: ProductKey) =>
-      Boolean(
-        loadedProducts?.some(
-          (item) =>
-            item.product.key === productKey && item.status === "enabled",
-        ),
-      );
-    const tasks: Array<Promise<unknown>> = [
-      loadUsers(),
-      loadKnowledgeSources(),
-      loadAIProviders(),
-      loadKnowledgeSettings(),
-    ];
-
-    if (isEnabled("customer_chat")) {
-      tasks.push(
-        loadConversations(),
-        loadLeads(),
-        loadHandoffNotifications(),
-        loadWidgetConfig(),
-      );
-    }
-    if (isEnabled("appointment_booking")) {
-      tasks.push(
-        loadAppointmentServices(),
-        loadAppointmentStaff(),
-        loadAppointmentBookings(),
-        loadAppointmentCalendarConnections(),
-        loadAppointmentOperations(),
-      );
-    }
-    if (isEnabled("whatsapp_assistant")) {
-      tasks.push(loadWhatsAppConfigs(), loadWhatsAppConversations());
-    }
-    if (isEnabled("voice_receptionist")) {
-      tasks.push(
-        loadVoiceConfigs(),
-        loadVoiceCalls(),
-        loadVoiceOperations(),
-        loadVoiceSoftphone(),
-      );
-    }
-    await Promise.all(tasks);
+    await loadAll();
   }
 
   async function loadHealth() {
@@ -1574,7 +1660,10 @@ export default function Home() {
     }
   }
 
-  async function loadConversations(nextFilters: InboxFilters = filters) {
+  async function loadConversations(
+    nextFilters: InboxFilters = filters,
+    bypassCache = false,
+  ) {
     const organizationId = selectedOrganizationId ?? user?.orgId;
     const params = new URLSearchParams({
       page: String(nextFilters.page),
@@ -1588,7 +1677,10 @@ export default function Home() {
       ...(nextFilters.assignment ? { assignment: nextFilters.assignment } : {}),
     });
     const result = await run(() =>
-      api<ConversationList>(`/customer-chat/conversations?${params}`),
+      api<ConversationList>(
+        `/customer-chat/conversations?${params}`,
+        bypassCache ? { cache: "no-store" } : undefined,
+      ),
     );
 
     if (result) {
@@ -1613,6 +1705,7 @@ export default function Home() {
     try {
       const result = await api<ConversationList>(
         `/customer-chat/conversations?${params.toString()}`,
+        { cache: "no-store" },
       );
       const nextIds = new Set(
         result.data.map((conversation) => conversation.id),
@@ -1621,7 +1714,7 @@ export default function Home() {
         newHandoffId &&
         nextIds.has(newHandoffId) &&
         !handoffNotificationIds.current.has(newHandoffId) &&
-        notificationSoundEnabled,
+        notificationSoundEnabledRef.current,
       );
       handoffNotificationIds.current = nextIds;
       setHandoffNotifications(result.data);
@@ -1632,9 +1725,12 @@ export default function Home() {
     }
   }
 
-  async function loadConversation(id: string) {
+  async function loadConversation(id: string, bypassCache = false) {
     const result = await run(() =>
-      api<Conversation>(`/customer-chat/conversations/${id}`),
+      api<Conversation>(
+        `/customer-chat/conversations/${id}`,
+        bypassCache ? { cache: "no-store" } : undefined,
+      ),
     );
     if (result) setSelectedConversation(result);
   }
@@ -2108,6 +2204,7 @@ export default function Home() {
     const request = () =>
       api<WhatsAppConversationList>(
         `/whatsapp-assistant/conversations?${params}`,
+        silent ? { cache: "no-store" } : undefined,
       );
     const result = silent
       ? await request().catch(() => null)
@@ -2130,7 +2227,10 @@ export default function Home() {
 
   async function loadWhatsAppConversation(id: string, silent = false) {
     const request = () =>
-      api<WhatsAppConversation>(`/whatsapp-assistant/conversations/${id}`);
+      api<WhatsAppConversation>(
+        `/whatsapp-assistant/conversations/${id}`,
+        silent ? { cache: "no-store" } : undefined,
+      );
     const result = silent
       ? await request().catch(() => null)
       : await run(request);
@@ -2161,8 +2261,14 @@ export default function Home() {
       : "";
     const request = () =>
       Promise.all([
-        api<VoiceAnalytics>(`/voice-receptionist/analytics${query}`),
-        api<VoiceRuntimeHealth>(`/voice-receptionist/runtime-health${query}`),
+        api<VoiceAnalytics>(
+          `/voice-receptionist/analytics${query}`,
+          silent ? { cache: "no-store" } : undefined,
+        ),
+        api<VoiceRuntimeHealth>(
+          `/voice-receptionist/runtime-health${query}`,
+          silent ? { cache: "no-store" } : undefined,
+        ),
       ]);
     const result = silent
       ? await request().catch(() => null)
@@ -2179,7 +2285,9 @@ export default function Home() {
       return null;
     }
     const request = () =>
-      api<VoiceSoftphoneState>("/voice-receptionist/agent/softphone");
+      api<VoiceSoftphoneState>("/voice-receptionist/agent/softphone", {
+        cache: "no-store",
+      });
     const result = silent
       ? await request().catch(() => null)
       : await run(request);
@@ -2215,9 +2323,9 @@ export default function Home() {
   }
 
   async function refreshVoiceSoftphoneToken() {
-    return api<VoiceSoftphoneState>(
-      "/voice-receptionist/agent/softphone",
-    ).catch(() => null);
+    return api<VoiceSoftphoneState>("/voice-receptionist/agent/softphone", {
+      cache: "no-store",
+    }).catch(() => null);
   }
 
   async function loadVoiceCalls(
@@ -2235,7 +2343,10 @@ export default function Home() {
       ...(effectiveFilters.search ? { search: effectiveFilters.search } : {}),
     });
     const task = () =>
-      api<VoiceCallList>(`/voice-receptionist/calls?${params}`);
+      api<VoiceCallList>(
+        `/voice-receptionist/calls?${params}`,
+        silent ? { cache: "no-store" } : undefined,
+      );
     let result: VoiceCallList | null = null;
     if (silent) {
       try {
@@ -2258,7 +2369,11 @@ export default function Home() {
   }
 
   async function loadVoiceCall(id: string, silent = false) {
-    const task = () => api<VoiceCall>(`/voice-receptionist/calls/${id}`);
+    const task = () =>
+      api<VoiceCall>(
+        `/voice-receptionist/calls/${id}`,
+        silent ? { cache: "no-store" } : undefined,
+      );
     let result: VoiceCall | null = null;
     if (silent) {
       try {
@@ -2367,6 +2482,7 @@ export default function Home() {
   }
 
   function persistSession(auth: AuthResponse) {
+    clearGetResponseCache();
     setSelectedOrganizationId(null);
     setOrganization(null);
     setOrganizations([]);
@@ -2379,6 +2495,7 @@ export default function Home() {
   }
 
   function clearSession() {
+    clearGetResponseCache();
     window.localStorage.removeItem("agentcore_token");
     window.localStorage.removeItem("agentcore_refresh_token");
     window.localStorage.removeItem("agentcore_user");
@@ -4915,7 +5032,11 @@ export default function Home() {
               ) : null}
               <button
                 type="button"
-                onClick={loadAll}
+                onClick={() => {
+                  clearGetResponseCache(token);
+                  void loadAll();
+                  if (leadDetailId) void loadLead(leadDetailId);
+                }}
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
                 title="Refresh data"
               >
@@ -5044,12 +5165,8 @@ export default function Home() {
               {activeTab === "leads" ? (
                 <LeadsView
                   list={leads}
-                  selected={
-                    pathname.startsWith("/leads/") ? selectedLead : null
-                  }
-                  detailId={
-                    pathname.match(/^\/leads\/([^/]+)\/?$/)?.[1] ?? null
-                  }
+                  selected={leadDetailId ? selectedLead : null}
+                  detailId={leadDetailId}
                   notFound={leadNotFound}
                   error={leadError}
                   widgets={widgetConfigs}
@@ -5067,15 +5184,15 @@ export default function Home() {
                     })
                   }
                   onPageChange={(page) => void loadLeads({ page })}
-                  onOpen={(id) => {
-                    router.push(`/leads/${encodeURIComponent(id)}`);
-                    void loadLead(id);
-                  }}
+                  onOpen={(id) =>
+                    router.push(`/leads/${encodeURIComponent(id)}`)
+                  }
                   onUpdate={updateLead}
                   onAssign={assignLead}
                   onUpdateConsent={updateLeadConsent}
                   canScheduleAppointments={canAccessAppointments}
                   appointmentServices={appointmentServices}
+                  onLoadAppointmentServices={loadAppointmentServices}
                   onFindAppointmentSlots={findLeadAppointmentSlots}
                   onCreateLeadAppointment={createLeadAppointmentBooking}
                 />

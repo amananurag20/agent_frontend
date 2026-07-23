@@ -72,6 +72,7 @@ export function LeadsView({
   onUpdateConsent,
   canScheduleAppointments,
   appointmentServices,
+  onLoadAppointmentServices,
   onFindAppointmentSlots,
   onCreateLeadAppointment,
 }: {
@@ -101,6 +102,7 @@ export function LeadsView({
   ) => Promise<void>;
   canScheduleAppointments: boolean;
   appointmentServices: AppointmentService[];
+  onLoadAppointmentServices: () => Promise<void>;
   onFindAppointmentSlots: (
     serviceId: string,
     date: string,
@@ -122,6 +124,7 @@ export function LeadsView({
           users={users}
           canScheduleAppointments={canScheduleAppointments}
           appointmentServices={appointmentServices}
+          onLoadAppointmentServices={onLoadAppointmentServices}
           onFindAppointmentSlots={onFindAppointmentSlots}
           onCreateLeadAppointment={onCreateLeadAppointment}
         />
@@ -437,6 +440,7 @@ function LeadDetail({
   users,
   canScheduleAppointments,
   appointmentServices,
+  onLoadAppointmentServices,
   onFindAppointmentSlots,
   onCreateLeadAppointment,
 }: {
@@ -451,6 +455,7 @@ function LeadDetail({
   users: User[];
   canScheduleAppointments: boolean;
   appointmentServices: AppointmentService[];
+  onLoadAppointmentServices: () => Promise<void>;
   onFindAppointmentSlots: (
     serviceId: string,
     date: string,
@@ -462,6 +467,8 @@ function LeadDetail({
   const router = useRouter();
   const [tags, setTags] = useState((lead.tags ?? []).join(", "));
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [appointmentServicesLoading, setAppointmentServicesLoading] =
+    useState(false);
   const originalAdjustment = Number(
     lead.qualification.manualScoreAdjustment ?? 0,
   );
@@ -505,10 +512,22 @@ function LeadDetail({
                 {canScheduleAppointments ? (
                   <button
                     type="button"
-                    onClick={() => setShowAppointmentModal(true)}
+                    disabled={appointmentServicesLoading}
+                    onClick={async () => {
+                      setAppointmentServicesLoading(true);
+                      try {
+                        await onLoadAppointmentServices();
+                        setShowAppointmentModal(true);
+                      } finally {
+                        setAppointmentServicesLoading(false);
+                      }
+                    }}
                     className="inline-flex h-10 items-center gap-2 rounded-md bg-[var(--accent-primary)] px-4 text-sm font-medium text-white hover:bg-[var(--accent-primary-strong)]"
                   >
-                    <CalendarPlus size={16} /> Schedule meeting
+                    <CalendarPlus size={16} />
+                    {appointmentServicesLoading
+                      ? "Loading services..."
+                      : "Schedule meeting"}
                   </button>
                 ) : null}
               </div>
