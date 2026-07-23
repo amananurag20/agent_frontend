@@ -1,7 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { CalendarDays, CheckCircle2, Clock3, ExternalLink, Repeat2, ShieldCheck, UsersRound } from "lucide-react";
+import { CalendarDays, CheckCircle2, Clock3, ExternalLink, LoaderCircle, Repeat2, ShieldCheck, UsersRound } from "lucide-react";
+import { toast } from "sonner";
 import type { AppointmentBooking, AppointmentService, AppointmentSlot } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api/v1";
@@ -103,6 +104,11 @@ export default function PublicBookingPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (error) toast.error(error);
+    else if (message) toast.success(message);
+  }, [error, message]);
 
   async function run<T>(task: () => Promise<T>, success?: string) {
     setBusy(true);
@@ -302,6 +308,15 @@ export default function PublicBookingPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f7fc] px-4 py-8 text-[#142033]">
+      {busy ? (
+        <div
+          role="status"
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-xl border border-[#d8e2f0] bg-white px-4 py-3 text-sm text-[#64748b] shadow-lg"
+        >
+          <LoaderCircle className="h-4 w-4 animate-spin text-[#2563eb]" />
+          Working…
+        </div>
+      ) : null}
       <div className="mx-auto max-w-6xl">
         <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>

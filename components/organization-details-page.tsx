@@ -590,10 +590,33 @@ export function OrganizationDetailsPage({
     );
   }
 
+  if (
+    !organization &&
+    !state.error &&
+    Boolean(token) &&
+    Boolean(currentUser)
+  ) {
+    return (
+      <main
+        className={`theme-${theme} min-h-screen bg-[var(--background)] px-4 py-6 text-[var(--foreground)] md:px-6`}
+      >
+        <OrganizationDetailsSkeleton />
+      </main>
+    );
+  }
+
   return (
     <main
       className={`theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}
     >
+      {state.loading ? (
+        <div
+          role="status"
+          className="fixed bottom-5 right-5 z-50 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-4 py-3 shadow-[var(--shadow-card)]"
+        >
+          <StateMessage state={state} />
+        </div>
+      ) : null}
       <div className="mx-auto max-w-[1560px] px-4 py-6 md:px-6">
         <div className="mb-5 rounded-[30px] border border-[var(--border-subtle)] bg-[linear-gradient(180deg,var(--surface-card)_0%,var(--surface-card-muted)_100%)] p-5 shadow-[var(--shadow-card)] md:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1180,6 +1203,28 @@ export function OrganizationDetailsPage({
         />
       ) : null}
     </main>
+  );
+}
+
+function OrganizationDetailsSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading organization"
+      className="mx-auto max-w-[1560px] space-y-5"
+    >
+      <div className="h-56 animate-pulse rounded-[30px] border border-[var(--border-subtle)] bg-[var(--surface-card-muted)]" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((item) => (
+          <div
+            key={item}
+            className="h-28 animate-pulse rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)]"
+          />
+        ))}
+      </div>
+      <div className="h-[420px] animate-pulse rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card-muted)]" />
+      <span className="sr-only">Loading organization…</span>
+    </div>
   );
 }
 

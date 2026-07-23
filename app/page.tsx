@@ -4,6 +4,7 @@ import axios, { type AxiosRequestConfig, type AxiosResponse } from "axios";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { io } from "socket.io-client";
+import { toast } from "sonner";
 import {
   BookOpenText,
   Bot,
@@ -16,6 +17,7 @@ import {
   MoonStar,
   PhoneCall,
   RefreshCw,
+  LoaderCircle,
   ShieldCheck,
   SunMedium,
   Users2,
@@ -25,6 +27,7 @@ import {
 import { AIProvidersView } from "@/components/ai-providers-view";
 import { AppointmentsView } from "@/components/appointments-view";
 import { AuditView } from "@/components/audit-view";
+import { ConsoleSectionSkeleton } from "@/components/console-section-skeleton";
 import { DashboardView } from "@/components/dashboard-view";
 import { InboxView, type InboxFilters } from "@/components/inbox-view";
 import { HandoffNotifications } from "@/components/handoff-notifications";
@@ -696,7 +699,6 @@ export default function Home() {
   const leadDetailId = encodedLeadDetailId
     ? decodeURIComponent(encodedLeadDetailId)
     : null;
-  const isLeadDetail = Boolean(leadDetailId);
   const [health, setHealth] = useState<Health | null>(null);
   const [observability, setObservability] =
     useState<ObservabilitySummary | null>(null);
@@ -705,6 +707,7 @@ export default function Home() {
   const [selectedOrganizationId, setSelectedOrganizationId] = useState<
     string | null
   >(null);
+  const pageDataKey = `${user?.id ?? "anonymous"}:${selectedOrganizationId ?? user?.orgId ?? "platform"}:${activeTab}:${leadDetailId ?? "list"}`;
   const [users, setUsers] = useState<User[]>([]);
   const [products, setProducts] = useState<ProductEntitlement[]>([]);
   const [aiProviders, setAIProviders] = useState<AIProvider[]>([]);
@@ -837,6 +840,24 @@ export default function Home() {
     error: null,
     message: null,
   });
+  const [pageLoading, setPageLoading] = useState(false);
+  const [loadedPageDataKey, setLoadedPageDataKey] = useState<string | null>(
+    null,
+  );
+  const pendingRunCount = useRef(0);
+  const pageLoadVersion = useRef(0);
+  const isLeadDetailPending = Boolean(
+    leadDetailId &&
+      !leadError &&
+      !leadNotFound &&
+      selectedLead?.id !== leadDetailId,
+  );
+  const showPageSkeleton = Boolean(
+    user &&
+      (pageLoading ||
+        loadedPageDataKey !== pageDataKey ||
+        isLeadDetailPending),
+  );
   const [filters, setFilters] = useState<InboxFilters>({
     status: "waiting_for_agent",
     search: "",
@@ -1017,6 +1038,12 @@ export default function Home() {
   }, [notificationSoundEnabled]);
 
   useEffect(() => {
+    if (!user) return;
+    if (state.error) toast.error(state.error);
+    else if (state.message) toast.success(state.message);
+  }, [state.error, state.message, user]);
+
+  useEffect(() => {
     const restoreSession = window.setTimeout(() => {
       try {
         const storedUser = window.localStorage.getItem("agentcore_user");
@@ -1063,7 +1090,7 @@ export default function Home() {
     if (!token) return;
     void loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, user?.id, activeTab, isLeadDetail]);
+  }, [token, user?.id, activeTab, leadDetailId]);
 
   useEffect(() => {
     if (
@@ -1419,34 +1446,62 @@ export default function Home() {
   }
 
   async function run<T>(task: () => Promise<T>, success?: string) {
-    setState({ loading: true, error: null, message: null });
+    pendingRunCount.current += 1;
+    setState((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+      message: null,
+    }));
 
     try {
       const result = await task();
-      setState({ loading: false, error: null, message: success ?? null });
+      setState((current) => ({
+        ...current,
+        error: null,
+        message: success ?? null,
+      }));
       return result;
     } catch (error) {
-      setState({
-        loading: false,
+      setState((current) => ({
+        ...current,
         error: error instanceof Error ? error.message : "Something failed",
         message: null,
-      });
+      }));
       return null;
+    } finally {
+      pendingRunCount.current = Math.max(0, pendingRunCount.current - 1);
+      setState((current) => ({
+        ...current,
+        loading: pendingRunCount.current > 0,
+      }));
     }
   }
 
-  async function loadAll() {
+  async function loadAll(showSkeleton = true) {
     if (!user) return;
+    const targetPageDataKey = pageDataKey;
+    const loadVersion = showSkeleton
+      ? ++pageLoadVersion.current
+      : pageLoadVersion.current;
+    if (showSkeleton) setPageLoading(true);
     const isSuperAdmin = user.roles.includes("super_admin");
     const shellTasks: Array<Promise<unknown>> = [loadOrganization()];
     if (isSuperAdmin) shellTasks.push(loadOrganizations());
 
-    const [loadedProducts] = await Promise.all([
-      loadProducts(),
-      Promise.all(shellTasks),
-    ]);
-    if (!loadedProducts) return;
-    await loadActivePageData(loadedProducts);
+    try {
+      const [loadedProducts] = await Promise.all([
+        loadProducts(),
+        Promise.all(shellTasks),
+      ]);
+      if (!loadedProducts) return;
+      await loadActivePageData(loadedProducts);
+    } finally {
+      if (showSkeleton && loadVersion === pageLoadVersion.current) {
+        setLoadedPageDataKey(targetPageDataKey);
+        setPageLoading(false);
+      }
+    }
   }
 
   async function loadActivePageData(
@@ -1676,12 +1731,14 @@ export default function Home() {
         : {}),
       ...(nextFilters.assignment ? { assignment: nextFilters.assignment } : {}),
     });
-    const result = await run(() =>
+    const request = () =>
       api<ConversationList>(
         `/customer-chat/conversations?${params}`,
         bypassCache ? { cache: "no-store" } : undefined,
-      ),
-    );
+      );
+    const result = bypassCache
+      ? await request().catch(() => null)
+      : await run(request);
 
     if (result) {
       setFilters(nextFilters);
@@ -1726,12 +1783,14 @@ export default function Home() {
   }
 
   async function loadConversation(id: string, bypassCache = false) {
-    const result = await run(() =>
+    const request = () =>
       api<Conversation>(
         `/customer-chat/conversations/${id}`,
         bypassCache ? { cache: "no-store" } : undefined,
-      ),
-    );
+      );
+    const result = bypassCache
+      ? await request().catch(() => null)
+      : await run(request);
     if (result) setSelectedConversation(result);
   }
 
@@ -4889,8 +4948,12 @@ export default function Home() {
         className={`agentcore-app theme-${theme} min-h-screen bg-[var(--background)] text-[var(--foreground)]`}
       >
         <div className="flex min-h-screen items-center justify-center px-4">
-          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-5 py-4 text-sm text-[var(--text-muted)] shadow-sm">
-            Restoring session...
+          <div
+            role="status"
+            className="flex items-center gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--surface-card)] px-5 py-4 text-sm text-[var(--text-muted)] shadow-sm"
+          >
+            <LoaderCircle className="h-4 w-4 animate-spin text-[var(--accent-primary)]" />
+            Restoring session…
           </div>
         </div>
       </main>
@@ -5020,6 +5083,15 @@ export default function Home() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              {state.loading && !showPageSkeleton ? (
+                <div
+                  role="status"
+                  className="hidden h-9 items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--surface-card)] px-3 text-xs text-[var(--text-muted)] sm:flex"
+                >
+                  <LoaderCircle className="h-4 w-4 animate-spin text-[var(--accent-primary)]" />
+                  Working
+                </div>
+              ) : null}
               {canAccessInbox ? (
                 <HandoffNotifications
                   notifications={handoffNotifications}
@@ -5034,7 +5106,7 @@ export default function Home() {
                 type="button"
                 onClick={() => {
                   clearGetResponseCache(token);
-                  void loadAll();
+                  void loadAll(false);
                   if (leadDetailId) void loadLead(leadDetailId);
                 }}
                 className="flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[var(--surface-card)] text-[var(--text-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-strong)]"
@@ -5113,7 +5185,14 @@ export default function Home() {
                   ) : null}
                 </div>
               </div>
-              {activeTab === "dashboard" ? (
+              {showPageSkeleton ? (
+                <ConsoleSectionSkeleton
+                  section={activeTab}
+                  detail={Boolean(leadDetailId)}
+                />
+              ) : (
+                <>
+                  {activeTab === "dashboard" ? (
                 <DashboardView
                   health={health}
                   observability={observability}
@@ -5165,7 +5244,11 @@ export default function Home() {
               {activeTab === "leads" ? (
                 <LeadsView
                   list={leads}
-                  selected={leadDetailId ? selectedLead : null}
+                  selected={
+                    leadDetailId && selectedLead?.id === leadDetailId
+                      ? selectedLead
+                      : null
+                  }
                   detailId={leadDetailId}
                   notFound={leadNotFound}
                   error={leadError}
@@ -5410,7 +5493,11 @@ export default function Home() {
                   onUpdateCostSettings={updateAIProviderCostSettings}
                 />
               ) : null}
-              {activeTab === "audit" ? <AuditView logs={auditLogs} /> : null}
+                  {activeTab === "audit" ? (
+                    <AuditView logs={auditLogs} />
+                  ) : null}
+                </>
+              )}
             </section>
           </div>
         </section>

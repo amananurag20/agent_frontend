@@ -1,3 +1,8 @@
+"use client";
+
+import { useEffect } from "react";
+import { LoaderCircle } from "lucide-react";
+import { toast } from "sonner";
 import type { ApiState, ChildrenProps, Health, User } from "@/lib/types";
 
 export function Field({ label, children }: ChildrenProps & { label: string }) {
@@ -12,8 +17,21 @@ export function Field({ label, children }: ChildrenProps & { label: string }) {
 }
 
 export function StateMessage({ state }: { state: ApiState }) {
+  useEffect(() => {
+    if (state.error) toast.error(state.error);
+    else if (state.message) toast.success(state.message);
+  }, [state.error, state.message]);
+
   if (state.loading) {
-    return <p className="text-sm text-[var(--text-muted)]">Working...</p>;
+    return (
+      <p
+        role="status"
+        className="inline-flex items-center gap-2 text-sm text-[var(--text-muted)]"
+      >
+        <LoaderCircle className="h-4 w-4 animate-spin text-[var(--accent-primary)]" />
+        Working…
+      </p>
+    );
   }
 
   if (state.error) {
