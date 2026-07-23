@@ -48,6 +48,7 @@ import type {
   AppointmentBookingList,
   AppointmentBlackout,
   AppointmentDeadLetters,
+  AppointmentEligibleUser,
   AppointmentCalendarConnection,
   AppointmentPolicy,
   AppointmentScheduleFeed,
@@ -751,6 +752,9 @@ export default function Home() {
   const [appointmentStaff, setAppointmentStaff] = useState<AppointmentStaff[]>(
     [],
   );
+  const [appointmentEligibleUsers, setAppointmentEligibleUsers] = useState<
+    AppointmentEligibleUser[]
+  >([]);
   const [appointmentSlots, setAppointmentSlots] = useState<AppointmentSlot[]>(
     [],
   );
@@ -942,6 +946,21 @@ export default function Home() {
   const canAccessInbox = visibleNavItems.some((item) => item.id === "inbox");
   const canAccessAppointments = visibleNavItems.some(
     (item) => item.id === "appointments",
+  );
+  const canConfigureAppointments = Boolean(
+    user &&
+    user.roles.some((role) =>
+      ["super_admin", "org_admin", "product_admin"].includes(role),
+    ) &&
+    (user.roles.includes("super_admin") ||
+      user.roles.includes("org_admin") ||
+      [
+        ...(user.productAccess ?? []),
+        ...(user.customRoles ?? []).flatMap((role) => role.productAccess),
+      ].some(
+        (access) =>
+          access.productKey === "appointment_booking" && access.canConfigure,
+      )),
   );
 
   useEffect(() => {
@@ -1928,9 +1947,19 @@ export default function Home() {
       ? `?organizationId=${encodeURIComponent(organizationId)}`
       : "";
     const result = await run(() =>
-      api<AppointmentStaff[]>(`/appointment-booking/staff${query}`),
+      Promise.all([
+        api<AppointmentStaff[]>(`/appointment-booking/staff${query}`),
+        canConfigureAppointments
+          ? api<AppointmentEligibleUser[]>(
+              `/appointment-booking/staff/eligible-users${query}`,
+            )
+          : Promise.resolve([]),
+      ]),
     );
-    if (result) setAppointmentStaff(result);
+    if (result) {
+      setAppointmentStaff(result[0]);
+      setAppointmentEligibleUsers(result[1]);
+    }
   }
 
   async function loadAppointmentBookings() {
@@ -3588,8 +3617,7 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({
             organizationId: selectedOrganizationId ?? user?.orgId,
-            name: String(form.get("name")),
-            email: String(form.get("email")) || undefined,
+            userId: String(form.get("userId")),
             phone: String(form.get("phone")) || undefined,
             timezone: String(form.get("timezone")) || "UTC",
             serviceIds,
@@ -3601,7 +3629,9 @@ export default function Home() {
     if (result) {
       formElement.reset();
       await loadAppointmentStaff();
+      return true;
     }
+    return false;
   }
 
   async function updateAppointmentStaff(event: FormEvent<HTMLFormElement>) {
@@ -3613,8 +3643,7 @@ export default function Home() {
         api<AppointmentStaff>(`/appointment-booking/staff/${staffId}`, {
           method: "PATCH",
           body: JSON.stringify({
-            name: String(form.get("name")),
-            email: String(form.get("email")) || null,
+            userId: String(form.get("userId")),
             phone: String(form.get("phone")) || null,
             timezone: String(form.get("timezone")),
             status: String(form.get("status")),
@@ -5098,6 +5127,8 @@ export default function Home() {
                 <AppointmentsView
                   services={appointmentServices}
                   staff={appointmentStaff}
+                  eligibleUsers={appointmentEligibleUsers}
+                  canManageTeam={canConfigureAppointments}
                   slots={appointmentSlots}
                   bookings={appointmentBookings}
                   calendarConnections={appointmentCalendarConnections}

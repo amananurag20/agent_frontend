@@ -606,6 +606,13 @@ export type AppointmentStaff = {
   id: string;
   organizationId: string;
   userId?: string | null;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    isActive: boolean;
+    roles: string[];
+  } | null;
   name: string;
   email?: string | null;
   phone?: string | null;
@@ -614,6 +621,15 @@ export type AppointmentStaff = {
   services: AppointmentService[];
   resources: AppointmentResource[];
   metadata: Record<string, unknown>;
+};
+
+export type AppointmentEligibleUser = {
+  id: string;
+  name: string;
+  email: string;
+  roles: string[];
+  appointmentStaffId?: string | null;
+  appointmentStaffStatus?: "active" | "inactive" | null;
 };
 
 export type AppointmentStaffAvailability = {
